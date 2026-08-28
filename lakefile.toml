@@ -1,0 +1,6 @@
+name = "ScalingTrust"
+version = "0.1.0"
+defaultTargets = ["ScalingTrust"]
+
+[[lean_lib]]
+name = "ScalingTrust"
