@@ -102,7 +102,8 @@ which only the initiator may send transport messages.
 
 > Following a one-way handshake the sender can send a stream of transport
 > messages …  The second `CipherState` from `Split()` is discarded — the
-> recipient must not send any messages using it. -/
+> recipient must not send any messages using it.
+-/
 def isOneWay (hp : HandshakePattern) : Bool := hp.messages.length == 1
 
 /-- The roles that may send transport messages after the handshake completes. -/

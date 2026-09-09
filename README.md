@@ -110,29 +110,28 @@ sent arrives.
 
 ## Two defects found in Revision 34
 
-Computing the payload security grades and comparing them with the printed tables
-turns up two errors in §18.2, both proved:
+`Patterns.table182_correct` proves that all twenty-three deferred patterns match
+the §18.2 table — but two of its rows had to be corrected first, because
+Revision 34 prints them wrongly. Neither affects the protocol; both are
+documentation defects in the table.
 
-1. **`NX1`: the arrows on the two transport rows are interchanged**
-   (`Patterns.NX1_table_arrows_swapped`). The printed table gives source grade 2
-   to a transport payload sent by the initiator, but `NX1` is an `N` pattern —
-   its initiator has no static key at all, so nothing it sends can ever be
-   authenticated. The grade-2 row is the responder's, and it comes first,
-   because `NX1`'s last handshake message is the initiator's. Swapping the two
-   arrows yields exactly the computed table.
+1. **`NX1`: the arrows on the two transport rows are interchanged.** The printed
+   table gives source grade 2 to a transport payload sent by the initiator, but
+   `NX1` is an `N` pattern — its initiator has no static key at all, so nothing
+   it sends can ever be authenticated. The grade-2 row is the responder's, and
+   it comes first, because `NX1`'s last handshake message is the initiator's.
+   Swapping the two arrows yields exactly the computed table.
 
-2. **`X1N`: the table omits its last row** (`Patterns.X1N_table_missing_row`).
-   Once the responder has received the initiator's first transport payload —
-   which has source grade 2, since `se` has by then been performed — the
-   responder's own transport payloads move from `(0, 3)` to `(0, 5)`. By the
-   specification's own elision convention that row differs from the responder's
-   last handshake payload and must be listed. Noise Explorer (Figure 7 of the
-   paper) likewise reports six graded payloads for `X1N`.
+2. **`X1N`: the table omits its last row.** Once the responder has received the
+   initiator's first transport payload — which has source grade 2, since `se`
+   has by then been performed — the responder's own transport payloads move from
+   `(0, 3)` to `(0, 5)`. By the specification's own elision convention that row
+   differs from the responder's last handshake payload and must be listed. Noise
+   Explorer (Figure 7 of the paper) likewise reports six graded payloads for
+   `X1N`.
 
-Neither affects the protocol; both are documentation defects in the table.
-
-`Patterns.table182_correct` proves the remaining twenty-one deferred patterns
-match §18.2 exactly.
+Both corrections are recorded in the module documentation of
+`ScalingTrust.Noise.Security`, alongside the rows as Revision 34 prints them.
 
 ## Two places we depart from the paper's Figure 4
 

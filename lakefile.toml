@@ -2,5 +2,10 @@ name = "ScalingTrust"
 version = "0.1.0"
 defaultTargets = ["ScalingTrust"]
 
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.33.0"
+
 [[lean_lib]]
 name = "ScalingTrust"

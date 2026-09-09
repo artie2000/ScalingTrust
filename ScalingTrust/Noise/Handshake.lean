@@ -90,23 +90,31 @@ def dhKinds : Role → KeyKind → KeyKind → KeyKind × KeyKind
   | .initiator, a, b => (a, b)
   | .responder, a, b => (b, a)
 
-/-- The Diffie–Hellman output a party contributes to `MixKey`, given the kinds
-of its own key and of the peer's key. -/
-def dhInputOf (hs : HandshakeState C) (own remote : KeyKind) : Option C.Bytes :=
-  match hs.ownPriv own with
-  | none => none
-  | some priv => (hs.remotePub remote).map (fun pk => C.dh priv pk)
+/-- The Diffie–Hellman a party contributes to `MixKey`, given the kinds of its
+own key and of the peer's key.
 
-/-- The Diffie–Hellman output for a `dh a b` token, from this party's point of
-view (spec §5.3). -/
-def dhInput (hs : HandshakeState C) (a b : KeyKind) : Option C.Bytes :=
+A missing key and a key that `DH` rejects are reported as different errors: the
+first is a pattern or `Initialize` fault, the second is what an attacker
+supplying a bad public key would provoke.  Both name the token's kinds in
+initiator-then-responder order, recovered with `dhKinds`, which is an involution:
+applying it to `own` and `remote` undoes the swap that produced them. -/
+def dhInputOf (hs : HandshakeState C) (own remote : KeyKind) : Except NoiseError C.Bytes :=
+  let (α, β) := dhKinds hs.role own remote
+  match hs.ownPriv own, hs.remotePub remote with
+  | some priv, some pk =>
+      match C.dh priv pk with
+      | some ikm => .ok ikm
+      | none => .error (.invalidPublicKey α β)
+  | _, _ => .error (.missingDHKey α β)
+
+/-- The Diffie–Hellman for a `dh a b` token, from this party's point of view
+(spec §5.3). -/
+def dhInput (hs : HandshakeState C) (a b : KeyKind) : Except NoiseError C.Bytes :=
   hs.dhInputOf (dhKinds hs.role a b).1 (dhKinds hs.role a b).2
 
 /-- Process a DH token: `MixKey(DH(own, remote))` (spec §5.3). -/
 def mixDH (hs : HandshakeState C) (a b : KeyKind) : Except NoiseError (HandshakeState C) :=
-  match hs.dhInput a b with
-  | some ikm => .ok { hs with sym := hs.sym.mixKey ikm }
-  | none => .error (.missingDHKey a b)
+  (hs.dhInput a b).map (fun ikm => { hs with sym := hs.sym.mixKey ikm })
 
 /-- Mix an ephemeral public key into the state.
 

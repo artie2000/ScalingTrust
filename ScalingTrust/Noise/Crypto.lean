@@ -41,8 +41,14 @@ structure Crypto where
   Priv : Type
   /-- The public key of a private key (spec §4.1, `GENERATE_KEYPAIR`). -/
   pub : Priv → Bytes
-  /-- `DH(key_pair, public_key)` (spec §4.1). -/
-  dh : Priv → Bytes → Bytes
+  /-- `DH(key_pair, public_key)` (spec §4.1), signalling failure with `none`.
+
+  §4.1 requires implementations to "handle invalid public keys either by
+  returning some output which is purely a function of the public key … or by
+  signaling an error to the caller"; we take the second option, so a `dh` that
+  cannot interpret its argument as a public key returns `none` rather than an
+  opaque value. -/
+  dh : Priv → Bytes → Option Bytes
   /-- `HASH(data)` (spec §4.3). -/
   hash : Bytes → Bytes
   /-- `HMAC-HASH(key, data)` (spec §4.3). -/
@@ -83,7 +89,8 @@ variable (C : Crypto)
 /-- `REKEY(k)` (spec §4.2), using the default definition:
 
 > it defaults to returning the first 32 bytes from
-> `ENCRYPT(k, maxnonce, zerolen, zeros)`, where `maxnonce` equals `2^64 - 1`. -/
+> `ENCRYPT(k, maxnonce, zerolen, zeros)`, where `maxnonce` equals `2^64 - 1`.
+-/
 def rekey (k : C.Bytes) : C.Bytes :=
   C.trunc32 (C.encrypt k (2 ^ 64 - 1) C.emptyBytes (C.padTo 32 C.emptyBytes))
 
@@ -120,7 +127,8 @@ def cipherKeyOf (b : C.Bytes) : C.Bytes :=
 
 > If `protocol_name` is less than or equal to `HASHLEN` bytes in length, sets
 > `h` equal to `protocol_name` with zero bytes appended to make `HASHLEN` bytes.
-> Otherwise sets `h = HASH(protocol_name)`. -/
+> Otherwise sets `h = HASH(protocol_name)`.
+-/
 def initialHash (protocolName : String) : C.Bytes :=
   let n := C.ofString protocolName
   if C.blen n ≤ C.hashlen then C.padTo C.hashlen n else C.hash n
@@ -139,6 +147,9 @@ inductive NoiseError where
   /-- A DH token was processed but one of the two public keys it needs had not
   been communicated. -/
   | missingDHKey (initiatorKey responderKey : KeyKind) : NoiseError
+  /-- A DH token was processed with both keys present, but `DH` rejected the
+  peer's public key as invalid (spec §4.1). -/
+  | invalidPublicKey (initiatorKey responderKey : KeyKind) : NoiseError
   /-- A `psk` token was processed but no pre-shared key was supplied. -/
   | missingPsk : NoiseError
   /-- `WriteMessage`/`ReadMessage` was called with no message patterns left. -/

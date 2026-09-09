@@ -16,7 +16,7 @@ and the only equations that hold are the ones we impose.  Concretely:
 
 * private keys are natural numbers and `pub a` is the formal term `g^a`;
 * `DH(a, g^b)` normalises to `dhOut (min a b) (max a b)`, which makes
-  `dh_comm` hold and nothing else;
+  `dh_comm` hold and nothing else (`Sym.dh_pubKey_eq_iff`);
 * `ENCRYPT` builds an `aead` term that `DECRYPT` takes apart only when the key,
   nonce and associated data all match — the symbolic model's "perfect
   cryptography" assumption.
@@ -40,8 +40,6 @@ inductive Sym where
   | pubKey (n : Nat) : Sym
   /-- A Diffie–Hellman output `g^(a·b)`, stored with `a ≤ b`. -/
   | dhOut (a b : Nat) : Sym
-  /-- A Diffie–Hellman computed against a term that is not a public key. -/
-  | dhBad (a : Nat) (t : Sym) : Sym
   /-- `HASH(t)`. -/
   | hashOf (t : Sym) : Sym
   /-- `HMAC-HASH(k, d)`. -/
@@ -67,12 +65,12 @@ def blen : Sym → Nat
   | _ => 32
 
 /-- The symbolic Diffie–Hellman: `DH(a, g^b)` normalises to a term symmetric in
-`a` and `b`; against anything else it is an opaque term, as spec §4.1 permits
-("Implementations must handle invalid public keys either by returning some
-output which is purely a function of the public key …"). -/
-def dh (a : Nat) : Sym → Sym
-  | .pubKey b => .dhOut (min a b) (max a b)
-  | t => .dhBad a t
+`a` and `b`, and fails against anything that is not a public key.  This is the
+error-signalling option of spec §4.1, and it is what the reference back end's
+partial `dhexp` destructor does. -/
+def dh (a : Nat) : Sym → Option Sym
+  | .pubKey b => some (.dhOut (min a b) (max a b))
+  | _ => none
 
 /-- Symbolic AEAD decryption: it succeeds exactly on ciphertexts produced with
 matching key, nonce and associated data. -/
@@ -98,16 +96,10 @@ def symbolic : Crypto where
   cat := Sym.catOf
   byte := Sym.byteOf
   ofString := Sym.str
-  encrypt := fun k n ad p => Sym.aead k n ad p
+  encrypt := Sym.aead
   decrypt := Sym.decrypt
-  dh_comm := by
-    intro a b
-    show Sym.dh a (Sym.pubKey b) = Sym.dh b (Sym.pubKey a)
-    simp only [Sym.dh, Sym.dhOut.injEq]
-    omega
-  decrypt_encrypt := by
-    intro k n ad p
-    simp [Sym.decrypt]
+  dh_comm := by grind [Sym.dh]
+  decrypt_encrypt := by grind [Sym.decrypt]
 
 @[simp] theorem symbolic_Bytes : symbolic.Bytes = Sym := rfl
 @[simp] theorem symbolic_Priv : symbolic.Priv = Nat := rfl
@@ -131,5 +123,17 @@ theorem symbolic_nontrivial : (Sym.atom 0) ≠ (Sym.atom 1) := by decide
 This is the symbolic model's authenticity assumption in its crudest form. -/
 theorem symbolic_decrypt_hash (k ad t : Sym) (n : Nat) :
     symbolic.decrypt k n ad (Sym.hashOf t) = none := rfl
+
+/-- **The Diffie–Hellman equational theory, exactly.**  Two Diffie–Hellman
+outputs are equal precisely when their exponents agree as an unordered pair: the
+model imposes commutativity and nothing else, which is what makes `dh_comm` a
+faithful rendering of the equation a ProVerif back end declares rather than an
+accident of the `min`/`max` encoding.
+
+`ScalingTrust/Noise/ProVerif/` holds the models Noise Explorer generates, and its
+`README` compares them with this file. -/
+theorem Sym.dh_pubKey_eq_iff (a b c d : Nat) :
+    Sym.dh a (.pubKey b) = Sym.dh c (.pubKey d) ↔ (a = c ∧ b = d) ∨ (a = d ∧ b = c) := by
+  grind [dh]
 
 end Noise

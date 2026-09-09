@@ -109,9 +109,8 @@ theorem dhInputOf_eq {c : Ctx} {r : Role} {a b : HandshakeState C} (h : Matched 
   obtain ⟨p, hp, hbp⟩ := h.aKeys own h1
   obtain ⟨q, hq, haq⟩ := h.bKeys remote h2
   unfold HandshakeState.dhInputOf
-  rw [hp, haq, hq, hbp]
-  show some (C.dh p (C.pub q)) = some (C.dh q (C.pub p))
-  rw [C.dh_comm p q]
+  rw [hp, haq, hq, hbp, h.aRole, h.bRole]
+  cases r <;> simp [HandshakeState.dhKinds, Role.other, C.dh_comm p q]
 
 /-- Both parties feed the same value to `MixKey` for a given DH token, provided
 both public keys involved have been communicated (spec §7.3 rule 1). -/
@@ -129,14 +128,16 @@ theorem mixDH {c : Ctx} {r : Role} {a b : HandshakeState C} (h : Matched c r a b
     {a' : HandshakeState C} (hw : a.mixDH α β = .ok a') :
     ∃ ikm, a' = { a with sym := a.sym.mixKey ikm } ∧
       b.mixDH α β = .ok { b with sym := b.sym.mixKey ikm } := by
-  have hex : ∃ ikm, a.dhInput α β = some ikm := by
+  have hex : ∃ ikm, a.dhInput α β = .ok ikm := by
     cases hd : a.dhInput α β with
-    | none => unfold HandshakeState.mixDH at hw; simp [hd] at hw
-    | some ikm => exact ⟨ikm, rfl⟩
+    | ok ikm => exact ⟨ikm, rfl⟩
+    | error e => unfold HandshakeState.mixDH at hw; simp [hd, Except.map] at hw
   obtain ⟨ikm, hd⟩ := hex
   refine ⟨ikm, ?_, ?_⟩
-  · unfold HandshakeState.mixDH at hw; simp only [hd] at hw; simpa using hw.symm
-  · unfold HandshakeState.mixDH; rw [← h.dhInput_eq α β hα hβ, hd]
+  · unfold HandshakeState.mixDH at hw
+    simp only [hd, Except.map] at hw
+    simpa using hw.symm
+  · unfold HandshakeState.mixDH; rw [← h.dhInput_eq α β hα hβ, hd]; rfl
 
 end Matched
 

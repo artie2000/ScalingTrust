@@ -47,15 +47,17 @@ and Verification for Arbitrary Noise Protocols* (IEEE EuroS&P 2019).
 * `ScalingTrust.Noise.Modifiers` — protocol names (§8), the `pskN` modifiers
   (§9.4) and the `fallback` modifier (§10.2).
 * `ScalingTrust.Noise.Security` — the payload security grades of §7.7, checked
-  against the specification's tables; two defects in the §18.2 table are
-  identified and proved (`NX1_table_arrows_swapped`, `X1N_table_missing_row`).
+  against the specification's tables (`table77_correct`, `table182_correct`).
+  The §18.2 rows for `NX1` and `X1N` are corrected there; Revision 34 prints
+  them wrongly, as that file's module documentation explains.
 
 ## The protocol itself
 
 * `ScalingTrust.Noise.Crypto` — the DH, cipher and hash functions of §4, as an
   interface with two laws.
 * `ScalingTrust.Noise.Symbolic` — a Dolev–Yao model of that interface, so the
-  assumptions are consistent.
+  assumptions are consistent, with `Sym.dh_pubKey_eq_iff` pinning down its
+  Diffie–Hellman equational theory.
 * `ScalingTrust.Noise.State` — `CipherState` and `SymmetricState` (§5.1, §5.2).
 * `ScalingTrust.Noise.Handshake` — `HandshakeState`, `Initialize`,
   `WriteMessage`, `ReadMessage` (§5.3).

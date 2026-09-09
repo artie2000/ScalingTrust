@@ -60,7 +60,8 @@ def isModifierName (s : String) : Bool :=
 
 > The first modifier added onto a base pattern is simply appended.  Thus the
 > `"fallback"` modifier, when added to the `"XX"` pattern, produces
-> `"XXfallback"`.  Additional modifiers are separated with a plus sign. -/
+> `"XXfallback"`.  Additional modifiers are separated with a plus sign.
+-/
 def patternNameSection (base : String) (modifiers : List String) : String :=
   match modifiers with
   | [] => base

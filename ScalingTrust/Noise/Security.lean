@@ -60,8 +60,47 @@ That is the content of `destGrade`.
 ## Two errors in the specification's tables
 
 Computing the tables and comparing with what Revision 34 prints turns up two
-defects in the §18.2 table for deferred patterns; both are recorded (and
-proved) at the end of this file.
+defects in the §18.2 table for deferred patterns.  Both are documentation
+defects — neither affects the protocol itself — and `table182` below records the
+*corrected* rows, so that `table182_correct` covers all twenty-three deferred
+patterns.
+
+**`NX1`: the arrows on the two transport rows are interchanged.**  Revision 34
+prints
+
+```
+NX1
+  -> e                      0                0
+  <- e, ee, s               0                1
+  -> es                     0                3
+  ->                        2                1
+  <-                        0                5
+```
+
+giving source grade 2 to a transport payload sent by the *initiator*.  But `NX1`
+is an `N` pattern: its initiator has no static key at all, so no message it
+sends can ever be authenticated.  The grade-2 row is the responder's, and it
+comes first, because `NX1`'s last handshake message is the initiator's.
+Swapping the two arrows yields exactly the computed table.
+
+**`X1N`: the table omits its last row.**  Revision 34 prints
+
+```
+X1N
+  -> e                      0                0
+  <- e, ee                  0                1
+  -> s                      0                1
+  <- se                     0                3
+  ->                        2                1
+```
+
+and stops.  Once the responder has received the initiator's first transport
+payload — which has source grade 2, since `se` has by then been performed — the
+responder's own transport payloads gain strong forward secrecy, moving from
+`(0, 3)` to `(0, 5)`.  By the specification's own elision convention that row
+differs from the responder's last handshake payload and so must be listed.
+Noise Explorer (Figure 7 of the paper) likewise reports six graded payloads for
+`X1N`.
 -/
 
 namespace Noise
@@ -254,10 +293,15 @@ def table77 : List (HandshakePattern × List TableRow) :=
     (IX, [ini 0 0, res 2 3, ini 2 5, res 2 5]) ]
 
 /-- The payload security table of spec §18.2 for deferred patterns, transcribed
-verbatim, *except* for `NX1` and `X1N`, whose printed rows are wrong; see
-`NX1_table_arrows_swapped` and `X1N_table_missing_row`. -/
+verbatim, *except* for the `NX1` and `X1N` rows, which are corrected as
+explained in the module documentation above: Revision 34 interchanges the arrows
+on `NX1`'s two transport rows, and omits `X1N`'s last row. -/
 def table182 : List (HandshakePattern × List TableRow) :=
   [ (NK1,  [ini 0 0, res 2 1, ini 0 5]),
+    -- `NX1`: arrows on the last two rows corrected.
+    (NX1,  [ini 0 0, res 0 1, ini 0 3, res 2 1, ini 0 5]),
+    -- `X1N`: the omitted final row `<- 0 5` restored.
+    (X1N,  [ini 0 0, res 0 1, ini 0 1, res 0 3, ini 2 1, res 0 5]),
     (X1K,  [ini 0 2, res 2 1, ini 0 5, res 2 3, ini 2 5, res 2 5]),
     (XK1,  [ini 0 0, res 2 1, ini 2 5, res 2 5]),
     (X1K1, [ini 0 0, res 2 1, ini 0 5, res 2 3, ini 2 5, res 2 5]),
@@ -287,71 +331,18 @@ the specification's convention for eliding transport rows. -/
 theorem table77_correct : ∀ e ∈ table77, e.1.specTable = e.2 := by decide
 
 /-- **The computed payload security grades reproduce the table of spec §18.2**
-for twenty-one of the twenty-three deferred patterns.  The remaining two are
-`NX1` and `X1N`, whose printed rows are defective; see below. -/
+for all twenty-three deferred patterns, with the `NX1` and `X1N` rows corrected
+as described in the module documentation. -/
 theorem table182_correct : ∀ e ∈ table182, e.1.specTable = e.2 := by decide
+
+/-- The §18.2 table covers exactly the deferred patterns. -/
+theorem table182_covers_deferred :
+    ∀ hp ∈ deferred, hp.name ∈ table182.map (fun e => e.1.name) := by decide
 
 /-- Every pattern the specification names is covered by one of the two tables,
 or is a PSK pattern (§9.4 prints no grades for those), or is `XXfallback`. -/
 theorem tables_cover_fundamental :
     ∀ hp ∈ oneWay ++ fundamental, hp.name ∈ table77.map (fun e => e.1.name) := by decide
-
-/-! ### Two defects in Revision 34 of the specification
-
-Both are in the §18.2 table of security properties for deferred patterns. -/
-
-/-- The `NX1` rows as Revision 34 prints them:
-```
-NX1
-  -> e                      0                0
-  <- e, ee, s               0                1
-  -> es                     0                3
-  ->                        2                1
-  <-                        0                5
-```
--/
-def NX1_printed : List TableRow :=
-  [ini 0 0, res 0 1, ini 0 3, ini 2 1, res 0 5]
-
-/-- **Defect 1.** The arrows on the two transport rows of the `NX1` table are
-interchanged.
-
-The printed table gives source grade 2 to a transport payload sent by the
-*initiator*, but `NX1` is an `N`-pattern: the initiator has no static key at
-all, so no message it sends can ever be authenticated.  The row with source
-grade 2 must be the responder's, and it must come first, because `NX1`'s last
-handshake message is the initiator's.  Swapping the two arrows yields exactly
-the computed table. -/
-theorem NX1_table_arrows_swapped :
-    NX1.specTable ≠ NX1_printed ∧
-    NX1.specTable = [ini 0 0, res 0 1, ini 0 3, res 2 1, ini 0 5] := by
-  constructor <;> decide
-
-/-- The `X1N` rows as Revision 34 prints them:
-```
-X1N
-  -> e                      0                0
-  <- e, ee                  0                1
-  -> s                      0                1
-  <- se                     0                3
-  ->                        2                1
-```
--/
-def X1N_printed : List TableRow :=
-  [ini 0 0, res 0 1, ini 0 1, res 0 3, ini 2 1]
-
-/-- **Defect 2.** The `X1N` table omits its last row.
-
-After the responder receives the initiator's first transport payload — which has
-source grade 2, since `se` has by then been performed — the responder's own
-transport payloads gain strong forward secrecy, moving from `(0, 3)` to
-`(0, 5)`.  By the specification's own elision convention that row differs from
-the responder's last handshake payload and so must be listed.  Noise Explorer
-(Figure 7 of the paper) likewise reports six graded payloads for `X1N`. -/
-theorem X1N_table_missing_row :
-    X1N.specTable ≠ X1N_printed ∧
-    X1N.specTable = X1N_printed ++ [res 0 5] := by
-  constructor <;> decide
 
 end Patterns
 end Noise

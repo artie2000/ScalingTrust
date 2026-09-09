@@ -25,7 +25,8 @@ variable {C : Crypto}
 /-- Spec §5.1:
 
 > `k`: A cipher key of 32 bytes (which may be empty). …
-> `n`: An 8-byte (64-bit) unsigned integer nonce. -/
+> `n`: An 8-byte (64-bit) unsigned integer nonce.
+-/
 structure CipherState (C : Crypto) where
   /-- The cipher key; `none` is the specification's "empty". -/
   k : Option C.Bytes
