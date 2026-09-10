@@ -133,7 +133,7 @@ accident of the `min`/`max` encoding.
 `ScalingTrust/Noise/ProVerif/` holds the models Noise Explorer generates, and its
 `README` compares them with this file. -/
 theorem Sym.dh_pubKey_eq_iff (a b c d : Nat) :
-    Sym.dh a (.pubKey b) = Sym.dh c (.pubKey d) ↔ (a = c ∧ b = d) ∨ (a = d ∧ b = c) := by
+    dh a (.pubKey b) = dh c (.pubKey d) ↔ (a = c ∧ b = d) ∨ (a = d ∧ b = c) := by
   grind [dh]
 
 end Noise
