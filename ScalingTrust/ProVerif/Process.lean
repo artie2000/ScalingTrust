@@ -263,18 +263,16 @@ abbrev par (P Q : Proc M) : Proc M := merge ![P, Q]
 /-- `!P`: an unbounded number of copies of `P` in parallel. -/
 abbrev bang (P : Proc M) : Proc M := merge fun _ : ℕ => P
 
-end Proc
-
 example (c : M) :
-    Proc.inp c (fun x => Proc.out c x Proc.nil) =
-    {[]} ∪ {[Act.inp c x] | x} ∪ {[Act.inp c x, Act.out c x] | x} := by
+    inp c (fun x => out c x nil) =
+    {[]} ∪ {[.inp c x] | x} ∪ {[.inp c x, .out c x] | x} := by
   have : Nonempty M := ⟨c⟩
   ext
-  simp [Proc.inp, Proc.out, Proc.act, Proc.nil]
+  simp [inp, out, act, nil]
   grind
 
 example (c m : M) :
-    Proc.par (.out c m .nil) (.inp c fun _ => Proc.nil) =
+    par (out c m .nil) (inp c fun _ => nil) =
     {[], [.out c m]} ∪ {[.inp c x] | x} ∪ {[.inp c x, .out c m] | x} ∪ {[.out c m, .inp c x] | x} := by
   have : Nonempty M := ⟨c⟩
   ext
@@ -282,7 +280,7 @@ example (c m : M) :
   sorry
 
 /-- `!P = P | !P` -/
-theorem Proc.bang_eq (P : Proc M) : bang P = par P (bang P) := by
+theorem bang_eq (P : Proc M) : bang P = par P (bang P) := by
   ext t
   constructor
   · rintro ⟨f, hf, h⟩
@@ -291,6 +289,8 @@ theorem Proc.bang_eq (P : Proc M) : bang P = par P (bang P) := by
   · rintro ⟨g, hg, h⟩
     obtain ⟨h', hh', hm⟩ := hg 1
     exact ⟨cons (g 0) h', fun n => (match n with | 0 => hg 0 | n + 1 => hh' n), h.join hm⟩
+
+end Proc
 
 /-! ## Completed communications -/
 

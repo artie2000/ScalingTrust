@@ -21,7 +21,7 @@ inductive T where
   | pair (a b : T)
   deriving DecidableEq
 
-instance : Names T := ⟨⟨T.n, fun _ _ h => T.n.inj h⟩⟩
+instance : Names T := ⟨⟨T.n, fun _ _ => T.n.inj⟩⟩
 
 def T.fst : T → Option T
   | .pair a _ => some a
