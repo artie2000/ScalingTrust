@@ -25,68 +25,12 @@ namespace List
 
 variable {α : Type*}
 
-/-- The merges of `l₁` and `l₂`: every list obtained by interleaving them while
-keeping the order within each.  This is Isabelle/HOL's `shuffles`. -/
-def merges : List α → List α → Set (List α)
-  | [], l₂ => {l₂}
-  | a :: l₁, [] => {a :: l₁}
-  | a :: l₁, b :: l₂ => (a :: ·) '' merges l₁ (b :: l₂) ∪ (b :: ·) '' merges (a :: l₁) l₂
-termination_by l₁ l₂ => l₁.length + l₂.length
-
-@[simp] theorem merges_nil_left (l : List α) : merges [] l = {l} := by
-  rw [merges]
-
-@[simp] theorem merges_nil_right (l : List α) : merges l [] = {l} := by
-  cases l <;> rw [merges]
-
-@[simp] theorem merges_cons_cons (a b : α) (l₁ l₂ : List α) :
-    merges (a :: l₁) (b :: l₂) =
-      (a :: ·) '' merges l₁ (b :: l₂) ∪ (b :: ·) '' merges (a :: l₁) l₂ := by
-  rw [merges]
-
-theorem cons_mem_merges_left {t l₁ l₂ : List α} (h : t ∈ merges l₁ l₂) (a : α) :
-    a :: t ∈ merges (a :: l₁) l₂ := by
-  cases l₂ with
-  | nil => simp_all
-  | cons b l₂ => rw [merges_cons_cons]; exact Or.inl ⟨t, h, rfl⟩
-
-theorem cons_mem_merges_right {t l₁ l₂ : List α} (h : t ∈ merges l₁ l₂) (b : α) :
-    b :: t ∈ merges l₁ (b :: l₂) := by
-  cases l₁ with
-  | nil => simp_all
-  | cons a l₁ => rw [merges_cons_cons]; exact Or.inr ⟨t, h, rfl⟩
-
-/-- Induction on the construction of a merge: it is empty, or its first element
-comes from one of the two lists. -/
-@[elab_as_elim]
-theorem merges_induction {motive : ∀ l₁ l₂ t : List α, t ∈ merges l₁ l₂ → Prop}
-    (nil : motive [] [] [] (by simp))
-    (left : ∀ (a : α) {l₁ l₂ t} (h : t ∈ merges l₁ l₂), motive l₁ l₂ t h →
-      motive (a :: l₁) l₂ (a :: t) (cons_mem_merges_left h a))
-    (right : ∀ (b : α) {l₁ l₂ t} (h : t ∈ merges l₁ l₂), motive l₁ l₂ t h →
-      motive l₁ (b :: l₂) (b :: t) (cons_mem_merges_right h b))
-    (l₁ l₂ t : List α) (h : t ∈ merges l₁ l₂) : motive l₁ l₂ t h := by
-  induction l₁ generalizing l₂ t with
-  | nil =>
-    induction l₂ generalizing t with
-    | nil =>
-      obtain rfl : t = [] := by simpa using h
-      exact nil
-    | cons b l₂ ih =>
-      obtain rfl : t = b :: l₂ := by simpa using h
-      exact right b (by simp) (ih _ (by simp))
-  | cons a l₁ ih₁ =>
-    induction l₂ generalizing t with
-    | nil =>
-      obtain rfl : t = a :: l₁ := by simpa using h
-      exact left a (by simp) (ih₁ _ _ (by simp))
-    | cons b l₂ ih₂ =>
-      have h' : (∃ x, x ∈ merges l₁ (b :: l₂) ∧ a :: x = t) ∨
-          ∃ x, x ∈ merges (a :: l₁) l₂ ∧ b :: x = t := by
-        simpa only [merges_cons_cons, Set.mem_union, Set.mem_image] using h
-      rcases h' with ⟨t', ht', rfl⟩ | ⟨t', ht', rfl⟩
-      · exact left a ht' (ih₁ _ _ ht')
-      · exact right b ht' (ih₂ _ ht')
+/-- `Merges l₁ l₂ t`: `t` is a merge of `l₁` and `l₂`, an interleaving that keeps
+the order within each.  Isabelle/HOL's `t ∈ shuffles l₁ l₂`. -/
+inductive Merges : List α → List α → List α → Prop
+  | nil : Merges [] [] []
+  | left {a : α} {l₁ l₂ t : List α} : Merges l₁ l₂ t → Merges (a :: l₁) l₂ (a :: t)
+  | right {b : α} {l₁ l₂ t : List α} : Merges l₁ l₂ t → Merges l₁ (b :: l₂) (b :: t)
 
 end List
 
@@ -197,54 +141,54 @@ end Body
 
 /-- A `Fin 2`-labelled trace is a merge of its two fibres. -/
 theorem merges_fibres : ∀ l : List (Fin 2 × Act M),
-    l.map Prod.snd ∈ List.merges (fibre 0 l) (fibre 1 l)
-  | [] => by simp
+    List.Merges (fibre 0 l) (fibre 1 l) (l.map Prod.snd)
+  | [] => .nil
   | (i, a) :: l => by
     revert i
     refine Fin.forall_fin_two.2 ⟨?_, ?_⟩
-    · simpa using List.cons_mem_merges_left (merges_fibres l) a
-    · simpa using List.cons_mem_merges_right (merges_fibres l) a
+    · simpa using (merges_fibres l).left (a := a)
+    · simpa using (merges_fibres l).right (b := a)
 
 /-- Conversely, a merge can be labelled by `Fin 2`. -/
-theorem exists_labelling {u v t : List (Act M)} (h : t ∈ List.merges u v) :
+theorem exists_labelling {u v t : List (Act M)} (h : List.Merges u v t) :
     ∃ l : List (Fin 2 × Act M), l.map Prod.snd = t ∧ fibre 0 l = u ∧ fibre 1 l = v := by
-  induction u, v, t, h using List.merges_induction with
+  induction h with
   | nil => exact ⟨[], rfl, rfl, rfl⟩
-  | left a _ ih =>
+  | @left a _ _ _ _ ih =>
     obtain ⟨l, rfl, rfl, rfl⟩ := ih
     exact ⟨(0, a) :: l, by simp, by simp, by simp⟩
-  | right b _ ih =>
+  | @right b _ _ _ _ ih =>
     obtain ⟨l, rfl, rfl, rfl⟩ := ih
     exact ⟨(1, b) :: l, by simp, by simp, by simp⟩
 
 /-- Splitting the label `0` off an `ℕ`-labelled trace, the other labels shifting down. -/
 theorem merges_fibre_zero : ∀ l : List (ℕ × Act M), ∃ l' : List (ℕ × Act M),
-    l.map Prod.snd ∈ List.merges (fibre 0 l) (l'.map Prod.snd) ∧
+    List.Merges (fibre 0 l) (l'.map Prod.snd) (l.map Prod.snd) ∧
       ∀ j, fibre j l' = fibre (j + 1) l
-  | [] => ⟨[], by simp, fun _ => rfl⟩
+  | [] => ⟨[], .nil, fun _ => rfl⟩
   | (0, a) :: l => by
     obtain ⟨l', hs, hf⟩ := merges_fibre_zero l
-    exact ⟨l', by simpa using List.cons_mem_merges_left hs a, fun j => by simp [hf]⟩
+    exact ⟨l', by simpa using hs.left (a := a), fun j => by simp [hf]⟩
   | (k + 1, a) :: l => by
     obtain ⟨l', hs, hf⟩ := merges_fibre_zero l
-    exact ⟨(k, a) :: l', by simpa using List.cons_mem_merges_right hs a, fun j => by simp [hf]⟩
+    exact ⟨(k, a) :: l', by simpa using hs.right (b := a), fun j => by simp [hf]⟩
 
 /-- Labelling a merge of `u` with an `ℕ`-labelled `v`: `u` gets label `0` and the
 labels of `v` shift up. -/
-theorem exists_labelling_nat {u v t : List (Act M)} (h : t ∈ List.merges u v) :
+theorem exists_labelling_nat {u v t : List (Act M)} (h : List.Merges u v t) :
     ∀ l' : List (ℕ × Act M), l'.map Prod.snd = v → ∃ l : List (ℕ × Act M),
       l.map Prod.snd = t ∧ fibre 0 l = u ∧ ∀ j, fibre (j + 1) l = fibre j l' := by
-  induction u, v, t, h using List.merges_induction with
+  induction h with
   | nil =>
     intro l' hl'
     rw [List.map_eq_nil_iff] at hl'
     subst hl'
     exact ⟨[], rfl, rfl, fun _ => rfl⟩
-  | left a _ ih =>
+  | @left a _ _ _ _ ih =>
     intro l' hl'
     obtain ⟨l, rfl, rfl, hf⟩ := ih l' hl'
     exact ⟨(0, a) :: l, by simp, by simp, fun j => by simp [hf]⟩
-  | right b _ ih =>
+  | @right b _ _ _ _ ih =>
     rintro (_ | ⟨⟨i, c⟩, l'⟩) hl'
     · simp at hl'
     · simp only [List.map_cons, List.cons.injEq] at hl'
@@ -256,7 +200,7 @@ namespace Proc
 
 /-- `P | Q` is the set of merges of a trace of `P` with a trace of `Q`. -/
 theorem mem_par {P Q : Proc M} {t : List (Act M)} :
-    t ∈ par P Q ↔ ∃ u ∈ P, ∃ v ∈ Q, t ∈ List.merges u v := by
+    t ∈ par P Q ↔ ∃ u ∈ P, ∃ v ∈ Q, List.Merges u v t := by
   constructor
   · rintro ⟨l, rfl, h⟩
     exact ⟨_, by simpa using h 0, _, by simpa using h 1, merges_fibres l⟩
