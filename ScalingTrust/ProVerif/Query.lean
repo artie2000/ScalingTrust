@@ -87,7 +87,7 @@ theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t u w : List (Act M)}
     (r : Run P K₀ t u w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (ht : ∀ c m, Act.out c m ∈ t → m ∈ S) : derive K ⊆ S :=
   ClosureOperator.closure_min
-    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp r.complete h)) hS
+    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp₂ r.complete h)) hS
 
 /-! ## Attackers from public operations -/
 

@@ -101,7 +101,7 @@ theorem Merges.commR {u v t : List (Act M)} (c m : M) (h : Merges ![u, v] t) :
     Merges ![.inp c m :: u, .out c m :: v] t := by
   simpa using h.comm (i := 1) (j := 0) c m (by decide)
 
--- TODO : induction principle shoing the above 5 constructors are the only possibilities
+-- TODO : induction principle showing the above 5 constructors are the only possibilities
 
 /-! ##  Countably many copies -/
 
@@ -260,7 +260,7 @@ abbrev merge (P : ι → Proc M) : Proc M := {t | ∃ f, (∀ i, f i ∈ P i) �
 /-- `P | Q` -/
 abbrev par (P Q : Proc M) : Proc M := merge ![P, Q]
 
-/-- `!P`: unboundedly many copies of `P` in parallel. -/
+/-- `!P`: an unbounded number of copies of `P` in parallel. -/
 abbrev bang (P : Proc M) : Proc M := merge fun _ : ℕ => P
 
 end Proc
@@ -299,15 +299,14 @@ inductive Act.Unfinished : Act M → Prop
   | out (c m : M) : (Act.out c m).Unfinished
   | inp (c m : M) : (Act.inp c m).Unfinished
 
-/-- Enlarging one component of `f` enlarges `f` pointwise. -/
 theorem subset_update {α : Type} {f : ι → List α} {i : ι} {l : List α} (h : f i ⊆ l) (k : ι) :
     f k ⊆ Function.update f i l k := by
   by_cases hk : k = i
   · subst hk; rwa [Function.update_self]
   · exact fun _ h => by rwa [Function.update_of_ne hk]
 
-/-- If no action of `w` is unfinished, every message received by one component was
-offered by another. -/
+/-- If no action of the merged trace `w` is unfinished,
+every message received in one subtrace was sent in another. -/
 theorem Merges.out_of_inp {f : ι → List (Act M)} {w : List (Act M)} {c m : M} {k : ι}
     (h : Merges f w) (hw : ∀ a ∈ w, ¬ a.Unfinished) (hm : Act.inp c m ∈ f k) :
     ∃ i, i ≠ k ∧ Act.out c m ∈ f i := by
@@ -352,6 +351,10 @@ theorem Merges.out_of_inp {f : ι → List (Act M)} {w : List (Act M)} {c m : M}
         · rwa [Function.update_of_ne hk'] at hm
       obtain ⟨i', hi', h'⟩ := ih hw hm'
       exact ⟨i', hi', hg i' h'⟩
+
+theorem Merges.out_of_inp₂ {u v w : List (Act M)} {c m : M}
+    (h : Merges ![u, v] w) (hw : ∀ a ∈ w, ¬ a.Unfinished) (hm : Act.inp c m ∈ v) :
+    Act.out c m ∈ u := by simpa using h.out_of_inp hw (k := 1) hm
 
 /-! ## Process monad constructors -/
 
