@@ -14,8 +14,8 @@ A process represented by a set of possible traces, which are lists of actions.
 in parallel by merging one trace of each, a matching output and input of two
 different components cancelling into a communication; `P | Q` and `!P` are the
 merges of two processes and of countably many copies of a process, respectively.
-There is no syntax of processes: what a process computes between actions is Lean code,
-and a process is written as a `do` block in the continuation monad `Cont (Proc M)`,
+There is no syntax of processes: what a process computes between actions is Lean code.
+In particular, a process may be written as a `do` block in the continuation monad `Cont (Proc M)`,
 closed with `Proc.run`.
 
 Trace sets are prefix-closed by construction, so a trace is a run so far, and a
@@ -57,7 +57,6 @@ The merge relation allows us to express what traces may arise from
 a collection of processes running concurrently.  It is defined for
 a collection indexed arbitrarily, and the cases of two processes and
 countably many are analysed.
-
 -/
 
 variable {M ι : Type} [DecidableEq ι]
@@ -103,7 +102,7 @@ theorem Merges.commR {u v t : List (Act M)} (c m : M) (h : Merges ![u, v] t) :
 
 -- TODO : induction principle showing the above 5 constructors are the only possibilities
 
-/-! ##  Countably many copies -/
+/-! ##  Countably many processes -/
 
 -- TODO : explain structure of this section and golf it
 

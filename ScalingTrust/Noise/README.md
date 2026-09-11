@@ -1,4 +1,4 @@
-# ScalingTrust — the Noise Protocol Framework in Lean 4
+# The Noise Protocol Framework in Lean 4
 
 A formalisation of [The Noise Protocol Framework](https://noiseprotocol.org/noise.html),
 Revision 34 (Trevor Perrin, 2018-07-11), together with the formal treatment given by
@@ -15,7 +15,8 @@ patterns are legitimate, the protocol the patterns denote, and the theorem that
 the protocol works.
 
 * **No dependencies.** Lean 4 core only (toolchain `leanprover/lean4:v4.33.0`).
-  `lake build` from a clean checkout takes well under a minute.
+  The repository's Mathlib dependency serves its other folders; nothing here
+  imports it.
 * **No `sorry`, no `native_decide`.** Every result is checked by the kernel;
   the only axioms used are Lean's own `propext`, `Quot.sound` and
   `Classical.choice`.
@@ -207,10 +208,13 @@ scope here.
 
 ## Building
 
+From the repository root:
+
 ```sh
 lake build
 ```
 
-To explore, open `ScalingTrust/Noise/Examples.lean` and uncomment the `#eval`
+`ScalingTrust` is the default target and its root module imports exactly the
+modules of this folder. To explore, open `ScalingTrust/Noise/Examples.lean` and uncomment the `#eval`
 lines at the bottom: they print patterns in the specification's own notation,
 run handshakes in the symbolic model, and show the resulting Dolev–Yao terms.

@@ -130,8 +130,8 @@ model imposes commutativity and nothing else, which is what makes `dh_comm` a
 faithful rendering of the equation a ProVerif back end declares rather than an
 accident of the `min`/`max` encoding.
 
-`ScalingTrust/Noise/ProVerif/` holds the models Noise Explorer generates, and its
-`README` compares them with this file. -/
+`ScalingTrust/ProVerif/Reference/` holds two of the models Noise Explorer
+generates, and its `README` compares them with this file. -/
 theorem Sym.dh_pubKey_eq_iff (a b c d : Nat) :
     dh a (.pubKey b) = dh c (.pubKey d) ↔ (a = c ∧ b = d) ∨ (a = d ∧ b = c) := by
   grind [dh]

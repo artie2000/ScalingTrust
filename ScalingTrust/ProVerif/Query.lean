@@ -9,7 +9,7 @@ import ScalingTrust.ProVerif.Process
 
 The attacker is a synthetically-created process trace subject to certain rules.
 It reflects the Dolev-Yao security model, where the attacker can read, intercept,
-and write arbitrary messages on public channels.
+and write messages on public channels.
 
 `Enemy K₀ e K` says that, knowing `K₀`, the attacker can behave as trace `e` and then know `K`.
 It may receive on any channel it can derive, send anything it can derive on any channel
@@ -49,45 +49,45 @@ inductive Enemy : Set M → List (Act M) → Set M → Prop
 /-- A run of the protocol `P` against an attacker with initial knowledge `K₀`: the
 protocol executes with trace `t`, the attacker behaves as `e` and ends up knowing `K`, and
 together they execute with trace `w`. -/
-structure Run (P : Proc M) (K₀ : Set M) (t u w : List (Act M)) (K : Set M) : Prop where
+structure Run (P : Proc M) (K₀ : Set M) (t e w : List (Act M)) (K : Set M) : Prop where
   honest : t ∈ P
-  enemy : Enemy K₀ u K
-  merges : Merges ![t, u] w
+  enemy : Enemy K₀ e K
+  merges : Merges ![t, e] w
   complete : ∀ a ∈ w, ¬ a.Unfinished
   fresh : (nonces w).Nodup
 
 /-- `query attacker(s)` fails: in no run does the attacker come to know `s`. -/
 def Secret (P : Proc M) (K₀ : Set M) (s : M) : Prop :=
-  ∀ t u w K, Run P K₀ t u w K → s ∉ derive K
+  ∀ t e w K, Run P K₀ t e w K → s ∉ derive K
 
 /-- `query event(e) ==> event(e')`, non-injective: in every run, an event satisfying
 `Pre` is preceded by one related to it by `R`. -/
 def Corr (P : Proc M) (K₀ : Set M) (Pre : M → Prop) (R : M → M → Prop) : Prop :=
-  ∀ t u w K, Run P K₀ t u w K → ∀ pre e post, w = pre ++ .event e :: post → Pre e →
-    ∃ e', Act.event e' ∈ pre ∧ R e e'
+  ∀ t e w K, Run P K₀ t e w K → ∀ pre ev post, w = pre ++ .event ev :: post → Pre ev →
+    ∃ ev', .event ev' ∈ pre ∧ R ev ev'
 
 /-! ## Bounding the attacker's knowledge -/
 
 /-- What the attacker knows lies in `S` if its initial knowledge, every nonce, and
 every message it received do. -/
-theorem Enemy.subset {K₀ K S : Set M} {u : List (Act M)} (h : Enemy K₀ u K)
-    (hK₀ : K₀ ⊆ S) (hn : ∀ n, Names.nonce n ∈ S) (hu : ∀ c m, Act.inp c m ∈ u → m ∈ S) :
+theorem Enemy.subset {K₀ K S : Set M} {e : List (Act M)} (h : Enemy K₀ e K)
+    (hK₀ : K₀ ⊆ S) (hn : ∀ n, Names.nonce n ∈ S) (he : ∀ c m, Act.inp c m ∈ e → m ∈ S) :
     K ⊆ S := by
   induction h with
   | nil => exact hK₀
   | inp c m _ _ ih =>
-    exact ih (Set.insert_subset_iff.2 ⟨hu c m List.mem_cons_self, hK₀⟩)
-      fun c' m' h' => hu c' m' (List.mem_cons_of_mem _ h')
-  | out _ _ _ _ _ ih => exact ih hK₀ fun c' m' h' => hu c' m' (List.mem_cons_of_mem _ h')
+    exact ih (Set.insert_subset_iff.2 ⟨he c m List.mem_cons_self, hK₀⟩)
+      fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
+  | out _ _ _ _ _ ih => exact ih hK₀ fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
   | new n _ ih =>
     exact ih (Set.insert_subset_iff.2 ⟨hn n, hK₀⟩)
-      fun c' m' h' => hu c' m' (List.mem_cons_of_mem _ h')
+      fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
 
 /-- The closed-set method for secrecy: if `S` is closed under derivation and contains
 the attacker's initial knowledge, every nonce, and every message the protocol
 offers, the attacker never knows anything outside `S`. -/
-theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t u w : List (Act M)}
-    (r : Run P K₀ t u w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
+theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t e w : List (Act M)}
+    (r : Run P K₀ t e w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (ht : ∀ c m, Act.out c m ∈ t → m ∈ S) : derive K ⊆ S :=
   ClosureOperator.closure_min
     (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp₂ r.complete h)) hS
