@@ -13,9 +13,10 @@ can derive, send anything it can derive on any channel it can derive, and
 create names.  What it can derive from a set of messages is a closure operator,
 `Attacker.derive`.
 
-A *run* is a closed trace of the system `P | Enemy`: a trace `t` of the
-protocol merged with a trace `u` of the attacker, with no offer pending and all
-nonces distinct.  This is ProVerif's `P₀ | Q` for every adversary `Q` at once.
+A *run* is a trace of the system `P | Enemy` in which every communication was
+completed: a trace `t` of the protocol merged with a trace `u` of the attacker,
+with no unfinished action and all nonces distinct.  This is ProVerif's `P₀ | Q`
+for every adversary `Q` at once.
 Queries quantify over runs: secrecy reads what the attacker ends up knowing,
 correspondences read the events of the run.  Nothing here distinguishes public
 from private channels: a private channel is a term the attacker cannot derive,
@@ -32,14 +33,15 @@ open Attacker
 
 variable {M : Type} [Attacker M] [Names M]
 
-/-- `Enemy K u K'`: the attacker, knowing `K`, can behave as `u` and then knows `K'`. -/
+/-- `Enemy K₀ u K`: the attacker, knowing `K₀`, can execute with trace `u` and then know `K`. -/
 inductive Enemy : Set M → List (Act M) → Set M → Prop
-  | nil {K} : Enemy K [] K
-  | inp {K u K'} (c m : M) : c ∈ derive K → Enemy (insert m K) u K' →
-      Enemy K (.inp c m :: u) K'
-  | out {K u K'} (c m : M) : c ∈ derive K → m ∈ derive K → Enemy K u K' →
-      Enemy K (.out c m :: u) K'
-  | new {K u K'} (n : ℕ) : Enemy (insert (Names.nonce n) K) u K' → Enemy K (.new n :: u) K'
+  | nil {K₀} : Enemy K₀ [] K₀
+  | inp {K₀ u K} (c m : M) : c ∈ derive K₀ → Enemy (insert m K₀) u K →
+      Enemy K₀ (.inp c m :: u) K
+  | out {K₀ u K} (c m : M) : c ∈ derive K₀ → m ∈ derive K₀ → Enemy K₀ u K →
+      Enemy K₀ (.out c m :: u) K
+  | new {K₀ u K} (n : ℕ) : Enemy (insert (Names.nonce n) K₀) u K →
+      Enemy K₀ (.new n :: u) K
 
 /-- A run of the protocol `P` against the attacker with initial knowledge `K₀`: the
 protocol behaves as `t`, the attacker as `u` and ends up knowing `K`, and
@@ -47,8 +49,8 @@ together they run `w`. -/
 structure Run (P : Proc M) (K₀ : Set M) (t u w : List (Act M)) (K : Set M) : Prop where
   honest : t ∈ P
   enemy : Enemy K₀ u K
-  merges : Merges t u w
-  closed : Closed w
+  merges : Merges ![t, u] w
+  complete : ∀ a ∈ w, ¬ a.Unfinished
   fresh : (nonces w).Nodup
 
 /-- `query attacker(s)` fails: in no run does the attacker come to know `s`. -/
@@ -85,7 +87,7 @@ theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t u w : List (Act M)}
     (r : Run P K₀ t u w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (ht : ∀ c m, Act.out c m ∈ t → m ∈ S) : derive K ⊆ S :=
   ClosureOperator.closure_min
-    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp r.closed h)) hS
+    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp r.complete h)) hS
 
 /-! ## Attackers from public operations -/
 

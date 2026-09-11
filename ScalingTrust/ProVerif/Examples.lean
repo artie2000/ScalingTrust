@@ -42,7 +42,7 @@ open Attacker
 
 /-- A replicated role: what happens between actions is plain Lean. -/
 example : Proc T := Body.run do
-  Body.bang
+  Body.repl
   let k ← Body.fresh
   Body.send .c (.hash k)
   let x ← Body.recv .c
@@ -58,8 +58,8 @@ example (A B : Cont (Proc T) Unit) : Proc T := Body.run do
 theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
   intro h
   exact h [.out .c .s] [.inp .c .s] [] _
-    ⟨.inr ⟨[], rfl, rfl⟩, .inp _ _ (derive.le_closure _ rfl) .nil, .commL .nil,
-      by simp [Closed], List.nodup_nil⟩
+    ⟨.inr ⟨[], rfl, rfl⟩, .inp _ _ (derive.le_closure _ rfl) .nil, .commL _ _ .nil₂,
+      by simp, List.nodup_nil⟩
     (derive.le_closure _ (Set.mem_insert _ _))
 
 /-- Terms in which `s` occurs only under a hash. -/
