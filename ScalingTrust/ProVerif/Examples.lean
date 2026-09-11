@@ -57,8 +57,9 @@ example (A B : Cont (Proc T) Unit) : Proc T := Body.run do
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
 theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
   intro h
-  exact h [.out .c .s] [.inp .c .s] _
-    ⟨.inr ⟨[], rfl, rfl⟩, .inp _ _ (derive.le_closure _ rfl) .nil, .commL .nil, by simp [nonces]⟩
+  exact h [.out .c .s] [.inp .c .s] [] _
+    ⟨.inr ⟨[], rfl, rfl⟩, .inp _ _ (derive.le_closure _ rfl) .nil, .commL .nil,
+      by simp [Closed], List.nodup_nil⟩
     (derive.le_closure _ (Set.mem_insert _ _))
 
 /-- Terms in which `s` occurs only under a hash. -/
@@ -86,7 +87,7 @@ theorem hid_closed : ClosedUnder T.ops {t | Hid t} := by
 /-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
 in the closed set of terms in which `s` occurs only under a hash. -/
 theorem hashed_secret : Secret (Proc.out .c (.hash .s) Proc.nil) {T.c} T.s := by
-  intro t u K r hs
+  intro t u w K r hs
   refine r.derive_subset (S := {t | Hid t}) (by simp [Hid]) hid_closed
     (fun n => show Hid (T.n n) from trivial) ?_ hs
   intro c' m hm

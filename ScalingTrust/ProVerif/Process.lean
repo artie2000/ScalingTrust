@@ -17,8 +17,8 @@ role is written as a `do` block in the continuation monad `Cont (Proc M)`,
 closed with `Body.run`.
 
 Trace sets are prefix-closed by construction, so a trace is a run so far, and a
-process that blocks simply has no longer traces.  A run of a *closed* system is
-a pair of traces in which every offer is taken up by the other side (`Sync`).
+process that blocks simply has no longer traces.  A trace of silent actions only
+— no offer left pending — is a run of a *closed* system (`Closed`).
 -/
 
 namespace ProVerif
@@ -96,41 +96,37 @@ end Proc
 
 /-! ## Runs of a closed system -/
 
-/-- `Sync u v`: `u` and `v` run together, every offer of either side being taken
-up by the other — a run of `P | Q` as a closed system. -/
-inductive Sync : List (Act M) → List (Act M) → Prop
-  | nil : Sync [] []
-  | new_left {u v n} : Sync u v → Sync (.new n :: u) v
-  | event_left {u v e} : Sync u v → Sync (.event e :: u) v
-  | new_right {u v n} : Sync u v → Sync u (.new n :: v)
-  | event_right {u v e} : Sync u v → Sync u (.event e :: v)
-  | commL {u v c m} : Sync u v → Sync (.out c m :: u) (.inp c m :: v)
-  | commR {u v c m} : Sync u v → Sync (.inp c m :: u) (.out c m :: v)
+/-- The actions a process performs on its own, without a partner. -/
+inductive Act.Silent : Act M → Prop
+  | new (n : ℕ) : (Act.new n).Silent
+  | event (e : M) : (Act.event e).Silent
 
-/-- Every message received on one side was offered by the other. -/
-theorem Sync.out_of_inp {u v : List (Act M)} {c m : M} (h : Sync u v)
-    (hm : Act.inp c m ∈ v) : Act.out c m ∈ u := by
+/-- `Closed w`: every action of `w` is silent — no offer is pending, so `w` is a
+run of a closed system. -/
+def Closed (w : List (Act M)) : Prop := ∀ a ∈ w, a.Silent
+
+theorem Closed.of_cons {a : Act M} {w : List (Act M)} (h : Closed (a :: w)) : Closed w :=
+  fun b hb => h b (List.mem_cons_of_mem a hb)
+
+/-- In a closed run, every message received on one side was offered by the other. -/
+theorem Merges.out_of_inp {u v w : List (Act M)} {c m : M} (h : Merges u v w)
+    (hw : Closed w) (hm : Act.inp c m ∈ v) : Act.out c m ∈ u := by
   induction h with
   | nil => simp at hm
-  | new_left _ ih => exact List.mem_cons_of_mem _ (ih hm)
-  | event_left _ ih => exact List.mem_cons_of_mem _ (ih hm)
-  | new_right _ ih =>
-    rcases List.mem_cons.1 hm with h | hm
-    · cases h
-    · exact ih hm
-  | event_right _ ih =>
-    rcases List.mem_cons.1 hm with h | hm
-    · cases h
-    · exact ih hm
+  | left _ ih => exact List.mem_cons_of_mem _ (ih hw.of_cons hm)
+  | right _ ih =>
+    rcases List.mem_cons.1 hm with rfl | hm
+    · cases hw _ List.mem_cons_self
+    · exact ih hw.of_cons hm
   | commL _ ih =>
     rcases List.mem_cons.1 hm with h | hm
     · obtain ⟨rfl, rfl⟩ := Act.inp.inj h
       exact List.mem_cons_self
-    · exact List.mem_cons_of_mem _ (ih hm)
+    · exact List.mem_cons_of_mem _ (ih hw hm)
   | commR _ ih =>
     rcases List.mem_cons.1 hm with h | hm
     · cases h
-    · exact List.mem_cons_of_mem _ (ih hm)
+    · exact List.mem_cons_of_mem _ (ih hw hm)
 
 /-- The nonce indices created in `t`. -/
 def nonces : List (Act M) → List ℕ :=

@@ -13,13 +13,13 @@ can derive, send anything it can derive on any channel it can derive, and
 create names.  What it can derive from a set of messages is a closure operator,
 `Attacker.derive`.
 
-A *run* is a trace `t` of the protocol and a trace `u` of the attacker that
-synchronise, with all nonces distinct: ProVerif's `P₀ | Q` for every adversary
-`Q` at once.  Queries quantify over runs: secrecy reads what the attacker ends
-up knowing, correspondences read the events of `t`.  A run records nothing
-else, and nothing here distinguishes public from private channels: a private
-channel is a term the attacker cannot derive, on which it therefore makes no
-offers.
+A *run* is a closed trace of the system `P | Enemy`: a trace `t` of the
+protocol merged with a trace `u` of the attacker, with no offer pending and all
+nonces distinct.  This is ProVerif's `P₀ | Q` for every adversary `Q` at once.
+Queries quantify over runs: secrecy reads what the attacker ends up knowing,
+correspondences read the events of the run.  Nothing here distinguishes public
+from private channels: a private channel is a term the attacker cannot derive,
+on which it therefore makes no offers.
 -/
 
 namespace ProVerif
@@ -42,21 +42,23 @@ inductive Enemy : Set M → List (Act M) → Set M → Prop
   | new {K u K'} (n : ℕ) : Enemy (insert (Names.nonce n) K) u K' → Enemy K (.new n :: u) K'
 
 /-- A run of the protocol `P` against the attacker with initial knowledge `K₀`: the
-protocol behaves as `t`, the attacker as `u` and ends up knowing `K`. -/
-structure Run (P : Proc M) (K₀ : Set M) (t u : List (Act M)) (K : Set M) : Prop where
+protocol behaves as `t`, the attacker as `u` and ends up knowing `K`, and
+together they run `w`. -/
+structure Run (P : Proc M) (K₀ : Set M) (t u w : List (Act M)) (K : Set M) : Prop where
   honest : t ∈ P
   enemy : Enemy K₀ u K
-  sync : Sync t u
-  fresh : (nonces t ++ nonces u).Nodup
+  merges : Merges t u w
+  closed : Closed w
+  fresh : (nonces w).Nodup
 
 /-- `query attacker(s)` fails: in no run does the attacker come to know `s`. -/
 def Secret (P : Proc M) (K₀ : Set M) (s : M) : Prop :=
-  ∀ t u K, Run P K₀ t u K → s ∉ derive K
+  ∀ t u w K, Run P K₀ t u w K → s ∉ derive K
 
 /-- `query event(e) ==> event(e')`, non-injective: in every run, an event satisfying
 `Pre` is preceded by one related to it by `R`. -/
 def Corr (P : Proc M) (K₀ : Set M) (Pre : M → Prop) (R : M → M → Prop) : Prop :=
-  ∀ t u K, Run P K₀ t u K → ∀ pre e post, t = pre ++ .event e :: post → Pre e →
+  ∀ t u w K, Run P K₀ t u w K → ∀ pre e post, w = pre ++ .event e :: post → Pre e →
     ∃ e', Act.event e' ∈ pre ∧ R e e'
 
 /-! ## Bounding the attacker's knowledge -/
@@ -79,10 +81,11 @@ theorem Enemy.subset {K₀ K S : Set M} {u : List (Act M)} (h : Enemy K₀ u K)
 /-- The closed-set method for secrecy: if `S` is closed under derivation and contains
 the attacker's initial knowledge, every nonce, and every message the protocol
 offers, the attacker never knows anything outside `S`. -/
-theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t u : List (Act M)}
-    (r : Run P K₀ t u K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
+theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t u w : List (Act M)}
+    (r : Run P K₀ t u w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (ht : ∀ c m, Act.out c m ∈ t → m ∈ S) : derive K ⊆ S :=
-  ClosureOperator.closure_min (r.enemy.subset hK₀ hn fun c m h => ht c m (r.sync.out_of_inp h)) hS
+  ClosureOperator.closure_min
+    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp r.closed h)) hS
 
 /-! ## Attackers from public operations -/
 
