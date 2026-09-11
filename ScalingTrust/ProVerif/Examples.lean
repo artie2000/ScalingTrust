@@ -41,18 +41,18 @@ instance : Attacker T := .ofOps T.ops
 open Attacker
 
 /-- A replicated role: what happens between actions is plain Lean. -/
-example : Proc T := Body.run do
-  Body.repl
-  let k ← Body.fresh
-  Body.send .c (.hash k)
-  let x ← Body.recv .c
+example : Proc T := .run do
+  .repl
+  let k ← .fresh
+  .send .c (.hash k)
+  let x ← .recv .c
   match x.fst with
-  | some y => if y = .hash k then Body.emit y else pure ()
-  | none => Body.stop
+  | some y => if y = .hash k then .emit y else pure ()
+  | none => .stop
 
 /-- Two roles in parallel. -/
-example (A B : Cont (Proc T) Unit) : Proc T := Body.run do
-  if ← Body.fork then A else B
+example (A B : Cont (Proc T) Unit) : Proc T := .run do
+  if ← .fork then A else B
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
 theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
