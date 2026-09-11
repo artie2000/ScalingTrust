@@ -54,11 +54,12 @@ example : Proc T := Body.run do
 example (A B : Cont (Proc T) Unit) : Proc T := Body.run do
   if ← Body.fork then A else B
 
-/-- Outputting `s` in the clear is an attack. -/
+/-- Outputting `s` in the clear is an attack: the attacker receives it. -/
 theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
   intro h
-  refine h [.out .c .s] (.inr ⟨[], rfl, rfl⟩) ⟨derive.le_closure _ rfl, trivial⟩ ?_
-  exact derive.le_closure _ (Set.mem_insert _ _)
+  exact h [.out .c .s] [.inp .c .s] _
+    ⟨.inr ⟨[], rfl, rfl⟩, .inp _ _ (derive.le_closure _ rfl) .nil, .commL .nil, by simp [nonces]⟩
+    (derive.le_closure _ (Set.mem_insert _ _))
 
 /-- Terms in which `s` occurs only under a hash. -/
 def Hid : T → Prop
@@ -82,13 +83,17 @@ theorem hid_closed : ClosedUnder T.ops {t | Hid t} := by
     generalize args 0 = a at h0 hr
     cases a <;> simp_all [T.snd, Hid]
 
-/-- Outputting `hash s` keeps `s` secret: exhibit a closed set containing
-everything the attacker sees and not `s`. -/
+/-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
+in the closed set of terms in which `s` occurs only under a hash. -/
 theorem hashed_secret : Secret (Proc.out .c (.hash .s) Proc.nil) {T.c} T.s := by
-  rintro t (rfl | ⟨u, (rfl : u = []), rfl⟩) - hs
-  · exact ClosureOperator.closure_min (c := derive) (by simp [knows, Hid]) hid_closed hs
-  · refine ClosureOperator.closure_min (c := derive) ?_ hid_closed hs
-    simp only [knows]
-    rintro _ (rfl | rfl) <;> trivial
+  intro t u K r hs
+  refine r.derive_subset (S := {t | Hid t}) (by simp [Hid]) hid_closed
+    (fun n => show Hid (T.n n) from trivial) ?_ hs
+  intro c' m hm
+  rcases r.honest with rfl | ⟨_, (rfl : _ = []), rfl⟩
+  · simp at hm
+  · simp at hm
+    obtain ⟨rfl, rfl⟩ := hm
+    trivial
 
 end ProVerif.Toy
