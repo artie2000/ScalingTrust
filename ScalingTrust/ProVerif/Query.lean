@@ -7,16 +7,19 @@ import ScalingTrust.ProVerif.Process
 /-!
 # The attacker and the queries
 
-The attacker is a process like any other: `Enemy K₀ u K` says that, knowing
-`K₀`, it can behave as `u` and then knows `K`.  It may receive on any channel it
-can derive, send anything it can derive on any channel it can derive, and
-create names.  What it can derive from a set of messages is a closure operator,
+The attacker is a synthetically-created process trace subject to certain rules.
+It reflects the Dolev-Yao security model, where the attacker can read, intercept,
+and write arbitrary messages on public channels.
+
+`Enemy K₀ e K` says that, knowing `K₀`, the attacker can behave as trace `e` and then know `K`.
+It may receive on any channel it can derive, send anything it can derive on any channel
+it can derive, and create names.  What it can derive from a set of messages is a closure operator,
 `Attacker.derive`.
 
 A *run* is a trace of the system `P | Enemy` in which every communication was
-completed: a trace `t` of the protocol merged with a trace `u` of the attacker,
-with no unfinished action and all nonces distinct.  This is ProVerif's `P₀ | Q`
-for every adversary `Q` at once.
+completed: a trace `t` of `P` merged with the attacker trace `e`,
+with no unfinished action and all nonces distinct.
+
 Queries quantify over runs: secrecy reads what the attacker ends up knowing,
 correspondences read the events of the run.  Nothing here distinguishes public
 from private channels: a private channel is a term the attacker cannot derive,
@@ -33,19 +36,19 @@ open Attacker
 
 variable {M : Type} [Attacker M] [Names M]
 
-/-- `Enemy K₀ u K`: the attacker, knowing `K₀`, can execute with trace `u` and then know `K`. -/
+/-- `Enemy K₀ e K`: the attacker, knowing `K₀`, can behave as trace `e` and then know `K`. -/
 inductive Enemy : Set M → List (Act M) → Set M → Prop
   | nil {K₀} : Enemy K₀ [] K₀
-  | inp {K₀ u K} (c m : M) : c ∈ derive K₀ → Enemy (insert m K₀) u K →
-      Enemy K₀ (.inp c m :: u) K
-  | out {K₀ u K} (c m : M) : c ∈ derive K₀ → m ∈ derive K₀ → Enemy K₀ u K →
-      Enemy K₀ (.out c m :: u) K
-  | new {K₀ u K} (n : ℕ) : Enemy (insert (Names.nonce n) K₀) u K →
-      Enemy K₀ (.new n :: u) K
+  | inp {K₀ e K} (c m : M) : c ∈ derive K₀ → Enemy (insert m K₀) e K →
+      Enemy K₀ (.inp c m :: e) K
+  | out {K₀ e K} (c m : M) : c ∈ derive K₀ → m ∈ derive K₀ → Enemy K₀ e K →
+      Enemy K₀ (.out c m :: e) K
+  | new {K₀ e K} (n : ℕ) : Enemy (insert (Names.nonce n) K₀) e K →
+      Enemy K₀ (.new n :: e) K
 
-/-- A run of the protocol `P` against the attacker with initial knowledge `K₀`: the
-protocol behaves as `t`, the attacker as `u` and ends up knowing `K`, and
-together they run `w`. -/
+/-- A run of the protocol `P` against an attacker with initial knowledge `K₀`: the
+protocol executes with trace `t`, the attacker behaves as `e` and ends up knowing `K`, and
+together they execute with trace `w`. -/
 structure Run (P : Proc M) (K₀ : Set M) (t u w : List (Act M)) (K : Set M) : Prop where
   honest : t ∈ P
   enemy : Enemy K₀ u K
