@@ -96,14 +96,17 @@ never says anything itself, then nothing outside `S` is ever said. -/
 theorem secret_of_closed {P : Proc M} {K₀ S : Set M} (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ t ∈ P, ∀ c m, Act.out c m ∈ t → m ∈ S)
     (hsay : ∀ t ∈ P, ∀ m, Act.say m ∉ t) {s : M} (hs : s ∉ S) : Secret P K₀ s := by
-  rintro w ⟨⟨⟨f, hf, hm⟩, -⟩, hc⟩ hw
-  obtain ⟨t, e, rfl⟩ : ∃ t e, f = ![t, e] := ⟨f 0, f 1, funext (Fin.forall_fin_two.2 ⟨rfl, rfl⟩)⟩
-  obtain ⟨i, hi⟩ := hm.mem_of_mem hw
+  rintro w ⟨⟨⟨f, l, hf, hl, hw⟩, -⟩, hc⟩ hw'
+  obtain ⟨i, hi⟩ := mem_of_mem_comms hw hw'
+  rw [hl.mem_iff] at hi
   have two : ∀ j : Fin 2, j = 0 ∨ j = 1 := Fin.forall_fin_two.2 ⟨.inl rfl, .inr rfl⟩
   rcases two i with rfl | rfl
   · exact hsay _ (hf 0) s hi
-  · exact hs (Enemy.say_mem (hf 1) hK₀ hS hn
-      (fun c m h => hP _ (hf 0) c m (hm.out_of_inp₂ hc h)) hi)
+  · refine hs (Enemy.say_mem (hf 1) hK₀ hS hn (fun c m h => ?_) hi)
+    obtain ⟨j, hj, hj'⟩ := out_of_inp_comms hw hc (hl.mem_iff.2 h)
+    rcases two j with rfl | rfl
+    · exact hP _ (hf 0) c m (hl.mem_iff.1 hj')
+    · exact absurd rfl hj
 
 /-! ## Attackers from public operations -/
 

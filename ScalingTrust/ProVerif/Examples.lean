@@ -63,7 +63,8 @@ theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
   have hc : ∀ a ∈ [Act.say T.s], ¬ a.Unfinished := fun _ ha h => by
     obtain rfl := List.mem_singleton.1 ha
     cases h
-  exact h [.say .s] ⟨⟨⟨![_, _], Fin.forall_fin_two.2 ⟨ht, he⟩, .commL _ _ (.right _ .nil₂)⟩,
+  exact h [.say .s] ⟨⟨⟨![_, _], [(0, .out .c .s), (1, .inp .c .s), (1, .say .s)],
+    Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [Meets]⟩,
     List.nodup_nil⟩, hc⟩ List.mem_cons_self
 
 /-- Terms in which `s` occurs only under a hash. -/

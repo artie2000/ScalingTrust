@@ -19,7 +19,7 @@ lake build ScalingTrust.ProVerif.Examples
 
 | Module | Contents |
 | --- | --- |
-| `ProVerif.Process` | Actions, processes as trace sets, the merge relation, `!P = P \| !P`, `do`-notation |
+| `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
 | `ProVerif.Query` | The attacker as a process, runs, `Secret`, `Corr`, the closed-set method |
 | `ProVerif.Examples` | A toy term algebra, an attack, a secrecy proof |
 
@@ -44,21 +44,24 @@ written as a `do` block in the continuation monad `Cont (Proc M)` with
 and `Proc.stop`, closed with `Proc.run`; the Lean code between the actions is
 the honest computation (ProVerif's `let`, `if` and destructor applications).
 
-**Parallel composition.** `Merges f t`, an inductive relation, says that the
-trace `t` arises from the family of component traces `f : ι → List (Act M)` by
-interleaving, except that an output of one component and a matching input of a
-*different* component may meet in a communication, the survey's rule (Red I/O),
-which leaves nothing in `t`. `Proc.merge` lifts it to processes, keeping only
-the traces whose created names are distinct, so that different components
-never create the same name; `Proc.par` is the merge over `Fin 2` and
-`Proc.bang` the merge over `ℕ` (a derivation is finite, so only finitely many
-copies act). `Proc.bang_eq`, `!P = P | !P`, is (Red Repl); it rests on
-`Merges.split` and `Merges.join`, which relate a merge over `ℕ` to a merge of
-component `0` with the merge of the rest, and on `Merges.nonces_sublist`.
+**Parallel composition.** Two stages. First the component traces
+`f : ι → List (Act M)` are interleaved into a tagged trace
+`s : List (ι × Act M)`: `Interleaves f s` says that each component reads its
+own trace back off `s` by projection, so interleaving needs no rules at all.
+Then `comms s` is the set of traces obtained by letting an output immediately
+followed by a matching input of a *different* component meet in a
+communication, the survey's rule (Red I/O), which leaves nothing in the trace.
+`Proc.merge` combines the two and keeps only the traces whose created names are
+distinct, so that different components never create the same name; `Proc.par`
+is the merge over `Fin 2` and `Proc.bang` the merge over `ℕ` (a trace is
+finite, so only finitely many copies act). `Proc.bang_eq`, `!P = P | !P`, is
+(Red Repl); it rests on `Proc.split` and `Proc.join`, which relate a tagged
+trace over `ℕ` to one over `Fin 2` whose second component is what the other
+copies produce among themselves, their offers to component `0` left unfinished.
 
 **Completed communications.** `out` and `inp` are offers. A trace with no
 unfinished action (`Act.Unfinished`) is one in which every offer met a partner,
-and then `Merges.out_of_inp` says that whatever one component received, another
+and then `out_of_inp_comms` says that whatever one component received, another
 component sent.
 
 **The attacker.** `Attacker M` supplies a closure operator `derive` on `Set M`,
@@ -88,8 +91,9 @@ protocol itself never says anything. `Examples.hashed_secret` uses it;
 * **Synchronous.** Communication is a rendezvous, as in the survey, not
   ProVerif's Horn-clause approximation in which outputs are persistent facts.
   A single sequential process cannot communicate with itself: the two partners
-  must be distinct components, which is why the pairing is certified inside
-  `Merges` rather than read off adjacent actions of a trace.
+  must be distinct components, which is why communication is defined on the
+  tagged interleaving, where the components are still known, rather than read
+  off adjacent actions of an untagged trace.
 * **A communication leaves no action.** A query can observe the events of a run
   and what the attacker says, and nothing else; what was communicated is
   recoverable from the component traces when a proof needs it.
@@ -119,8 +123,8 @@ Tables (`insert` and `get`; the ProVerif manual, §6.7.3, encodes them with
 private channels), phases (runs are ordered, so ordering constraints can be
 stated directly) and injective correspondences. The Noise Explorer models in
 `Reference/` use tables and phases, so they mark what remains. The `par` example in
-`Process.lean` is currently left as `sorry`, pending an inversion principle for
-two-component merges.
+`Process.lean` is currently left as `sorry`; it needs the interleavings of two
+one-action traces enumerated.
 
 ## References
 
