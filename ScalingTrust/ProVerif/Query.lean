@@ -7,23 +7,21 @@ import ScalingTrust.ProVerif.Process
 /-!
 # The attacker and the queries
 
-The attacker is a synthetically-created process trace subject to certain rules.
-It reflects the Dolev-Yao security model, where the attacker can read, intercept,
-and write messages on public channels.
+The attacker is a process, `Enemy K₀`: the traces a Dolev-Yao attacker with
+initial knowledge `K₀` can perform.  It may receive on any channel it can
+derive, send anything it can derive on any channel it can derive, create names,
+and `say` anything it can derive.  What it can derive from a set of messages is
+a closure operator, `Attacker.derive`.
 
-`Enemy K₀ e K` says that, knowing `K₀`, the attacker can behave as trace `e` and then know `K`.
-It may receive on any channel it can derive, send anything it can derive on any channel
-it can derive, and create names.  What it can derive from a set of messages is a closure operator,
-`Attacker.derive`.
+A *run* of `P` is a trace of `P | Enemy K₀` in which every communication was
+completed; `Runs P K₀` is the process of runs.
+Queries are properties of runs.  A communication leaves no action, so a run
+does not record what the attacker learnt; instead `say s` in a run is the
+attacker's knowledge of `s` made visible, and secrecy and correspondences alike
+read the actions of the run.
 
-A *run* is a trace of the system `P | Enemy` in which every communication was
-completed: a trace `t` of `P` merged with the attacker trace `e`,
-with no unfinished action and all nonces distinct.
-
-Queries quantify over runs: secrecy reads what the attacker ends up knowing,
-correspondences read the events of the run.  Nothing here distinguishes public
-from private channels: a private channel is a term the attacker cannot derive,
-on which it therefore makes no offers.
+Nothing here distinguishes public from private channels: a private channel is
+a term the attacker cannot derive, on which it therefore makes no offers.
 -/
 
 namespace ProVerif
@@ -36,61 +34,76 @@ open Attacker
 
 variable {M : Type} [Attacker M] [Names M]
 
-/-- `Enemy K₀ e K`: the attacker, knowing `K₀`, can behave as trace `e` and then know `K`. -/
-inductive Enemy : Set M → List (Act M) → Set M → Prop
-  | nil {K₀} : Enemy K₀ [] K₀
-  | inp {K₀ e K} (c m : M) : c ∈ derive K₀ → Enemy (insert m K₀) e K →
-      Enemy K₀ (.inp c m :: e) K
-  | out {K₀ e K} (c m : M) : c ∈ derive K₀ → m ∈ derive K₀ → Enemy K₀ e K →
-      Enemy K₀ (.out c m :: e) K
-  | new {K₀ e K} (n : ℕ) : Enemy (insert (Names.nonce n) K₀) e K →
-      Enemy K₀ (.new n :: e) K
+/-- `Enemy K₀`: the attacker, knowing `K₀`, as a process. -/
+inductive Enemy : Set M → Proc M
+  | nil {K₀} : Enemy K₀ []
+  | inp {K₀ e} (c m : M) : c ∈ derive K₀ → Enemy (insert m K₀) e →
+      Enemy K₀ (.inp c m :: e)
+  | out {K₀ e} (c m : M) : c ∈ derive K₀ → m ∈ derive K₀ → Enemy K₀ e →
+      Enemy K₀ (.out c m :: e)
+  | new {K₀ e} (n : ℕ) : n ∉ nonces e → Enemy (insert (Names.nonce n) K₀) e →
+      Enemy K₀ (.new n :: e)
+  | say {K₀ e} (m : M) : m ∈ derive K₀ → Enemy K₀ e →
+      Enemy K₀ (.say m :: e)
 
-/-- A run of the protocol `P` against an attacker with initial knowledge `K₀`: the
-protocol executes with trace `t`, the attacker behaves as `e` and ends up knowing `K`, and
-together they execute with trace `w`. -/
-structure Run (P : Proc M) (K₀ : Set M) (t e w : List (Act M)) (K : Set M) : Prop where
-  honest : t ∈ P
-  enemy : Enemy K₀ e K
-  merges : Merges ![t, e] w
-  complete : ∀ a ∈ w, ¬ a.Unfinished
-  fresh : (nonces w).Nodup
+/-- The runs of `P` against an attacker knowing `K₀`: the traces of `P | Enemy K₀`
+in which every communication was completed. -/
+def Runs (P : Proc M) (K₀ : Set M) : Proc M :=
+  {w ∈ Proc.par P (Enemy K₀) | ∀ a ∈ w, ¬ a.Unfinished}
 
-/-- `query attacker(s)` fails: in no run does the attacker come to know `s`. -/
+/-- `query attacker(s)` fails: in no run does the attacker say `s`. -/
 def Secret (P : Proc M) (K₀ : Set M) (s : M) : Prop :=
-  ∀ t e w K, Run P K₀ t e w K → s ∉ derive K
+  ∀ w ∈ Runs P K₀, .say s ∉ w
 
-/-- `query event(e) ==> event(e')`, non-injective: in every run, an event satisfying
-`Pre` is preceded by one related to it by `R`. -/
-def Corr (P : Proc M) (K₀ : Set M) (Pre : M → Prop) (R : M → M → Prop) : Prop :=
-  ∀ t e w K, Run P K₀ t e w K → ∀ pre ev post, w = pre ++ .event ev :: post → Pre ev →
-    ∃ ev', .event ev' ∈ pre ∧ R ev ev'
+/-- A non-injective correspondence: in every run, each action satisfying `Pre` is
+preceded by one related to it by `R`.  For `query event(e) ==> event(e')`, `Pre`
+picks out events; for `query attacker(M) ==> event(e')`, it picks out `say M`. -/
+def Corr (P : Proc M) (K₀ : Set M) (Pre : Act M → Prop) (R : Act M → Act M → Prop) : Prop :=
+  ∀ w ∈ Runs P K₀, ∀ pre a post, w = pre ++ a :: post → Pre a → ∃ b ∈ pre, R a b
 
 /-! ## Bounding the attacker's knowledge -/
 
-/-- What the attacker knows lies in `S` if its initial knowledge, every nonce, and
-every message it received do. -/
-theorem Enemy.subset {K₀ K S : Set M} {e : List (Act M)} (h : Enemy K₀ e K)
-    (hK₀ : K₀ ⊆ S) (hn : ∀ n, Names.nonce n ∈ S) (he : ∀ c m, Act.inp c m ∈ e → m ∈ S) :
-    K ⊆ S := by
+/-- Whatever the attacker says lies in `S` if `S` is closed under derivation and
+contains its initial knowledge, every nonce, and every message it receives. -/
+theorem Enemy.say_mem {K₀ S : Set M} {e : List (Act M)} (h : Enemy K₀ e) (hK₀ : K₀ ⊆ S)
+    (hS : derive.IsClosed S) (hn : ∀ n, Names.nonce n ∈ S)
+    (he : ∀ c m, Act.inp c m ∈ e → m ∈ S) {m : M} (hm : Act.say m ∈ e) : m ∈ S := by
   induction h with
-  | nil => exact hK₀
-  | inp c m _ _ ih =>
-    exact ih (Set.insert_subset_iff.2 ⟨he c m List.mem_cons_self, hK₀⟩)
-      fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
-  | out _ _ _ _ _ ih => exact ih hK₀ fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
-  | new n _ ih =>
-    exact ih (Set.insert_subset_iff.2 ⟨hn n, hK₀⟩)
-      fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')
+  | nil => simp at hm
+  | inp c m' _ _ ih =>
+    rcases List.mem_cons.1 hm with h | hm
+    · cases h
+    · exact ih (Set.insert_subset_iff.2 ⟨he c m' List.mem_cons_self, hK₀⟩)
+        (fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')) hm
+  | out _ _ _ _ _ ih =>
+    rcases List.mem_cons.1 hm with h | hm
+    · cases h
+    · exact ih hK₀ (fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')) hm
+  | new n _ _ ih =>
+    rcases List.mem_cons.1 hm with h | hm
+    · cases h
+    · exact ih (Set.insert_subset_iff.2 ⟨hn n, hK₀⟩)
+        (fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')) hm
+  | say m' hd _ ih =>
+    rcases List.mem_cons.1 hm with h | hm
+    · obtain rfl := Act.say.inj h
+      exact ClosureOperator.closure_min hK₀ hS hd
+    · exact ih hK₀ (fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')) hm
 
 /-- The closed-set method for secrecy: if `S` is closed under derivation and contains
-the attacker's initial knowledge, every nonce, and every message the protocol
-offers, the attacker never knows anything outside `S`. -/
-theorem Run.derive_subset {P : Proc M} {K₀ K S : Set M} {t e w : List (Act M)}
-    (r : Run P K₀ t e w K) (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
-    (hn : ∀ n, Names.nonce n ∈ S) (ht : ∀ c m, Act.out c m ∈ t → m ∈ S) : derive K ⊆ S :=
-  ClosureOperator.closure_min
-    (r.enemy.subset hK₀ hn fun c m h => ht c m (r.merges.out_of_inp₂ r.complete h)) hS
+the attacker's initial knowledge, every nonce, and every message `P` offers, and `P`
+never says anything itself, then nothing outside `S` is ever said. -/
+theorem secret_of_closed {P : Proc M} {K₀ S : Set M} (hK₀ : K₀ ⊆ S) (hS : derive.IsClosed S)
+    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ t ∈ P, ∀ c m, Act.out c m ∈ t → m ∈ S)
+    (hsay : ∀ t ∈ P, ∀ m, Act.say m ∉ t) {s : M} (hs : s ∉ S) : Secret P K₀ s := by
+  rintro w ⟨⟨⟨f, hf, hm⟩, -⟩, hc⟩ hw
+  obtain ⟨t, e, rfl⟩ : ∃ t e, f = ![t, e] := ⟨f 0, f 1, funext (Fin.forall_fin_two.2 ⟨rfl, rfl⟩)⟩
+  obtain ⟨i, hi⟩ := hm.mem_of_mem hw
+  have two : ∀ j : Fin 2, j = 0 ∨ j = 1 := Fin.forall_fin_two.2 ⟨.inl rfl, .inr rfl⟩
+  rcases two i with rfl | rfl
+  · exact hsay _ (hf 0) s hi
+  · exact hs (Enemy.say_mem (hf 1) hK₀ hS hn
+      (fun c m h => hP _ (hf 0) c m (hm.out_of_inp₂ hc h)) hi)
 
 /-! ## Attackers from public operations -/
 

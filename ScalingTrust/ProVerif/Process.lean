@@ -22,6 +22,10 @@ Trace sets are prefix-closed by construction, so a trace is a run so far, and a
 process that blocks simply has no longer traces.  `out` and `in` are *unfinished*
 actions; a trace with none represents a run in which every communication was
 completed.
+
+Names are created by index.  `new` never creates a name that the rest of the
+process creates again, and a merge keeps the names created by different
+components apart, so the names created in a trace are pairwise distinct.
 -/
 
 namespace ProVerif
@@ -42,10 +46,14 @@ inductive Act (M : Type) where
   | new (n : ℕ)
   /-- `event e` -/
   | event (e : M)
+  /-- The attacker declares that it knows `m`.  Honest processes never `say`. -/
+  | say (m : M)
 
 /-- The nonce indices created in a trace. -/
-def nonces : List (Act M) → List ℕ :=
-  List.filterMap fun | .new n => some n | _ => none
+def nonces : List (Act M) → List ℕ
+  | [] => []
+  | .new n :: t => n :: nonces t
+  | _ :: t => nonces t
 
 /-- A process is a set of traces. -/
 abbrev Proc (M : Type) := Set (List (Act M))
@@ -231,6 +239,31 @@ theorem Merges.split {f : ℕ → List (Act M)} {t : List (Act M)} (h : Merges f
       | succ n' =>
         exact ⟨t', by simpa using h'.comm (i := n) (j := n') c m (by omega), by simpa using h₀⟩
 
+/-! ## Names created by a merge -/
+
+/-- The names a component creates are among those of the merged trace, in order. -/
+theorem Merges.nonces_sublist {f : ι → List (Act M)} {t : List (Act M)} (h : Merges f t)
+    (i : ι) : (nonces (f i)).Sublist (nonces t) := by
+  induction h with
+  | nil => simp [nonces]
+  | act j a _ ih =>
+    by_cases hi : i = j
+    · subst hi
+      rw [Function.update_self]
+      cases a <;> simp [nonces, ih]
+    · rw [Function.update_of_ne hi]
+      exact ih.trans (by cases a <;> simp [nonces])
+  | @comm f t i' j c m hij _ ih =>
+    have : nonces (Function.update (Function.update f i' (.out c m :: f i')) j
+        (.inp c m :: f j) i) = nonces (f i) := by
+      by_cases hj : i = j
+      · subst hj; simp [nonces]
+      · rw [Function.update_of_ne hj]
+        by_cases hi : i = i'
+        · subst hi; simp [nonces]
+        · rw [Function.update_of_ne hi]
+    rw [this]; exact ih
+
 /-! ## Process trace constructors -/
 
 namespace Proc
@@ -247,14 +280,16 @@ abbrev out (c m : M) (P : Proc M) : Proc M := act (.out c m) P
 /-- `in(c, x); P x` -/
 abbrev inp (c : M) (P : M → Proc M) : Proc M := ⋃ m, act (.inp c m) (P m)
 
-/-- `new a; P a` -/
-abbrev new [Names M] (P : M → Proc M) : Proc M := ⋃ n, act (.new n) (P (Names.nonce n))
+/-- `new a; P a`, where `a` is not created again in `P a`. -/
+abbrev new [Names M] (P : M → Proc M) : Proc M :=
+  ⋃ n, act (.new n) {t ∈ P (Names.nonce n) | n ∉ nonces t}
 
 /-- `event e; P` -/
 abbrev event (e : M) (P : Proc M) : Proc M := act (.event e) P
 
-/-- The processes `P i` in parallel. -/
-abbrev merge (P : ι → Proc M) : Proc M := {t | ∃ f, (∀ i, f i ∈ P i) ∧ Merges f t}
+/-- The processes `P i` in parallel, creating distinct names. -/
+abbrev merge (P : ι → Proc M) : Proc M :=
+  {t | (∃ f, (∀ i, f i ∈ P i) ∧ Merges f t) ∧ (nonces t).Nodup}
 
 /-- `P | Q` -/
 abbrev par (P Q : Proc M) : Proc M := merge ![P, Q]
@@ -282,12 +317,13 @@ example (c m : M) :
 theorem bang_eq (P : Proc M) : bang P = par P (bang P) := by
   ext t
   constructor
-  · rintro ⟨f, hf, h⟩
+  · rintro ⟨⟨f, hf, h⟩, hn⟩
     obtain ⟨t', h', h₀⟩ := h.split
-    exact ⟨![f 0, t'], Fin.forall_fin_two.2 ⟨hf 0, f ∘ Nat.succ, fun n => hf _, h'⟩, h₀⟩
-  · rintro ⟨g, hg, h⟩
-    obtain ⟨h', hh', hm⟩ := hg 1
-    exact ⟨cons (g 0) h', fun n => (match n with | 0 => hg 0 | n + 1 => hh' n), h.join hm⟩
+    exact ⟨⟨![f 0, t'], Fin.forall_fin_two.2 ⟨hf 0, ⟨f ∘ Nat.succ, fun n => hf _, h'⟩,
+      hn.sublist (h₀.nonces_sublist 1)⟩, h₀⟩, hn⟩
+  · rintro ⟨⟨g, hg, h⟩, hn⟩
+    obtain ⟨⟨h', hh', hm⟩, -⟩ := hg 1
+    exact ⟨⟨cons (g 0) h', fun n => (match n with | 0 => hg 0 | n + 1 => hh' n), h.join hm⟩, hn⟩
 
 end Proc
 
@@ -351,9 +387,25 @@ theorem Merges.out_of_inp {f : ι → List (Act M)} {w : List (Act M)} {c m : M}
       obtain ⟨i', hi', h'⟩ := ih hw hm'
       exact ⟨i', hi', hg i' h'⟩
 
-theorem Merges.out_of_inp₂ {u v w : List (Act M)} {c m : M}
-    (h : Merges ![u, v] w) (hw : ∀ a ∈ w, ¬ a.Unfinished) (hm : Act.inp c m ∈ v) :
-    Act.out c m ∈ u := by simpa using h.out_of_inp hw (k := 1) hm
+theorem Merges.out_of_inp₂ {f : Fin 2 → List (Act M)} {w : List (Act M)} {c m : M}
+    (h : Merges f w) (hw : ∀ a ∈ w, ¬ a.Unfinished) (hm : Act.inp c m ∈ f 1) :
+    Act.out c m ∈ f 0 := by simpa using h.out_of_inp hw (k := 1) hm
+
+/-- Every action of the merged trace was performed by some component. -/
+theorem Merges.mem_of_mem {f : ι → List (Act M)} {w : List (Act M)} (h : Merges f w) {a : Act M}
+    (ha : a ∈ w) : ∃ i, a ∈ f i := by
+  induction h with
+  | nil => simp at ha
+  | act i b _ ih =>
+    rcases List.mem_cons.1 ha with rfl | ha
+    · exact ⟨i, by simp⟩
+    · obtain ⟨i', h'⟩ := ih ha
+      exact ⟨i', subset_update (List.subset_cons_self _ _) i' h'⟩
+  | comm c m hij _ ih =>
+    obtain ⟨i', h'⟩ := ih ha
+    exact ⟨i', subset_update
+      (by rw [Function.update_of_ne hij.symm]; exact List.subset_cons_self _ _) i'
+      (subset_update (List.subset_cons_self _ _) i' h')⟩
 
 /-! ## Process monad constructors -/
 
