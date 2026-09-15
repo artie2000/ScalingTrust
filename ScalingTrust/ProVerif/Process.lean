@@ -1,10 +1,7 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import Mathlib.Control.Monad.Cont
-import Mathlib.Data.Fin.VecNotation
-import Mathlib.Data.Set.Lattice
-import Mathlib.Logic.Embedding.Basic
+import Mathlib
 
 /-!
 # Processes
@@ -59,6 +56,12 @@ inductive Act.Unfinished : Act M → Prop
   | out (c m : M) : (Act.out c m).Unfinished
   | inp (c m : M) : (Act.inp c m).Unfinished
 
+/-- A trace is a list of actions. -/
+abbrev Trace (M : Type) := List (Act M)
+
+/-- A trace is closed if it has no unfinished actions. -/
+abbrev Closed (t : Trace M) : Prop := ∀ a ∈ t, ¬ a.Unfinished
+
 /-- The nonce indices created in a trace. -/
 def nonces : List (Act M) → List ℕ
   | [] => []
@@ -73,175 +76,184 @@ theorem nonces_sublist {l₁ l₂ : List (Act M)} (h : l₁.Sublist l₂) :
   | cons_cons a _ ih => cases a <;> simp [nonces, ih]
 
 /-- A process is a set of traces. -/
-abbrev Proc (M : Type) := Set (List (Act M))
+abbrev Proc (M : Type) := Set (Trace M)
 
 /-! ## Communication -/
 
-/-- `(i, a)` can communicate with the head of `s`: `a` is an output and the head a
-matching input of another component. -/
-def Meets (i : ι) (a : Act M) : List (ι × Act M) → Prop
-  | (j, .inp c m) :: _ => i ≠ j ∧ a = .out c m
-  | _ => False
-
-/-- The traces obtained from a tagged interleaving by letting adjacent outputs and
-inputs of different components meet. -/
-def comms : List (ι × Act M) → Set (List (Act M))
+/-- The traces obtained from a tagged interleaving by letting an output immediately
+followed by a matching input of a different component meet in a communication. -/
+def comms : List (ι × Act M) → Set (Trace M)
   | [] => {[]}
-  | (i, a) :: s => (a :: ·) '' comms s ∪ {t ∈ comms s.tail | Meets i a s}
-termination_by s => s.length
+  | (i, .out c m) :: (j, .inp c' m') :: s =>
+      (Act.out c m :: ·) '' comms ((j, .inp c' m') :: s) ∪
+        {t ∈ comms s | i ≠ j ∧ c = c' ∧ m = m'}
+  | (_, a) :: s => (a :: ·) '' comms s
 
-@[simp] theorem comms_nil : comms ([] : List (ι × Act M)) = {[]} := by rw [comms]
-
-@[simp] theorem comms_cons (i : ι) (a : Act M) (s : List (ι × Act M)) :
-    comms ((i, a) :: s) = (a :: ·) '' comms s ∪ {t ∈ comms s.tail | Meets i a s} := by
-  rw [comms]
-
-theorem mem_comms_cons {s : List (ι × Act M)} {t : List (Act M)} (h : t ∈ comms s) (i : ι)
+theorem mem_comms_cons {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s) (i : ι)
     (a : Act M) : a :: t ∈ comms ((i, a) :: s) := by
-  rw [comms_cons]
-  exact Or.inl ⟨t, h, rfl⟩
+  rcases s with _ | ⟨⟨j, b⟩, s⟩ <;> cases a <;> (try cases b) <;>
+    first | exact Or.inl ⟨t, h, rfl⟩ | exact ⟨t, h, rfl⟩
 
-theorem mem_comms_pair {s : List (ι × Act M)} {t : List (Act M)} {i j : ι} (hij : i ≠ j) (c m : M)
+theorem mem_comms_pair {s : List (ι × Act M)} {t : Trace M} {i j : ι} (hij : i ≠ j) (c m : M)
     (h : t ∈ comms s) : t ∈ comms ((i, .out c m) :: (j, .inp c m) :: s) := by
-  rw [comms_cons]
-  exact Or.inr ⟨h, by simp [Meets, hij]⟩
+  rw [comms.eq_2]
+  exact Or.inr ⟨h, hij, rfl, rfl⟩
 
 /-- Communications happen within a tagged trace, so tagged traces concatenate. -/
-theorem comms_append {r q : List (ι × Act M)} {u v : List (Act M)} (hu : u ∈ comms r)
+theorem comms_append {r q : List (ι × Act M)} {u v : Trace M} (hu : u ∈ comms r)
     (hv : v ∈ comms q) : u ++ v ∈ comms (r ++ q) := by
   induction r using comms.induct generalizing u with
   | case1 =>
-    simp only [comms_nil, Set.mem_singleton_iff] at hu
-    subst hu
+    obtain rfl : u = [] := hu
     simpa
-  | case2 i a r ih₁ ih₂ =>
-    rw [comms_cons] at hu
-    rcases hu with ⟨u₀, hu₀, rfl⟩ | ⟨hu, hm⟩
-    · exact mem_comms_cons (ih₁ hu₀) i a
-    · rcases r with _ | ⟨⟨j, b⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        exact mem_comms_pair hij c m (ih₂ hu)
+  | case2 i c m j c' m' r ih₁ ih₂ =>
+    rw [comms.eq_2] at hu
+    rcases hu with ⟨u₀, hu₀, rfl⟩ | ⟨hu, hij, rfl, rfl⟩
+    · exact mem_comms_cons (ih₁ hu₀) i _
+    · exact mem_comms_pair hij _ _ (ih₂ hu)
+  | case3 i a r hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at hu
+    obtain ⟨u₀, hu₀, rfl⟩ := hu
+    exact mem_comms_cons (ih hu₀) i a
 
 /-- Retagging with an injection preserves communication. -/
 theorem comms_retag {κ : Type} {φ : ι → κ} (hφ : Function.Injective φ)
-    {s : List (ι × Act M)} {t : List (Act M)} (h : t ∈ comms s) :
+    {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s) :
     t ∈ comms (s.map (Prod.map φ id)) := by
   induction s using comms.induct generalizing t with
-  | case1 => simpa using h
-  | case2 i a s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hm⟩
-    · exact mem_comms_cons (ih₁ h₀) (φ i) a
-    · rcases s with _ | ⟨⟨j, b⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        exact mem_comms_pair (hφ.ne hij) c m (ih₂ h₀)
+  | case1 => simpa [comms] using h
+  | case2 i c m j c' m' s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hij, rfl, rfl⟩
+    · exact mem_comms_cons (ih₁ h₀) (φ i) _
+    · exact mem_comms_pair (hφ.ne hij) _ _ (ih₂ h₀)
+  | case3 i a s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    exact mem_comms_cons (ih h₀) (φ i) a
 
 /-- A trace `a :: t` arises from some communications, then `a`, then `t`. -/
-theorem peel {s : List (ι × Act M)} {a : Act M} {t : List (Act M)} (h : a :: t ∈ comms s) :
+theorem peel {s : List (ι × Act M)} {a : Act M} {t : Trace M} (h : a :: t ∈ comms s) :
     ∃ p i s', [] ∈ comms p ∧ s = p ++ (i, a) :: s' ∧ t ∈ comms s' := by
   induction s using comms.induct generalizing t with
-  | case1 => simp at h
-  | case2 i b s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, ht⟩ | ⟨h₀, hm⟩
+  | case1 => simp [comms] at h
+  | case2 i c m j c' m' s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, ht⟩ | ⟨h₀, hij, rfl, rfl⟩
     · obtain ⟨rfl, rfl⟩ := List.cons.inj ht
-      exact ⟨[], i, s, by simp, rfl, h₀⟩
-    · rcases s with _ | ⟨⟨j, b'⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b' with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        obtain ⟨p, i', s', hp, hr, ht'⟩ := ih₂ h₀
-        simp only [List.tail_cons] at hr
-        subst hr
-        exact ⟨(i, .out c m) :: (j, .inp c m) :: p, i', s', mem_comms_pair hij c m hp, rfl, ht'⟩
+      exact ⟨[], i, _, by simp [comms], rfl, h₀⟩
+    · obtain ⟨p, i', s', hp, rfl, ht'⟩ := ih₂ h₀
+      exact ⟨(i, .out c m) :: (j, .inp c m) :: p, i', s', mem_comms_pair hij _ _ hp, rfl, ht'⟩
+  | case3 i b s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, ht⟩ := h
+    obtain ⟨rfl, rfl⟩ := List.cons.inj ht
+    exact ⟨[], i, s, by simp [comms], rfl, h₀⟩
 
 /-- Communication removes only offers, so the names created are those of the interleaving. -/
-theorem nonces_of_mem_comms {s : List (ι × Act M)} {t : List (Act M)} (h : t ∈ comms s) :
+theorem nonces_of_mem_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s) :
     nonces t = nonces (s.map Prod.snd) := by
   induction s using comms.induct generalizing t with
   | case1 =>
-    simp only [comms_nil, Set.mem_singleton_iff] at h
-    subst h
+    obtain rfl : t = [] := h
     rfl
-  | case2 i a s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hm⟩
-    · cases a <;> simp [nonces, ih₁ h₀]
-    · rcases s with _ | ⟨⟨j, b⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨-, rfl⟩ := hm
-        simpa [nonces] using ih₂ h₀
+  | case2 i c m j c' m' s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, -, rfl, rfl⟩
+    · simpa [nonces] using ih₁ h₀
+    · simpa [nonces] using ih₂ h₀
+  | case3 i a s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    cases a <;> simp [nonces, ih h₀]
 
 /-- Every action of the trace was performed by some component. -/
-theorem mem_of_mem_comms {s : List (ι × Act M)} {t : List (Act M)} (h : t ∈ comms s) {a : Act M}
+theorem mem_of_mem_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s) {a : Act M}
     (ha : a ∈ t) : ∃ i, (i, a) ∈ s := by
   induction s using comms.induct generalizing t with
   | case1 =>
-    simp only [comms_nil, Set.mem_singleton_iff] at h
-    subst h
+    obtain rfl : t = [] := h
     simp at ha
-  | case2 i b s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, -⟩
+  | case2 i c m j c' m' s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, -, rfl, rfl⟩
     · rcases List.mem_cons.1 ha with rfl | ha
       · exact ⟨i, List.mem_cons_self⟩
       · obtain ⟨k, hk⟩ := ih₁ h₀ ha
         exact ⟨k, List.mem_cons_of_mem _ hk⟩
     · obtain ⟨k, hk⟩ := ih₂ h₀ ha
-      exact ⟨k, List.mem_cons_of_mem _ (List.mem_of_mem_tail hk)⟩
+      exact ⟨k, by simp [hk]⟩
+  | case3 i b s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    rcases List.mem_cons.1 ha with rfl | ha
+    · exact ⟨i, List.mem_cons_self⟩
+    · obtain ⟨k, hk⟩ := ih h₀ ha
+      exact ⟨k, List.mem_cons_of_mem _ hk⟩
 
 /-- If no action of the trace is unfinished, every message received by one component
 was sent by another. -/
-theorem out_of_inp_comms {s : List (ι × Act M)} {t : List (Act M)} (h : t ∈ comms s)
-    (hw : ∀ a ∈ t, ¬ a.Unfinished) {k : ι} {c m : M} (hk : (k, Act.inp c m) ∈ s) :
+theorem out_of_inp_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s)
+    (hc : Closed t) {k : ι} {c m : M} (hk : (k, Act.inp c m) ∈ s) :
     ∃ i, i ≠ k ∧ (i, Act.out c m) ∈ s := by
   induction s using comms.induct generalizing t with
   | case1 => simp at hk
-  | case2 i a s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hm⟩
+  | case2 i c₁ m₁ j c₂ m₂ s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hij, rfl, rfl⟩
     · rcases List.mem_cons.1 hk with hk | hk
-      · obtain ⟨rfl, rfl⟩ := Prod.mk.inj hk
-        exact (hw _ List.mem_cons_self (.inp _ _)).elim
-      · obtain ⟨i', hi', h'⟩ :=
-          ih₁ h₀ (fun b hb => hw b (List.mem_cons_of_mem _ hb)) hk
+      · cases hk
+      · obtain ⟨i', hi', h'⟩ := ih₁ h₀ (fun b hb => hc b (List.mem_cons_of_mem _ hb)) hk
         exact ⟨i', hi', List.mem_cons_of_mem _ h'⟩
-    · rcases s with _ | ⟨⟨j, b⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c', m'⟩ | ⟨c', m'⟩ | n | e | m' <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        rcases List.mem_cons.1 hk with hk | hk
-        · cases hk
-        · rcases List.mem_cons.1 hk with hk | hk
-          · obtain ⟨rfl, h⟩ := Prod.mk.inj hk
-            obtain ⟨rfl, rfl⟩ := Act.inp.inj h
-            exact ⟨i, hij, List.mem_cons_self⟩
-          · obtain ⟨i', hi', h'⟩ := ih₂ h₀ hw hk
-            exact ⟨i', hi', List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h')⟩
+    · rcases List.mem_cons.1 hk with hk | hk
+      · cases hk
+      · rcases List.mem_cons.1 hk with hk | hk
+        · obtain ⟨rfl, h⟩ := Prod.mk.inj hk
+          obtain ⟨rfl, rfl⟩ := Act.inp.inj h
+          exact ⟨i, hij, List.mem_cons_self⟩
+        · obtain ⟨i', hi', h'⟩ := ih₂ h₀ hc hk
+          exact ⟨i', hi', by simp [h']⟩
+  | case3 i a s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    rcases List.mem_cons.1 hk with hk | hk
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj hk
+      exact (hc _ List.mem_cons_self (.inp _ _)).elim
+    · obtain ⟨i', hi', h'⟩ := ih h₀ (fun b hb => hc b (List.mem_cons_of_mem _ hb)) hk
+      exact ⟨i', hi', List.mem_cons_of_mem _ h'⟩
 
 /-! ## Interleaving -/
 
 variable [DecidableEq ι]
 
-/-- `s` interleaves the traces `f i`, each action tagged with its component:
-every component reads its own trace back off `s`. -/
-def Interleaves (f : ι → List (Act M)) (s : List (ι × Act M)) : Prop :=
-  ∀ i, (s.filter (·.1 = i)).map Prod.snd = f i
+/-- The trace of component `i` in the tagged trace `s`. -/
+def proj (i : ι) (s : List (ι × Act M)) : Trace M := (s.filter (·.1 = i)).map Prod.snd
 
-theorem Interleaves.mem_iff {f : ι → List (Act M)} {s : List (ι × Act M)} (h : Interleaves f s)
-    {i : ι} {a : Act M} : (i, a) ∈ s ↔ a ∈ f i := by
-  rw [← h i]
-  simp only [List.mem_map, List.mem_filter, decide_eq_true_eq]
+@[simp] theorem proj_nil (i : ι) : proj i ([] : List (ι × Act M)) = [] := rfl
+
+@[simp] theorem proj_cons (i j : ι) (a : Act M) (s : List (ι × Act M)) :
+    proj i ((j, a) :: s) = if j = i then a :: proj i s else proj i s := by
+  by_cases h : j = i <;> simp [proj, h]
+
+@[simp] theorem proj_append (i : ι) (s s' : List (ι × Act M)) :
+    proj i (s ++ s') = proj i s ++ proj i s' := by
+  simp [proj, List.filter_append]
+
+theorem mem_proj {i : ι} {a : Act M} {s : List (ι × Act M)} : a ∈ proj i s ↔ (i, a) ∈ s := by
+  simp only [proj, List.mem_map, List.mem_filter, decide_eq_true_eq]
   constructor
-  · intro hs
-    exact ⟨(i, a), ⟨hs, rfl⟩, rfl⟩
   · rintro ⟨x, ⟨hs, rfl⟩, rfl⟩
     exact hs
+  · intro hs
+    exact ⟨(i, a), ⟨hs, rfl⟩, rfl⟩
+
+/-- `s` interleaves the traces `f i`, each action tagged with its component:
+every component reads its own trace back off `s`. -/
+def Interleaves (f : ι → Trace M) (s : List (ι × Act M)) : Prop := ∀ i, proj i s = f i
+
+theorem Interleaves.mem_iff {f : ι → Trace M} {s : List (ι × Act M)} (h : Interleaves f s)
+    {i : ι} {a : Act M} : (i, a) ∈ s ↔ a ∈ f i := by
+  rw [← h i, mem_proj]
 
 /-! ## Process trace constructors -/
 
@@ -324,15 +336,14 @@ theorem dec_sublist (s : List (ℕ × Act M)) : ((dec s).map Prod.snd).Sublist (
     | zero => exact ih.trans (List.sublist_cons_self _ _)
     | succ n => exact ih.cons_cons a
 
-theorem filter_dec (s : List (ℕ × Act M)) (n : ℕ) :
-    ((dec s).filter (·.1 = n)).map Prod.snd = (s.filter (·.1 = n + 1)).map Prod.snd := by
+theorem proj_dec (s : List (ℕ × Act M)) (n : ℕ) : proj n (dec s) = proj (n + 1) s := by
   induction s with
   | nil => rfl
   | cons x s ih =>
     obtain ⟨i, a⟩ := x
     cases i with
-    | zero => simpa [List.filter_cons] using ih
-    | succ k => by_cases hk : k = n <;> simpa [List.filter_cons, hk] using ih
+    | zero => simpa using ih
+    | succ k => by_cases hk : k = n <;> simp [hk, ih]
 
 /-- Shift all tags up. -/
 def inc : List (ℕ × Act M) → List (ℕ × Act M) := List.map (Prod.map Nat.succ id)
@@ -342,130 +353,135 @@ def inc : List (ℕ × Act M) → List (ℕ × Act M) := List.map (Prod.map Nat.
 @[simp] theorem inc_cons (i : ℕ) (a : Act M) (s : List (ℕ × Act M)) :
     inc ((i, a) :: s) = (i + 1, a) :: inc s := rfl
 
-theorem filter_inc_zero (s : List (ℕ × Act M)) : ((inc s).filter (·.1 = 0)).map Prod.snd = [] := by
+theorem proj_inc_zero (s : List (ℕ × Act M)) : proj 0 (inc s) = [] := by
   induction s with
   | nil => rfl
   | cons x s ih =>
     obtain ⟨i, a⟩ := x
-    simpa [List.filter_cons] using ih
+    simpa using ih
 
-theorem filter_inc_succ (s : List (ℕ × Act M)) (n : ℕ) :
-    ((inc s).filter (·.1 = n + 1)).map Prod.snd = (s.filter (·.1 = n)).map Prod.snd := by
+theorem proj_inc_succ (s : List (ℕ × Act M)) (n : ℕ) : proj (n + 1) (inc s) = proj n s := by
   induction s with
   | nil => rfl
   | cons x s ih =>
     obtain ⟨i, a⟩ := x
-    by_cases hk : i = n <;> simpa [List.filter_cons, hk] using ih
+    by_cases hk : i = n <;> simp [hk, ih]
 
-/-- Splitting off component `0`: the other components produce `t'` among themselves,
-and `t` is a two-component merge of component `0` with `t'`. -/
-theorem split {s : List (ℕ × Act M)} {t : List (Act M)} (h : t ∈ comms s) :
-    ∃ (t' : List (Act M)) (s₂ : List (Fin 2 × Act M)), t' ∈ comms (dec s) ∧ t ∈ comms s₂ ∧
-      (s₂.filter (·.1 = 0)).map Prod.snd = (s.filter (·.1 = 0)).map Prod.snd ∧
-      (s₂.filter (·.1 = 1)).map Prod.snd = t' := by
+/-- `t` splits as component `0` of `s` against the trace `t'` that the other components
+of `s` produce among themselves. -/
+def Splits (s : List (ℕ × Act M)) (t : Trace M) : Prop :=
+  ∃ (t' : Trace M) (s₂ : List (Fin 2 × Act M)), t' ∈ comms (dec s) ∧ t ∈ comms s₂ ∧
+    proj 0 s₂ = proj 0 s ∧ proj 1 s₂ = t'
+
+theorem Splits.cons {s : List (ℕ × Act M)} {t : Trace M} (h : Splits s t) (i : ℕ) (a : Act M) :
+    Splits ((i, a) :: s) (a :: t) := by
+  obtain ⟨t', s₂, h1, h2, h3, h4⟩ := h
+  cases i with
+  | zero =>
+    exact ⟨t', (0, a) :: s₂, by simpa using h1, mem_comms_cons h2 0 a, by simpa using h3,
+      by simpa using h4⟩
+  | succ n =>
+    exact ⟨a :: t', (1, a) :: s₂, by simpa using mem_comms_cons h1 n a, mem_comms_cons h2 1 a,
+      by simpa using h3, by simpa using h4⟩
+
+theorem Splits.pair {s : List (ℕ × Act M)} {t : Trace M} (h : Splits s t) {i j : ℕ} (hij : i ≠ j)
+    (c m : M) : Splits ((i, .out c m) :: (j, .inp c m) :: s) t := by
+  obtain ⟨t', s₂, h1, h2, h3, h4⟩ := h
+  rcases i with _ | n <;> rcases j with _ | n'
+  · exact absurd rfl hij
+  · exact ⟨.inp c m :: t', (0, .out c m) :: (1, .inp c m) :: s₂,
+      by simpa using mem_comms_cons h1 n' (.inp c m), mem_comms_pair (by decide) c m h2,
+      by simpa using h3, by simpa using h4⟩
+  · exact ⟨.out c m :: t', (1, .out c m) :: (0, .inp c m) :: s₂,
+      by simpa using mem_comms_cons h1 n (.out c m), mem_comms_pair (by decide) c m h2,
+      by simpa using h3, by simpa using h4⟩
+  · exact ⟨t', s₂, by simpa using mem_comms_pair (by omega : n ≠ n') c m h1, h2,
+      by simpa using h3, by simpa using h4⟩
+
+/-- Splitting off component `0`. -/
+theorem split {s : List (ℕ × Act M)} {t : Trace M} (h : t ∈ comms s) : Splits s t := by
   induction s using comms.induct generalizing t with
   | case1 =>
-    simp only [comms_nil, Set.mem_singleton_iff] at h
-    subst h
-    exact ⟨[], [], by simp, by simp, rfl, rfl⟩
-  | case2 i a s ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hm⟩
-    · obtain ⟨t', s₂, h1, h2, h3, h4⟩ := ih₁ h₀
-      cases i with
-      | zero =>
-        exact ⟨t', (0, a) :: s₂, by simpa using h1, mem_comms_cons h2 0 a,
-          by simpa [List.filter_cons] using h3, by simpa [List.filter_cons] using h4⟩
-      | succ n =>
-        exact ⟨a :: t', (1, a) :: s₂, by simpa using mem_comms_cons h1 n a,
-          mem_comms_cons h2 1 a, by simpa [List.filter_cons] using h3,
-          by simpa [List.filter_cons] using h4⟩
-    · rcases s with _ | ⟨⟨j, b⟩, r⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        obtain ⟨t', s₂, h1, h2, h3, h4⟩ := ih₂ h₀
-        cases i with
-        | zero =>
-          cases j with
-          | zero => exact absurd rfl hij
-          | succ n =>
-            exact ⟨.inp c m :: t', (0, .out c m) :: (1, .inp c m) :: s₂,
-              by simpa using mem_comms_cons h1 n (.inp c m),
-              mem_comms_pair (by decide) c m h2, by simpa [List.filter_cons] using h3,
-              by simpa [List.filter_cons] using h4⟩
-        | succ n =>
-          cases j with
-          | zero =>
-            exact ⟨.out c m :: t', (1, .out c m) :: (0, .inp c m) :: s₂,
-              by simpa using mem_comms_cons h1 n (.out c m),
-              mem_comms_pair (by decide) c m h2, by simpa [List.filter_cons] using h3,
-              by simpa [List.filter_cons] using h4⟩
-          | succ n' =>
-            exact ⟨t', s₂, by simpa using mem_comms_pair (by omega : n ≠ n') c m h1, h2,
-              by simpa [List.filter_cons] using h3, by simpa [List.filter_cons] using h4⟩
+    obtain rfl : t = [] := h
+    exact ⟨[], [], by simp [comms], by simp [comms], rfl, rfl⟩
+  | case2 i c m j c' m' s ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hij, rfl, rfl⟩
+    · exact (ih₁ h₀).cons i _
+    · exact (ih₂ h₀).pair hij _ _
+  | case3 i a s hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    exact (ih h₀).cons i a
+
+/-- The components of `s'` can be merged into component `1` of `s₂`, producing `t`. -/
+def Joins (s₂ : List (Fin 2 × Act M)) (s' : List (ℕ × Act M)) (t : Trace M) : Prop :=
+  ∃ s : List (ℕ × Act M), t ∈ comms s ∧ proj 0 s = proj 0 s₂ ∧ ∀ n, proj (n + 1) s = proj n s'
+
+theorem Joins.cons₀ {s₂ : List (Fin 2 × Act M)} {s' : List (ℕ × Act M)} {t : Trace M}
+    (h : Joins s₂ s' t) (a : Act M) : Joins ((0, a) :: s₂) s' (a :: t) := by
+  obtain ⟨s, hs1, hs2, hs3⟩ := h
+  exact ⟨(0, a) :: s, mem_comms_cons hs1 0 a, by simpa using hs2, fun n => by simpa using hs3 n⟩
+
+theorem Joins.cons₁ {s₂ : List (Fin 2 × Act M)} {s'' : List (ℕ × Act M)} {t : Trace M}
+    (h : Joins s₂ s'' t) {p : List (ℕ × Act M)} (hp : [] ∈ comms p) (k : ℕ) (a : Act M) :
+    Joins ((1, a) :: s₂) (p ++ (k, a) :: s'') (a :: t) := by
+  obtain ⟨s, hs1, hs2, hs3⟩ := h
+  refine ⟨inc p ++ (k + 1, a) :: s,
+    comms_append (comms_retag Nat.succ_injective hp) (mem_comms_cons hs1 (k + 1) a),
+    by simpa [proj_inc_zero] using hs2, fun n => ?_⟩
+  by_cases hk : k = n <;> simpa [proj_inc_succ, hk] using hs3 n
+
+theorem Joins.pair₀₁ {s₂ : List (Fin 2 × Act M)} {s'' : List (ℕ × Act M)} {t : Trace M}
+    (h : Joins s₂ s'' t) {p : List (ℕ × Act M)} (hp : [] ∈ comms p) (k : ℕ) (c m : M) :
+    Joins ((0, .out c m) :: (1, .inp c m) :: s₂) (p ++ (k, .inp c m) :: s'') t := by
+  obtain ⟨s, hs1, hs2, hs3⟩ := h
+  refine ⟨inc p ++ (0, .out c m) :: (k + 1, .inp c m) :: s,
+    comms_append (comms_retag Nat.succ_injective hp) (mem_comms_pair (by omega) c m hs1),
+    by simpa [proj_inc_zero] using hs2, fun n => ?_⟩
+  by_cases hk : k = n <;> simpa [proj_inc_succ, hk] using hs3 n
+
+theorem Joins.pair₁₀ {s₂ : List (Fin 2 × Act M)} {s'' : List (ℕ × Act M)} {t : Trace M}
+    (h : Joins s₂ s'' t) {p : List (ℕ × Act M)} (hp : [] ∈ comms p) (k : ℕ) (c m : M) :
+    Joins ((1, .out c m) :: (0, .inp c m) :: s₂) (p ++ (k, .out c m) :: s'') t := by
+  obtain ⟨s, hs1, hs2, hs3⟩ := h
+  refine ⟨inc p ++ (k + 1, .out c m) :: (0, .inp c m) :: s,
+    comms_append (comms_retag Nat.succ_injective hp) (mem_comms_pair (by omega) c m hs1),
+    by simpa [proj_inc_zero] using hs2, fun n => ?_⟩
+  by_cases hk : k = n <;> simpa [proj_inc_succ, hk] using hs3 n
+
+theorem join_cons {s₂ : List (Fin 2 × Act M)} {t : Trace M} {i : Fin 2} {a : Act M}
+    (ih : ∀ s', proj 1 s₂ ∈ comms s' → Joins s₂ s' t) {s' : List (ℕ × Act M)}
+    (h' : proj 1 ((i, a) :: s₂) ∈ comms s') : Joins ((i, a) :: s₂) s' (a :: t) := by
+  fin_cases i
+  · exact (ih s' (by simpa using h')).cons₀ a
+  · obtain ⟨p, k, s'', hp, rfl, ht''⟩ := peel (by simpa using h' : a :: proj 1 s₂ ∈ comms s')
+    exact (ih s'' ht'').cons₁ hp k a
 
 /-- Merging the components of `s'` into component `1` of the two-component trace `s₂`. -/
-theorem join {s₂ : List (Fin 2 × Act M)} {t : List (Act M)} (h : t ∈ comms s₂)
-    {s' : List (ℕ × Act M)} (h' : (s₂.filter (·.1 = 1)).map Prod.snd ∈ comms s') :
-    ∃ s : List (ℕ × Act M), t ∈ comms s ∧
-      (s.filter (·.1 = 0)).map Prod.snd = (s₂.filter (·.1 = 0)).map Prod.snd ∧
-      ∀ n, (s.filter (·.1 = n + 1)).map Prod.snd = (s'.filter (·.1 = n)).map Prod.snd := by
-  have two : ∀ j : Fin 2, j = 0 ∨ j = 1 := Fin.forall_fin_two.2 ⟨.inl rfl, .inr rfl⟩
+theorem join {s₂ : List (Fin 2 × Act M)} {t : Trace M} (h : t ∈ comms s₂)
+    {s' : List (ℕ × Act M)} (h' : proj 1 s₂ ∈ comms s') : Joins s₂ s' t := by
   induction s₂ using comms.induct generalizing t s' with
   | case1 =>
-    simp only [comms_nil, Set.mem_singleton_iff] at h
-    subst h
-    simp only [List.filter_nil, List.map_nil] at h'
-    exact ⟨inc s', comms_retag Nat.succ_injective h', by simp [filter_inc_zero],
-      filter_inc_succ s'⟩
-  | case2 i a s₂ ih₁ ih₂ =>
-    rw [comms_cons] at h
-    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hm⟩
-    · rcases two i with rfl | rfl
-      · have h' : (s₂.filter (·.1 = 1)).map Prod.snd ∈ comms s' := by
-          simpa [List.filter_cons] using h'
-        obtain ⟨s, hs1, hs2, hs3⟩ := ih₁ h₀ h'
-        exact ⟨(0, a) :: s, mem_comms_cons hs1 0 a, by simpa [List.filter_cons] using hs2,
-          fun n => by simpa [List.filter_cons] using hs3 n⟩
-      · have h' : a :: (s₂.filter (·.1 = 1)).map Prod.snd ∈ comms s' := by
-          simpa [List.filter_cons] using h'
-        obtain ⟨p, k, s'', hp, rfl, ht''⟩ := peel h'
-        obtain ⟨s, hs1, hs2, hs3⟩ := ih₁ h₀ ht''
-        refine ⟨inc p ++ (k + 1, a) :: s,
-          comms_append (comms_retag Nat.succ_injective hp) (mem_comms_cons hs1 (k + 1) a),
-          by simpa [List.filter_append, List.filter_cons, filter_inc_zero] using hs2, fun n => ?_⟩
-        by_cases hk : k = n <;>
-          simpa [List.filter_append, List.filter_cons, filter_inc_succ, hk] using hs3 n
-    · rcases s₂ with _ | ⟨⟨j, b⟩, r₂⟩
-      · simp [Meets] at hm
-      · rcases b with ⟨c, m⟩ | ⟨c, m⟩ | n | e | m <;> simp [Meets] at hm
-        obtain ⟨hij, rfl⟩ := hm
-        rcases two i with rfl | rfl <;> rcases two j with rfl | rfl
-        · exact absurd rfl hij
-        · have h' : .inp c m :: (r₂.filter (·.1 = 1)).map Prod.snd ∈ comms s' := by
-            simpa [List.filter_cons] using h'
-          obtain ⟨p, k, s'', hp, rfl, ht''⟩ := peel h'
-          obtain ⟨s, hs1, hs2, hs3⟩ := ih₂ h₀ ht''
-          refine ⟨inc p ++ (0, .out c m) :: (k + 1, .inp c m) :: s,
-            comms_append (comms_retag Nat.succ_injective hp)
-              (mem_comms_pair (by omega) c m hs1),
-            by simpa [List.filter_append, List.filter_cons, filter_inc_zero] using hs2,
-            fun n => ?_⟩
-          by_cases hk : k = n <;>
-            simpa [List.filter_append, List.filter_cons, filter_inc_succ, hk] using hs3 n
-        · have h' : .out c m :: (r₂.filter (·.1 = 1)).map Prod.snd ∈ comms s' := by
-            simpa [List.filter_cons] using h'
-          obtain ⟨p, k, s'', hp, rfl, ht''⟩ := peel h'
-          obtain ⟨s, hs1, hs2, hs3⟩ := ih₂ h₀ ht''
-          refine ⟨inc p ++ (k + 1, .out c m) :: (0, .inp c m) :: s,
-            comms_append (comms_retag Nat.succ_injective hp)
-              (mem_comms_pair (by omega) c m hs1),
-            by simpa [List.filter_append, List.filter_cons, filter_inc_zero] using hs2,
-            fun n => ?_⟩
-          by_cases hk : k = n <;>
-            simpa [List.filter_append, List.filter_cons, filter_inc_succ, hk] using hs3 n
-        · exact absurd rfl hij
+    obtain rfl : t = [] := h
+    exact ⟨inc s', comms_retag Nat.succ_injective h', by simp [proj_inc_zero], proj_inc_succ s'⟩
+  | case2 i c m j c' m' s₂ ih₁ ih₂ =>
+    rw [comms.eq_2] at h
+    rcases h with ⟨t₀, h₀, rfl⟩ | ⟨h₀, hij, rfl, rfl⟩
+    · exact join_cons (fun _ => ih₁ h₀) h'
+    · fin_cases i <;> fin_cases j
+      · exact absurd rfl hij
+      · obtain ⟨p, k, s'', hp, rfl, ht''⟩ :=
+          peel (by simpa using h' : .inp _ _ :: proj 1 s₂ ∈ comms s')
+        exact (ih₂ h₀ ht'').pair₀₁ hp k _ _
+      · obtain ⟨p, k, s'', hp, rfl, ht''⟩ :=
+          peel (by simpa using h' : .out _ _ :: proj 1 s₂ ∈ comms s')
+        exact (ih₂ h₀ ht'').pair₁₀ hp k _ _
+      · exact absurd rfl hij
+  | case3 i a s₂ hne ih =>
+    rw [comms.eq_3 _ _ _ hne] at h
+    obtain ⟨t₀, h₀, rfl⟩ := h
+    exact join_cons (fun _ => ih h₀) h'
 
 /-- `!P = P | !P` -/
 theorem bang_eq (P : Proc M) : bang P = par P (bang P) := by
@@ -478,7 +494,7 @@ theorem bang_eq (P : Proc M) : bang P = par P (bang P) := by
       rw [nonces_of_mem_comms ht] at hn
       exact hn.sublist (nonces_sublist (dec_sublist s))
     exact ⟨⟨![f 0, t'], s₂, Fin.forall_fin_two.2 ⟨hf 0, ⟨⟨f ∘ Nat.succ, dec s, fun n => hf _,
-      fun n => (filter_dec s n).trans (hi (n + 1)), h1⟩, hn'⟩⟩,
+      fun n => (proj_dec s n).trans (hi (n + 1)), h1⟩, hn'⟩⟩,
       Fin.forall_fin_two.2 ⟨h3.trans (hi 0), h4⟩, h2⟩, hn⟩
   · rintro ⟨⟨g, s₂, hg, hi, ht⟩, hn⟩
     obtain ⟨⟨h, s', hh, hi', ht'⟩, -⟩ := hg 1

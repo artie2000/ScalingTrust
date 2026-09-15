@@ -58,13 +58,13 @@ example (A B : Cont (Proc T) Unit) : Proc T := .run do
 theorem leak_attack : ¬ Secret (Proc.out .c .s Proc.nil) {T.c} T.s := by
   intro h
   have ht : [Act.out T.c T.s] ∈ Proc.out T.c T.s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have he : Enemy {T.c} [.inp .c .s, .say .s] :=
+  have he : [Act.inp T.c T.s, .say .s] ∈ Enemy {T.c} :=
     .inp _ _ (derive.le_closure _ rfl) (.say _ (derive.le_closure _ (Set.mem_insert _ _)) .nil)
   have hc : ∀ a ∈ [Act.say T.s], ¬ a.Unfinished := fun _ ha h => by
     obtain rfl := List.mem_singleton.1 ha
     cases h
   exact h [.say .s] ⟨⟨⟨![_, _], [(0, .out .c .s), (1, .inp .c .s), (1, .say .s)],
-    Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [Meets]⟩,
+    Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [comms]⟩,
     List.nodup_nil⟩, hc⟩ List.mem_cons_self
 
 /-- Terms in which `s` occurs only under a hash. -/

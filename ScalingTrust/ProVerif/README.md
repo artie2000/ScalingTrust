@@ -20,7 +20,7 @@ lake build ScalingTrust.ProVerif.Examples
 | Module | Contents |
 | --- | --- |
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
-| `ProVerif.Query` | The attacker as a process, runs, `Secret`, `Corr`, the closed-set method |
+| `ProVerif.Query` | The attacker as a process, attacks, `Secret`, `Corr`, the closed-set method |
 | `ProVerif.Examples` | A toy term algebra, an attack, a secrecy proof |
 
 `Reference/` holds the survey, the ProVerif manual, the two papers cited below
@@ -67,16 +67,16 @@ component sent.
 **The attacker.** `Attacker M` supplies a closure operator `derive` on `Set M`,
 what can be deduced from a set of known messages; `Attacker.ofOps` builds one
 from a set of public partial operations, which is ProVerif's `attacker`
-predicate for a term algebra. `Enemy K₀` is the most general intruder as a
-process: knowing `K₀`, it may receive on any channel it can derive (learning
+predicate for a term algebra. `Enemy K` is the most general intruder as a
+process: knowing `K`, it may receive on any channel it can derive (learning
 the message), send anything it can derive on any channel it can derive, create
 names, and say anything it can derive.
 
-**Runs and queries.** `Runs P K₀` is the process of traces of `P | Enemy K₀`
+**Attacks and queries.** `Attacks P K` is the process of traces of `P | Enemy K`
 in which no action is unfinished. This is
 ProVerif's `P | Q` for every adversary `Q` at once. Queries are properties of
-the actions of a run. `Secret P K₀ s` says that in no run does the attacker say
-`s` (`query attacker(s)` fails). `Corr P K₀ Pre R` says that in every run each
+the actions of an attack. `Secret P K s` says that in no attack does the attacker
+say `s` (`query attacker(s)` fails). `Corr P K Pre R` says that in every attack each
 action satisfying `Pre` is preceded by some action related to it by `R`: with
 `Pre` picking out events it is a non-injective `query event(e) ==> event(e')`,
 and with `Pre` picking out `say M` it is `query attacker(M) ==> event(e')`.
@@ -84,7 +84,7 @@ and with `Pre` picking out `say M` it is `query attacker(M) ==> event(e')`.
 that contains the attacker's initial knowledge, every nonce and every message
 the protocol offers bounds everything the attacker can ever say, provided the
 protocol itself never says anything. `Examples.hashed_secret` uses it;
-`Examples.leak_attack` exhibits a run instead.
+`Examples.leak_attack` exhibits an attack instead.
 
 ## Design decisions
 
@@ -94,17 +94,17 @@ protocol itself never says anything. `Examples.hashed_secret` uses it;
   must be distinct components, which is why communication is defined on the
   tagged interleaving, where the components are still known, rather than read
   off adjacent actions of an untagged trace.
-* **A communication leaves no action.** A query can observe the events of a run
+* **A communication leaves no action.** A query can observe the events of an attack
   and what the attacker says, and nothing else; what was communicated is
   recoverable from the component traces when a proof needs it.
-* **The attacker speaks.** A run does not record what the attacker learnt, so
+* **The attacker speaks.** An attack does not record what the attacker learnt, so
   its knowledge is made visible by `say`, as with the intruder of Schneider's
   CSP approach: at any time it may say anything it can derive. This is what
   lets `attacker(M)` appear in a correspondence like an event. Honest code must
   not `say`; `secret_of_closed` asks for this explicitly.
 * **The attacker is semantic.** A Lean function used as an adversary could
   pattern-match on ciphertexts, so functions as adversaries are unsound. The
-  attacker is instead the process `Enemy K₀`, parametrised only by `derive`.
+  attacker is instead the process `Enemy K`, parametrised only by `derive`.
 * **Channels are uniform.** Nothing marks a channel public or private: a
   private channel is a term the attacker cannot derive, on which `Enemy` makes
   no offers.
@@ -120,7 +120,7 @@ protocol itself never says anything. `Examples.hashed_secret` uses it;
 ## Not modelled
 
 Tables (`insert` and `get`; the ProVerif manual, §6.7.3, encodes them with
-private channels), phases (runs are ordered, so ordering constraints can be
+private channels), phases (attacks are ordered, so ordering constraints can be
 stated directly) and injective correspondences. The Noise Explorer models in
 `Reference/` use tables and phases, so they mark what remains. The `par` example in
 `Process.lean` is currently left as `sorry`; it needs the interleavings of two
