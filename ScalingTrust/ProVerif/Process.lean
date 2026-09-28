@@ -1,7 +1,12 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import Mathlib
+import Mathlib.Control.Monad.Cont
+import Mathlib.Data.Fin.VecNotation
+import Mathlib.Data.Fintype.Basic
+import Mathlib.Data.Set.Lattice
+import Mathlib.Logic.Embedding.Basic
+import Mathlib.Tactic.FinCases
 
 /-!
 # Processes
@@ -79,6 +84,41 @@ theorem nonces_sublist {l₁ l₂ : List (Act M)} (h : l₁.Sublist l₂) :
 abbrev Proc (M : Type) := Set (Trace M)
 
 /-! ## Communication -/
+
+section interleave
+
+variable [DecidableEq ι]
+
+/-- The trace of component `i` in the tagged trace `s`. -/
+def proj (i : ι) (s : List (ι × Act M)) : Trace M := (s.filter (·.1 = i)).map Prod.snd
+
+@[simp] theorem proj_nil (i : ι) : proj i ([] : List (ι × Act M)) = [] := rfl
+
+@[simp] theorem proj_cons (i j : ι) (a : Act M) (s : List (ι × Act M)) :
+    proj i ((j, a) :: s) = if j = i then a :: proj i s else proj i s := by
+  by_cases h : j = i <;> simp [proj, h]
+
+@[simp] theorem proj_append (i : ι) (s s' : List (ι × Act M)) :
+    proj i (s ++ s') = proj i s ++ proj i s' := by
+  simp [proj, List.filter_append]
+
+theorem mem_proj {i : ι} {a : Act M} {s : List (ι × Act M)} : a ∈ proj i s ↔ (i, a) ∈ s := by
+  simp only [proj, List.mem_map, List.mem_filter, decide_eq_true_eq]
+  constructor
+  · rintro ⟨x, ⟨hs, rfl⟩, rfl⟩
+    exact hs
+  · intro hs
+    exact ⟨(i, a), ⟨hs, rfl⟩, rfl⟩
+
+/-- `s` interleaves the traces `f i`, each action tagged with its component:
+every component reads its own trace back off `s`. -/
+def Interleaves (f : ι → Trace M) (s : List (ι × Act M)) : Prop := ∀ i, proj i s = f i
+
+theorem Interleaves.mem_iff {f : ι → Trace M} {s : List (ι × Act M)} (h : Interleaves f s)
+    {i : ι} {a : Act M} : (i, a) ∈ s ↔ a ∈ f i := by
+  rw [← h i, mem_proj]
+
+end interleave
 
 /-- The traces obtained from a tagged interleaving by letting an output immediately
 followed by a matching input of a different component meet in a communication. -/
@@ -191,7 +231,7 @@ theorem mem_of_mem_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms
     · obtain ⟨k, hk⟩ := ih h₀ ha
       exact ⟨k, List.mem_cons_of_mem _ hk⟩
 
-/-- If no action of the trace is unfinished, every message received by one component
+/-- If a trace is closed, every message received by one component
 was sent by another. -/
 theorem out_of_inp_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms s)
     (hc : Closed t) {k : ι} {c m : M} (hk : (k, Act.inp c m) ∈ s) :
@@ -222,39 +262,6 @@ theorem out_of_inp_comms {s : List (ι × Act M)} {t : Trace M} (h : t ∈ comms
     · obtain ⟨i', hi', h'⟩ := ih h₀ (fun b hb => hc b (List.mem_cons_of_mem _ hb)) hk
       exact ⟨i', hi', List.mem_cons_of_mem _ h'⟩
 
-/-! ## Interleaving -/
-
-variable [DecidableEq ι]
-
-/-- The trace of component `i` in the tagged trace `s`. -/
-def proj (i : ι) (s : List (ι × Act M)) : Trace M := (s.filter (·.1 = i)).map Prod.snd
-
-@[simp] theorem proj_nil (i : ι) : proj i ([] : List (ι × Act M)) = [] := rfl
-
-@[simp] theorem proj_cons (i j : ι) (a : Act M) (s : List (ι × Act M)) :
-    proj i ((j, a) :: s) = if j = i then a :: proj i s else proj i s := by
-  by_cases h : j = i <;> simp [proj, h]
-
-@[simp] theorem proj_append (i : ι) (s s' : List (ι × Act M)) :
-    proj i (s ++ s') = proj i s ++ proj i s' := by
-  simp [proj, List.filter_append]
-
-theorem mem_proj {i : ι} {a : Act M} {s : List (ι × Act M)} : a ∈ proj i s ↔ (i, a) ∈ s := by
-  simp only [proj, List.mem_map, List.mem_filter, decide_eq_true_eq]
-  constructor
-  · rintro ⟨x, ⟨hs, rfl⟩, rfl⟩
-    exact hs
-  · intro hs
-    exact ⟨(i, a), ⟨hs, rfl⟩, rfl⟩
-
-/-- `s` interleaves the traces `f i`, each action tagged with its component:
-every component reads its own trace back off `s`. -/
-def Interleaves (f : ι → Trace M) (s : List (ι × Act M)) : Prop := ∀ i, proj i s = f i
-
-theorem Interleaves.mem_iff {f : ι → Trace M} {s : List (ι × Act M)} (h : Interleaves f s)
-    {i : ι} {a : Act M} : (i, a) ∈ s ↔ a ∈ f i := by
-  rw [← h i, mem_proj]
-
 /-! ## Process trace constructors -/
 
 namespace Proc
@@ -279,7 +286,7 @@ abbrev new [Names M] (P : M → Proc M) : Proc M :=
 abbrev event (e : M) (P : Proc M) : Proc M := act (.event e) P
 
 /-- The processes `P i` in parallel, creating distinct names. -/
-def merge (P : ι → Proc M) : Proc M :=
+def merge [DecidableEq ι] (P : ι → Proc M) : Proc M :=
   {t | (∃ f s, (∀ i, f i ∈ P i) ∧ Interleaves f s ∧ t ∈ comms s) ∧ (nonces t).Nodup}
 
 /-- `P | Q` -/
@@ -509,28 +516,28 @@ end Proc
 namespace Proc
 
 /-- `out(c, m)` -/
-def send (c m : M) : Cont (Proc M) Unit := fun k => Proc.out c m (k ())
+abbrev send (c m : M) : Cont (Proc M) Unit := fun k => Proc.out c m (k ())
 
 /-- `in(c, x)`, returning `x`. -/
-def recv (c : M) : Cont (Proc M) M := fun k => Proc.inp c k
+abbrev recv (c : M) : Cont (Proc M) M := fun k => Proc.inp c k
 
 /-- `new a`, returning `a`. -/
-def fresh [Names M] : Cont (Proc M) M := fun k => Proc.new k
+abbrev fresh [Names M] : Cont (Proc M) M := fun k => Proc.new k
 
 /-- `event e` -/
-def emit (e : M) : Cont (Proc M) Unit := fun k => Proc.event e (k ())
+abbrev emit (e : M) : Cont (Proc M) Unit := fun k => Proc.event e (k ())
 
 /-- Fork: the rest of the body runs twice in parallel, with `true` and `false`. -/
-def fork : Cont (Proc M) Bool := fun k => Proc.merge k
+abbrev fork : Cont (Proc M) Bool := fun k => Proc.merge k
 
 /-- Replicate the rest of the body. -/
-def repl : Cont (Proc M) Unit := fun k => Proc.bang (k ())
+abbrev repl : Cont (Proc M) Unit := fun k => Proc.bang (k ())
 
 /-- Stop here. -/
-def stop : Cont (Proc M) α := fun _ => Proc.nil
+abbrev stop {α : Type} : Cont (Proc M) α := fun _ => Proc.nil
 
 /-- The traces of a body. -/
-def run (b : Cont (Proc M) Unit) : Proc M := b fun _ => Proc.nil
+abbrev run (b : Cont (Proc M) Unit) : Proc M := b fun _ => Proc.nil
 
 end Proc
 

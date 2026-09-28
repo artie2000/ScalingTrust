@@ -31,7 +31,7 @@ documentation of the other folders only when a task genuinely spans them.
   `ScalingTrust.lean` currently imports only the Noise modules. That is what
   CI (`.github/workflows/lean_action_ci.yml`) checks.
 * The ProVerif modules are built explicitly:
-  `lake build ScalingTrust.ProVerif.Examples`.
+  `lake build ScalingTrust.ProVerif.Examples ScalingTrust.ProVerif.DH`.
 * The Isabelle theories are not built by Lake.
 
 ## Reference material

@@ -1,7 +1,9 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
+import Mathlib.Order.Closure
 import ScalingTrust.ProVerif.Process
+import ScalingTrust.ProVerif.Term
 
 /-!
 # The attacker and the queries
@@ -106,17 +108,32 @@ theorem secret_of_closed {P : Proc M} {K S : Set M} (hK : K ⊆ S) (hS : derive.
 
 /-! ## Attackers from public operations -/
 
-/-- `S` is closed under each operation in `ops`, an operation being a partial
-function of some arity. -/
-def ClosedUnder (ops : Set (Σ n, (Fin n → M) → Option M)) (S : Set M) : Prop :=
-  ∀ o ∈ ops, ∀ args : Fin o.1 → M, (∀ i, args i ∈ S) → ∀ r ∈ o.2 args, r ∈ S
+/-- `S` is closed under each operation in `ops`, an operation of some arity giving
+the set of its possible results. -/
+def ClosedUnder (ops : Set (Σ n, (Fin n → M) → Set M)) (S : Set M) : Prop :=
+  ∀ o ∈ ops, ∀ args : Fin o.1 → M, (∀ i, args i ∈ S) → o.2 args ⊆ S
 
 /-- The attacker that can apply the public operations `ops`: ProVerif's
 `attacker` predicate for a term algebra. -/
 @[instance_reducible]
-def Attacker.ofOps (ops : Set (Σ n, (Fin n → M) → Option M)) : Attacker M where
+def Attacker.ofOps (ops : Set (Σ n, (Fin n → M) → Set M)) : Attacker M where
   derive := ClosureOperator.ofCompletePred (ClosedUnder ops) fun _ h o ho args hargs r hr => by
     simp only [Set.sInf_eq_sInter, Set.mem_sInter] at hargs ⊢
-    exact fun S hS => h S hS o ho args (fun i => hargs i S hS) r hr
+    exact fun S hS => h S hS o ho args (fun i => hargs i S hS) hr
+
+/-! ## Message algebras
+
+The messages of a theory have the names and the attacker that the queries need.
+-/
+
+section algebra
+
+variable {F : Sig} {T : Theory F}
+
+instance : Names (Msg T) := ⟨⟨Msg.name, fun _ _ => Msg.name_inj⟩⟩
+
+instance [Pub T] : Attacker (Msg T) := .ofOps (Pub.ops T)
+
+end algebra
 
 end ProVerif

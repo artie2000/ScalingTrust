@@ -32,9 +32,9 @@ def T.snd : T → Option T
   | _ => none
 
 /-- The public operations: hash and pairing, and the projections. -/
-def T.ops : Set (Σ n, (Fin n → T) → Option T) :=
-  {⟨1, fun a => some (.hash (a 0))⟩, ⟨2, fun a => some (.pair (a 0) (a 1))⟩,
-   ⟨1, fun a => (a 0).fst⟩, ⟨1, fun a => (a 0).snd⟩}
+def T.ops : Set (Σ n, (Fin n → T) → Set T) :=
+  {⟨1, fun a => {.hash (a 0)}⟩, ⟨2, fun a => {.pair (a 0) (a 1)}⟩,
+   ⟨1, fun a => {r | (a 0).fst = some r}⟩, ⟨1, fun a => {r | (a 0).snd = some r}⟩}
 
 instance : Attacker T := .ofOps T.ops
 
@@ -77,15 +77,15 @@ theorem hid_closed : ClosedUnder T.ops {t | Hid t} := by
   intro o ho args hargs r hr
   simp only [T.ops, Set.mem_insert_iff, Set.mem_singleton_iff] at ho
   rcases ho with rfl | rfl | rfl | rfl
-  · simp only [Option.mem_def, Option.some.injEq] at hr; subst hr; trivial
-  · simp only [Option.mem_def, Option.some.injEq] at hr; subst hr
+  · simp only [Set.mem_singleton_iff] at hr; subst hr; trivial
+  · simp only [Set.mem_singleton_iff] at hr; subst hr
     exact ⟨hargs 0, hargs 1⟩
   · have h0 : Hid (args 0) := hargs 0
-    simp only [Option.mem_def] at hr
+    simp only [Set.mem_ofPred_eq] at hr
     generalize args 0 = a at h0 hr
     cases a <;> simp_all [T.fst, Hid]
   · have h0 : Hid (args 0) := hargs 0
-    simp only [Option.mem_def] at hr
+    simp only [Set.mem_ofPred_eq] at hr
     generalize args 0 = a at h0 hr
     cases a <;> simp_all [T.snd, Hid]
 
