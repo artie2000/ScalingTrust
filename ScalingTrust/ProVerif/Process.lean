@@ -303,14 +303,6 @@ example (c : M) :
   simp [inp, out, act, nil]
   grind
 
-example (c m : M) :
-    par (out c m .nil) (inp c fun _ => nil) =
-    {[], [.out c m]} ∪ {[.inp c x] | x} ∪ {[.inp c x, .out c m] | x} ∪ {[.out c m, .inp c x] | x} := by
-  have : Nonempty M := ⟨c⟩
-  ext
-  simp [Proc.inp, Proc.out, Proc.act, Proc.nil]
-  sorry
-
 /-! ### Countably many copies
 
 `!P = P | !P` relates a tagged trace over `ℕ` to one over `Fin 2`: component `0` on

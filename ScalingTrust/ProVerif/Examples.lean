@@ -125,10 +125,6 @@ theorem hid_app {n : ℕ} (f : DH.Fun Free n) (ms : Fin n → M) :
     Hid (Msg.app f ms) = hid f fun i => Hid (ms i) :=
   Msg.lift_app _ _ f ms
 
-theorem hid_pair {a b : M} : Hid (DH.pair a b) ↔ Hid a ∧ Hid b := by
-  rw [DH.pair, hid_app]
-  exact Fin.forall_fin_two
-
 theorem hid_senc {m k : M} : Hid (DH.senc m k) ↔ Hid m ∧ Hid k := by
   rw [DH.senc, hid_app]
   exact Fin.forall_fin_two
@@ -145,8 +141,9 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
   rintro o (ho | ⟨d, hd, rfl⟩) args hargs r hr
   · rw [Set.mem_iUnion] at ho
     obtain ⟨n, f, hf, rfl⟩ := ho
-    obtain rfl := Set.mem_singleton_iff.1 hr
-    show Hid (Msg.app f args)
+    obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr
+    obtain rfl := Option.some_injective _ hr
+    show Hid (Msg.app f ms)
     rw [hid_app]
     cases f with
     | const a =>
@@ -154,34 +151,19 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
       · exact fun i => i.elim0
       · exact nomatch (hf : Free.s = Free.c)
     | hash => trivial
-    | _ => exact hargs
+    | _ => exact fun i => hargs i _ (hms i)
   · change d.2 args = some r at hr
-    rcases hd with rfl | rfl | rfl | rfl | rfl | rfl <;> dsimp only at hr hargs
-    · obtain ⟨b, hb⟩ := DH.fst_eq_some.1 hr
-      have h : Hid (args 0) := hargs 0
-      rw [hb] at h
-      exact (hid_pair.1 h).1
-    · obtain ⟨a, ha⟩ := DH.snd_eq_some.1 hr
-      have h : Hid (args 0) := hargs 0
-      rw [ha] at h
-      exact (hid_pair.1 h).2
-    · have h : Hid (args 0) := hargs 0
-      rw [DH.sdec_eq_some.1 hr] at h
+    rcases hd with rfl | rfl | rfl <;> dsimp only at hr <;>
+      obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr <;>
+      have h : Hid (ms 0) := hargs 0 _ (hms 0)
+    · rw [DH.sdec_eq_some.1 hr] at h
       exact (hid_senc.1 h).1
-    · have h : Hid (args 0) := hargs 0
-      rw [DH.adec_eq_some.1 hr] at h
+    · rw [DH.adec_eq_some.1 hr] at h
       exact (hid_aenc.1 h).1
     · obtain ⟨k, hk, -⟩ := DH.check_eq_some.1 hr
-      have h : Hid (args 0) := hargs 0
-      rw [hk] at h
-      exact (hid_sign.1 h).1
-    · obtain ⟨k, hk⟩ := DH.getmess_eq_some.1 hr
-      have h : Hid (args 0) := hargs 0
       rw [hk] at h
       exact (hid_sign.1 h).1
 
-/-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
-in the closed set of messages in which `s` occurs only under a hash. -/
 theorem hid_c : Hid c := by
   rw [c, DH.const, hid_app]
   exact fun i => i.elim0
@@ -194,6 +176,8 @@ theorem hid_hash (m : M) : Hid (DH.hash m) := by
   rw [DH.hash, hid_app]
   trivial
 
+/-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
+in the closed set of messages in which `s` occurs only under a hash. -/
 theorem hashed_secret : Secret (Proc.out c (DH.hash s) Proc.nil) {c} s := by
   refine secret_of_closed (S := {m | Hid m}) ?_ hid_closed
     (fun n => show Hid (Msg.name n) from trivial) ?_ ?_ not_hid_s

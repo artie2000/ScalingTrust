@@ -22,7 +22,7 @@ lake build ScalingTrust.ProVerif.Examples
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
 | `ProVerif.Query` | The attacker as a process, attacks, `Secret`, `Corr`, the closed-set method; the `Names` and `Attacker` instances of a message algebra |
 | `ProVerif.Term` | Message algebras built from a signature and equations: terms, the congruence, `Msg`, views, public operations |
-| `ProVerif.DH` | An example algebra: the survey's standard primitives with Diffie–Hellman, destructors by pattern matching, each with its rule as a theorem |
+| `ProVerif.DH` | An example algebra: the running example's primitives with Diffie–Hellman, destructors by pattern matching, each with its rule as a theorem |
 | `ProVerif.Examples` | The survey's Denning–Sacco example as `do` blocks, an attack, a secrecy proof by the closed-set method |
 
 `Reference/` holds the survey, the ProVerif manual, the two papers cited below
@@ -49,10 +49,13 @@ messages. `Msg.view` shows a message's head symbol and arguments when the
 symbol is free and nothing otherwise; a destructor is a Lean function on
 messages returning an `Option`, with `none` for `fail`, written as a `match` on
 the view with one branch per rewrite rule in order and a last branch for
-failure, a non-linear pattern being an equality test in its branch. `let x = D
+failure, a non-linear pattern being an equality test in its branch. A rule may
+match `fail` with a may-fail variable (survey p. 14), as `and(x, u) → false`
+does, so the destructors the attacker applies take may-fail arguments,
+`Option (Msg T)`; one with no may-fail variable fails whenever an argument
+does, and is written on messages and lifted by `strict`. `let x = D
 in P else Q` is then a Lean `match` on a destructor's result, and `if M then P
-else Q` a Lean `if` on a proposition such as `m = tt`; equality on the quotient
-is classical. `Pub T` lists the constructors and destructors the attacker may
+else Q` a Lean `if` on a proposition; equality on the quotient is classical. `Pub T` lists the constructors and destructors the attacker may
 apply, and `ProVerif.Query` derives the `Names` and `Attacker` instances.
 A predicate on messages has to respect `E`; `Msg.lift` produces one from any
 structure that satisfies the equations, by the universal property of the
@@ -70,15 +73,16 @@ which is the survey's own condition for pattern-matching on data constructors
 destructor in the ProVerif manual's examples or in Noise Explorer's models has a
 pattern over an equated symbol. Types are ignored, as in the survey's semantics.
 
-`ProVerif.DH` is the worked example: free names, the booleans, pairs,
-symmetric and asymmetric encryption, signatures, a hash, and Diffie–Hellman
-exponentiation with `exp(exp(g,x),y) = exp(exp(g,y),x)`. It declares the
-symbols, the one equation, and `exp` as the only non-free symbol, writes its
-six destructors as matches on the view,
+`ProVerif.DH` is the worked example, with the primitives the survey's running
+example uses: free names, symmetric and asymmetric encryption, signatures, a
+hash, and Diffie–Hellman exponentiation with `exp(exp(g,x),y) = exp(exp(g,y),x)`.
+It declares the symbols, the one equation, and `exp` as the only non-free
+symbol, writes its three destructors as matches on the view,
 `| .app .senc a => if a 1 = k then some (a 0) else none` for `sdec`, and proves
 for each that its graph is exactly the instances of its rule,
-`sdec c k = some m ↔ c = senc m k`. `DH.pub P` makes the free names in `P`
-public and the rest private, the survey's `N_pub` and `N_priv`.
+`sdec c k = some m ↔ c = senc m k`. None has a may-fail variable, so all three
+are `strict`. `DH.pub P` makes the free names in `P` public and the rest
+private, the survey's `N_pub` and `N_priv`.
 
 `ProVerif.Examples` models the survey's Denning–Sacco example (§2.2) over that
 algebra, the two roles and the system as `do` blocks, exhibits an attack on a
@@ -120,7 +124,8 @@ component sent.
 **The attacker.** `Attacker M` supplies a closure operator `derive` on `Set M`,
 what can be deduced from a set of known messages; `Attacker.ofOps` builds one
 from a set of public operations, each giving the set of its possible results,
-which is ProVerif's `attacker` predicate for a term algebra; the instance for
+which is ProVerif's `attacker` predicate for a term algebra. An argument may
+be `fail` (`none`), which the attacker can always write; the instance for
 the messages of a theory takes the operations its `Pub` instance declares.
 `Enemy K` is the most general intruder as a
 process: knowing `K`, it may receive on any channel it can derive (learning

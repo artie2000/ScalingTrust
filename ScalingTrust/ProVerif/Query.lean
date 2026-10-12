@@ -109,17 +109,18 @@ theorem secret_of_closed {P : Proc M} {K S : Set M} (hK : K ⊆ S) (hS : derive.
 /-! ## Attackers from public operations -/
 
 /-- `S` is closed under each operation in `ops`, an operation of some arity giving
-the set of its possible results. -/
-def ClosedUnder (ops : Set (Σ n, (Fin n → M) → Set M)) (S : Set M) : Prop :=
-  ∀ o ∈ ops, ∀ args : Fin o.1 → M, (∀ i, args i ∈ S) → o.2 args ⊆ S
+the set of its possible results.  An argument is either in `S` or `none`, the
+failure: the attacker can always pass `fail`, which is an expression of the calculus. -/
+def ClosedUnder (ops : Set (Σ n, (Fin n → Option M) → Set M)) (S : Set M) : Prop :=
+  ∀ o ∈ ops, ∀ args : Fin o.1 → Option M, (∀ i m, args i = some m → m ∈ S) → o.2 args ⊆ S
 
 /-- The attacker that can apply the public operations `ops`: ProVerif's
 `attacker` predicate for a term algebra. -/
 @[instance_reducible]
-def Attacker.ofOps (ops : Set (Σ n, (Fin n → M) → Set M)) : Attacker M where
+def Attacker.ofOps (ops : Set (Σ n, (Fin n → Option M) → Set M)) : Attacker M where
   derive := ClosureOperator.ofCompletePred (ClosedUnder ops) fun _ h o ho args hargs r hr => by
     simp only [Set.sInf_eq_sInter, Set.mem_sInter] at hargs ⊢
-    exact fun S hS => h S hS o ho args (fun i => hargs i S hS) hr
+    exact fun S hS => h S hS o ho args (fun i m hm => hargs i m hm S hS) hr
 
 /-! ## Message algebras
 
