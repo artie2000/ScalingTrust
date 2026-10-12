@@ -29,6 +29,10 @@ declaration: every equation has a non-free symbol at the root of both sides
 Booleans are messages, since they can be sent; a condition is an ordinary Lean
 proposition.  Types are ignored, as they are in the survey's semantics.
 
+A predicate on messages, such as "the secret occurs only under a hash", must be
+invariant under `E`; `Msg.lift` gives one from any structure that satisfies the
+equations, by the universal property of the quotient.
+
 ## Deviation from the formal semantics
 
 The survey evaluates a destructor by matching its rules against the arguments
@@ -67,6 +71,28 @@ instance : F.lang.Structure (Term F) where
 @[simp] theorem Term.funMap_eq {n : ℕ} (f : F n) (ts : Fin n → Term F) :
     Structure.funMap (L := F.lang) f ts = Term.func f ts := rfl
 
+variable {M : Type} [F.lang.Structure M]
+
+/-- Substituting, then evaluating, is evaluating in the composite valuation. -/
+theorem Term.realize_realize (σ : ℕ → Term F) (v : ℕ → M) (t : Term F) :
+    (t.realize σ).realize v = t.realize fun n => (σ n).realize v := by
+  induction t with
+  | var => rfl
+  | func f ts ih => simp [Term.realize_func, ih]
+
+/-- Two-argument constructors, written with `![a, b]`. -/
+theorem Term.realize_func₂ (v : ℕ → M) (f : F 2) (s t : Term F) :
+    (Term.func f ![s, t]).realize v =
+      Structure.funMap (L := F.lang) f ![s.realize v, t.realize v] := by
+  rw [Term.realize_func]
+  exact congrArg _ (funext (Fin.forall_fin_two.2 ⟨rfl, rfl⟩))
+
+/-- Constants, written with `![]`. -/
+theorem Term.realize_func₀ (v : ℕ → M) (f : F 0) :
+    (Term.func (L := F.lang) f ![]).realize v = Structure.funMap (L := F.lang) f ![] := by
+  rw [Term.realize_func]
+  exact congrArg _ (funext fun i => i.elim0)
+
 /-- The root of `t` is a symbol that `free` does not declare free. -/
 def Term.Rigid (free : ∀ n, F n → Bool) : Term F → Prop
   | .var _ => False
@@ -84,6 +110,10 @@ structure Theory (F : Sig) where
 
 variable {T : Theory F}
 
+/-- `M` satisfies the equations of `T`. -/
+def Theory.Satisfies (T : Theory F) (M : Type) [F.lang.Structure M] : Prop :=
+  ∀ e ∈ T.E, ∀ v : ℕ → M, e.1.realize v = e.2.realize v
+
 /-- Equality modulo `E`: the least congruence containing every instance of an
 equation. -/
 inductive Eqv (T : Theory F) : Term F → Term F → Prop
@@ -93,6 +123,20 @@ inductive Eqv (T : Theory F) : Term F → Term F → Prop
   | func {n} (f : F n) {a b : Fin n → Term F} : (∀ i, Eqv T (a i) (b i)) →
       Eqv T (.func f a) (.func f b)
   | ax {l r} : (l, r) ∈ T.E → ∀ σ : ℕ → Term F, Eqv T (l.realize σ) (r.realize σ)
+
+/-- Equal terms evaluate equally in a structure satisfying the equations. -/
+theorem Eqv.realize_eq (hM : T.Satisfies M) (v : ℕ → M) {s t : Term F} (h : Eqv T s t) :
+    s.realize v = t.realize v := by
+  induction h with
+  | refl => rfl
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+  | func f _ ih =>
+    simp only [Term.realize_func]
+    exact congrArg _ (funext ih)
+  | ax hE σ =>
+    rw [Term.realize_realize, Term.realize_realize]
+    exact hM _ hE _
 
 /-- Terms modulo `E`. -/
 def Theory.setoid (T : Theory F) : Setoid (Term F) := ⟨Eqv T, ⟨.refl, .symm, .trans⟩⟩
@@ -115,26 +159,32 @@ def name (n : ℕ) : Msg T := ⟦.var n⟧
 abbrev app {n : ℕ} (f : F n) (ms : Fin n → Msg T) : Msg T :=
   Structure.funMap (L := F.lang) f ms
 
-/-- Two-argument constructors, written with `![a, b]`. -/
-theorem realize_func₂ (v : ℕ → Msg T) (f : F 2) (s t : Term F) :
-    (Term.func f ![s, t]).realize v = app f ![s.realize v, t.realize v] := by
-  rw [Term.realize_func]
-  exact congrArg _ (funext (Fin.forall_fin_two.2 ⟨rfl, rfl⟩))
+theorem app_mk {n : ℕ} (f : F n) (ts : Fin n → Term F) :
+    app f (fun i => (⟦ts i⟧ : Msg T)) = ⟦.func f ts⟧ :=
+  funMap_quotient_mk' (L := F.lang) T.setoid f ts
 
-/-- Constants, written with `![]`. -/
-theorem realize_func₀ (v : ℕ → Msg T) (f : F 0) :
-    (Term.func (L := F.lang) f ![]).realize v = app f ![] := by
-  rw [Term.realize_func]
-  exact congrArg _ (funext fun i => i.elim0)
+/-- The universal property: a structure satisfying the equations receives the
+messages, by evaluating any representative. -/
+def lift (hM : T.Satisfies M) (v : ℕ → M) : Msg T → M :=
+  Quotient.lift (Term.realize v) fun _ _ h => h.realize_eq hM v
+
+@[simp] theorem lift_name (hM : T.Satisfies M) (v : ℕ → M) (n : ℕ) :
+    lift hM v (name n) = v n := rfl
+
+@[simp] theorem lift_app (hM : T.Satisfies M) (v : ℕ → M) {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
+    lift hM v (app f ms) = Structure.funMap (L := F.lang) f fun i => lift hM v (ms i) := by
+  have hm : ms = fun i => ⟦(ms i).out⟧ := funext fun i => (Quotient.out_eq _).symm
+  rw [hm, app_mk]
+  exact Term.realize_func _ _ _
 
 end Msg
 
-/-- Every instance of an equation holds in the messages. -/
-theorem Theory.realize_eq (T : Theory F) {l r : Term F} (h : (l, r) ∈ T.E) (v : ℕ → Msg T) :
-    l.realize v = r.realize v := by
+/-- The messages satisfy the equations. -/
+theorem Theory.satisfies_msg (T : Theory F) : T.Satisfies (Msg T) := by
+  intro e he v
   have hv : v = fun n => ⟦(v n).out⟧ := funext fun n => (Quotient.out_eq _).symm
   rw [hv, Term.realize_quotient_mk', Term.realize_quotient_mk']
-  exact Quotient.sound (Eqv.ax h _)
+  exact Quotient.sound (Eqv.ax he _)
 
 /-! ## Views -/
 
@@ -179,11 +229,26 @@ def view : Msg T → View T := Quotient.lift T.view fun _ _ h => T.view_congr h
 @[simp] theorem view_app {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
     (app f ms).view = if T.free _ f then .app f ms else .other := by
   have hm : ms = fun i => ⟦(ms i).out⟧ := funext fun i => (Quotient.out_eq _).symm
-  rw [hm, app, funMap_quotient_mk']
+  rw [hm, app_mk]
   rfl
 
 theorem name_inj {n m : ℕ} (h : (name n : Msg T) = name m) : n = m :=
   View.name.inj (congrArg view h)
+
+/-- A message whose view is `app f a` is `app f a`: the inversion principle behind
+destructors. -/
+theorem eq_app_of_view {m : Msg T} {n : ℕ} {f : F n} {a : Fin n → Msg T}
+    (h : m.view = .app f a) : m = app f a := by
+  induction m using Quotient.inductionOn with
+  | h t =>
+    cases t with
+    | var k => cases h
+    | func g ts =>
+      change T.view (.func g ts) = _ at h
+      simp only [Theory.view] at h
+      split_ifs at h
+      cases h
+      exact (app_mk _ ts).symm
 
 end Msg
 
