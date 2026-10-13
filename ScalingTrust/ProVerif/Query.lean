@@ -56,13 +56,10 @@ def Attacks (P : Proc M) : Set (Trace M) := {t ∈ Proc.par P (Enemy ∅) | Clos
 
 /-- `query attacker(s)` fails: in no attack does the attacker come to know `s`.
 
-This agrees with the survey's Def. 3.3 when `N_pub` is nonempty.  There
-(Def. 3.2) a run reveals `s` only by outputting it on a channel `N ∈ N_pub`, a public
-free *name*, so the attacker needs such a name to output what it finds on: whatever
-it learns, it can relay on a public name.  With none, nothing is ever output publicly
-and every term is secret, even one the attacker learns on the public constant `true`.
-`Secret` asks only that the attacker come to know `s`, as ProVerif's clauses do
-(§3.2.2).
+The survey's secrecy (Defs. 3.2, 3.3) counts only outputs on a public free name.
+Whatever the attacker learns it can relay on one, so `Secret` agrees with it when the
+model has a public free name; without one, the survey's counts nothing.  `Secret`
+agrees with ProVerif's clauses (§3.2.2) in either case.
 
 Secrecy of names created by `new` (ProVerif's `query secret x`) is not implemented,
 so `s` should contain no nonce: the attacker can create any `Names.nonce n` itself,

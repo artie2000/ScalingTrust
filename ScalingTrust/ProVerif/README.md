@@ -90,9 +90,7 @@ communication, the survey's rule (Red I/O), which leaves nothing in the trace.
 distinct, so that different components never create the same name; `Proc.par`
 is the merge over `Fin 2` and `Proc.bang` the merge over `ℕ` (a trace is
 finite, so only finitely many copies act). `Proc.bang_eq`, `!P = P | !P`, is
-(Red Repl); it rests on `Proc.split` and `Proc.join`, which relate a tagged
-trace over `ℕ` to one over `Fin 2` whose second component is what the other
-copies produce among themselves, their offers to component `0` left unfinished.
+(Red Repl).
 
 **Completed communications.** `out` and `inp` are offers. A trace with no
 unfinished action (`Act.Unfinished`) is one in which every offer met a partner,
@@ -101,14 +99,10 @@ component sent.
 
 **Messages.** `Msg.view` shows a message's head symbol and arguments when the
 symbol is free and nothing otherwise, and `Theory.view_congr` proves it
-invariant under `E`. A destructor matching on the view is therefore a function
-on messages. The survey instead matches rewrite rules modulo `E` (p. 31), and its
-`D ⇓ U` is a relation, since several matches may give different results;
-matching on the view sees only the free symbols, which is the survey's own
-condition for pattern-matching on data constructors (p. 35), and under it the
-two agree. A destructor with a pattern over an equated symbol cannot be
-written; none occurs in the ProVerif manual's examples or in Noise Explorer's
-models. A predicate on messages has to respect `E`; `Msg.lift` produces one
+invariant under `E`, so a destructor matching on the view is a function on
+messages. This deviates from the survey, which matches rewrite rules modulo `E`;
+the head of `Term.lean` says why the two agree for every destructor that can be
+written. A predicate on messages has to respect `E`; `Msg.lift` produces one
 from any structure that satisfies the equations, and that is how the closed
 sets of secrecy proofs are defined.
 
@@ -147,9 +141,6 @@ uses it; `Examples.leak_attack` exhibits an attack instead.
   its knowledge is made visible by `say`, as with the intruder of Schneider's
   CSP approach: at any time it may say anything it can derive. This is what
   lets `attacker(M)` appear in a correspondence like an event.
-* **The attacker is semantic.** A Lean function used as an adversary could
-  pattern-match on ciphertexts, so functions as adversaries are unsound. The
-  attacker is instead the process `Enemy K`, parametrised only by `derive`.
 * **Channels are uniform.** Nothing marks a channel public or private: a
   private channel is a term the attacker cannot derive, on which `Enemy` makes
   no offers.
@@ -175,9 +166,7 @@ Tables (`insert` and `get`; the ProVerif manual, §6.7.3, encodes them with
 private channels), phases (attacks are ordered, so ordering constraints can be
 stated directly), injective correspondences and the secrecy of bound names
 (`query secret x`). The Noise Explorer models in `Reference/` use tables and
-phases, so they mark what remains. The `par` example in `Process.lean` is
-currently left as `sorry`; it needs the interleavings of two one-action traces
-enumerated.
+phases, so they mark what remains.
 
 ## References
 
