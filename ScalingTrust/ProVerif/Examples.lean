@@ -7,10 +7,13 @@ import ScalingTrust.ProVerif.Query
 /-!
 # Examples
 
-The survey's running example (§2.2), the simplified Denning-Sacco protocol, written
-as `do` blocks over the Diffie-Hellman algebra; an attack; and a secrecy proof by
-the closed-set method, whose closed set is defined through the universal property
-of the message quotient.
+The translation of the survey's running example (§2.2), the simplified
+Denning-Sacco protocol, over the algebra of `ProVerif.DH`: its free names are a
+public channel `c` and a private secret `s`, and its roles and system are `do`
+blocks.  Then an attack, and a secrecy proof by the closed-set method, whose closed
+set is defined through the universal property of the message quotient.  The
+attacker's initial knowledge is `{c}`, the public free names, which `∅` would
+equal since `c` is a public constant.
 -/
 
 namespace ProVerif.Examples

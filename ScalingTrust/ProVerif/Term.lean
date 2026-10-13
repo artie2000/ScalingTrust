@@ -5,33 +5,34 @@ import Mathlib.Data.Fin.VecNotation
 import Mathlib.ModelTheory.Quotients
 
 /-!
-# Message algebras from constructors and equations
+# Message algebras from ProVerif declarations
 
-The survey's messages (§2.1, with equations §2.5.1), constructed from a signature and
-a set of equations.
+The survey's messages (§2.1, with equations §2.5.1), built from the declarations of
+a ProVerif model, types erased:
 
-* The *constructors* are a signature `F : Sig`, giving the symbols of each arity, and
-  raw terms are the terms of that first-order language (Mathlib's
-  `FirstOrder.Language.Term`) whose variables are the names `ℕ`.  A fresh name is a
-  variable; the free names of a protocol are constants.
-* The *equations* `E` are pairs of terms, and messages `Msg T` are terms modulo the
-  congruence `Eqv` they generate, so Lean's `=` on messages is the survey's `=_E`.
-  Every instance of an equation is an equality of messages, `Theory.satisfies_msg`.
-* A *destructor* is a Lean function on messages returning an `Option`, `none` being
-  `fail`, defined by a `match` on `Msg.view` with one branch per rewrite rule in the
-  survey's order and a final branch for failure.  A non-linear pattern is an equality
-  test in its branch.  Its arguments are themselves may-fail, `Option (Msg T)`, since a
-  rule may match `fail` with a may-fail variable (p. 14), as `and(x, u) → false` does
-  (p. 17).  A destructor without may-fail variables fails whenever an argument does;
-  it is written on messages and lifted by `strict`.
+* `free a` and `fun`/`const` declarations give a signature `F : Sig`, the free names
+  being nullary constructors.  Raw terms are the terms of that first-order language
+  (Mathlib's `FirstOrder.Language.Term`) whose variables, `Msg.name n`, are the
+  nonces that `new` creates; a model never writes one.
+* `equation` declarations give a `Theory`: the equations `E`, and the symbols
+  declared *free*, those at the root of no equation.  Messages `Msg T` are terms
+  modulo the congruence `Eqv` that `E` generates, so Lean's `=` on messages is the
+  survey's `=_E`, and every instance of an equation is an equality of messages
+  (`Theory.satisfies_msg`).
+* A `reduc` declaration gives a destructor: a Lean function to `Option (Msg T)`,
+  `none` being `fail`, that matches on `Msg.view` with one branch per rewrite rule in
+  order and a final `none`.  A nested pattern over a free symbol is a nested match, a
+  repeated variable an equality test.  A rule may match `fail` with a may-fail
+  variable (p. 14), as `and(x, u) → false` does (p. 17), so destructors take
+  may-fail arguments, `Option (Msg T)`; one whose rules have none is written on
+  messages and lifted by `strict`.  Rules contain no names, so neither does a
+  destructor.
+* The public declarations give a `Pub` instance, the operations the attacker may
+  apply.
 
-`Msg.view` shows a message's head symbol and arguments when the symbol is one the
-theory declares *free*, and nothing otherwise.  The theory must justify that
-declaration: every equation has a non-free symbol at the root of both sides
-(`Theory.heads`), which makes the view invariant under `E` (`Theory.view_congr`).
-A condition is an ordinary Lean proposition; the survey's boolean constants and
-`equal` destructor have no counterpart unless a protocol sends booleans.  Types
-are ignored, as they are in the survey's semantics.
+`Msg.view` shows a message's head symbol and arguments when the symbol is free, and
+nothing otherwise; since every equation has a non-free symbol at the root of both
+sides (`Theory.heads`), the view is invariant under `E` (`Theory.view_congr`).
 
 A predicate on messages, such as "the secret occurs only under a hash", must be
 invariant under `E`; `Msg.lift` gives one from any structure that satisfies the
@@ -102,12 +103,13 @@ def Term.Rigid (free : ∀ n, F n → Bool) : Term F → Prop
   | .var _ => False
   | .func f _ => free _ f = false
 
-/-- An equational theory: the equations, and the symbols declared free, which no
-equation has at its root. -/
+/-- An equational theory, from a model's `equation` declarations: the equations, and
+the symbols declared free, which no equation has at its root. -/
 structure Theory (F : Sig) where
   /-- The equations. -/
   E : Set (Term F × Term F)
-  /-- The symbols that destructors may match on. -/
+  /-- The symbols that destructors may match on: in a translated model, every symbol
+  at the root of no equation. -/
   free : ∀ n, F n → Bool
   /-- Both sides of every equation have a non-free root. -/
   heads : ∀ e ∈ E, e.1.Rigid free ∧ e.2.Rigid free
@@ -156,7 +158,8 @@ abbrev Msg (T : Theory F) : Type := Quotient T.setoid
 
 namespace Msg
 
-/-- The name `n`. -/
+/-- The `n`-th nonce created by `new`.  A model's free names are constants instead,
+and a translated model never writes this. -/
 def name (n : ℕ) : Msg T := ⟦.var n⟧
 
 /-- Apply a constructor to messages. -/
@@ -273,11 +276,13 @@ theorem strict_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option �
 
 /-! ## Public operations -/
 
-/-- The symbols and destructors the attacker may apply. -/
+/-- The symbols and destructors the attacker may apply: a model's declarations not
+marked `[private]`. -/
 class Pub (T : Theory F) where
-  /-- The public constructors. -/
+  /-- The public constructors, including the public free names. -/
   pubFun : ∀ n, Set (F n)
-  /-- The public destructors, each of some arity, on may-fail arguments. -/
+  /-- The public destructors, each of some arity, on may-fail arguments, written as
+  in the module docstring. -/
   dtors : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T))
 
 /-- The attacker's operations on may-fail arguments, each giving the set of its

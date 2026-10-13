@@ -6,13 +6,12 @@ import ScalingTrust.ProVerif.Term
 /-!
 # Example: the standard primitives with Diffie-Hellman
 
-A message algebra with the survey's primitives (§2.1) that its running example
-uses: the free names `A`, symmetric and asymmetric encryption, signatures and a
-hash, together with Diffie-Hellman exponentiation and its equation (2.7).  Every
-symbol but `exp` is free.  `pub P` makes the free names in `P` public and the
-rest private, the survey's `N_pub` and `N_priv`; every other symbol and every
-destructor is public.
-
+The translation of the declarations of the survey's primitives (§2.1) that its
+running example uses: the free names `A`, symmetric and asymmetric encryption,
+signatures and a hash, with Diffie-Hellman exponentiation and its equation (2.7).
+`exp` is the only symbol at the root of an equation, so every other symbol is
+free.  `pub P` makes the free names in `P` public and the rest private, the
+survey's `N_pub` and `N_priv`; every other symbol and every destructor is public.
 Each destructor comes with the theorem that its graph is exactly the instances of
 its rewrite rule, `sdec c k = some m ↔ c = senc m k` and so on.
 -/
@@ -80,10 +79,10 @@ theorem exp_exp_g (x y : Msg (T A)) : exp (exp g x) y = exp (exp g y) x := by
 
 /-! ## Destructors
 
-One branch per rewrite rule, then failure.  A nested or repeated pattern, such as the
-`pk(y)` of `adec`, is an equality test in its branch.  No rule has a may-fail
-variable, so each destructor is written on messages and lifted by `strict` where
-the attacker may pass it `fail`.
+Each is a match on the view with one branch for its rule, then failure; the nested
+pattern `pk(y)` of `adec` and `check`, which mentions a variable bound elsewhere, is
+an equality test.  No rule has a may-fail variable, so each destructor is written
+on messages and lifted by `strict` in `pub`.
 -/
 
 open Classical

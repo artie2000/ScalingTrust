@@ -12,7 +12,9 @@ The attacker is a process, `Enemy K`: the traces a Dolev-Yao attacker with
 initial knowledge `K` can perform.  It may receive on any channel it can
 derive, send anything it can derive on any channel it can derive, create names,
 and `say` anything it can derive.  What it can derive from a set of messages is
-a closure operator, `Attacker.derive`.
+a closure operator, `Attacker.derive`.  For the messages of a translated model
+these come from its algebra, at the end of this file, and `K` is its public free
+names.
 
 An *attack* on `P` is a trace of `P | Enemy K` in which every communication was
 completed; `Attacks P K` is the process of attacks.

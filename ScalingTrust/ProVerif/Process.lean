@@ -19,8 +19,10 @@ input of a *different* component may meet in a communication, which leaves nothi
 in the trace.  `P | Q` and `!P` are the merges of two processes and of countably
 many copies of a process, respectively.
 There is no syntax of processes: what a process computes between actions is Lean code.
-In particular, a process may be written as a `do` block in the continuation monad `Cont (Proc M)`,
-closed with `Proc.run`.
+A ProVerif process is translated to a `do` block in the continuation monad
+`Cont (Proc M)`, closed with `Proc.run`: `Proc.send`, `Proc.recv`, `Proc.fresh` and
+`Proc.emit` for its actions, `Proc.fork` and `Proc.repl` for `|` and `!`, and Lean's
+`match` and `if` for `let` and `if`.
 
 Trace sets are prefix-closed by construction, so a trace is a run so far, and a
 process that blocks simply has no longer traces.  `out` and `in` are *unfinished*
