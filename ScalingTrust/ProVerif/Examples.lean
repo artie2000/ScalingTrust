@@ -140,9 +140,10 @@ theorem hid_sign {m k : M} : Hid (DH.sign m k) ↔ Hid m ∧ Hid k := by
   exact Fin.forall_fin_two
 
 theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
-  rintro o (ho | ⟨d, hd, rfl⟩) args hargs r hr
+  rintro o (ho | hd) args hargs r hr
   · rw [Set.mem_iUnion] at ho
     obtain ⟨n, f, hf, rfl⟩ := ho
+    dsimp only at hr
     obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr
     obtain rfl := Option.some_injective _ hr
     show Hid (Msg.app f ms)
@@ -154,8 +155,7 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
       · exact nomatch (hf : Free.s = Free.c)
     | hash => trivial
     | _ => exact fun i => hargs i _ (hms i)
-  · change d.2 args = some r at hr
-    rcases hd with rfl | rfl | rfl <;> dsimp only at hr <;>
+  · rcases hd with rfl | rfl | rfl <;> dsimp only at hr <;>
       obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr <;>
       have h : Hid (ms 0) := hargs 0 _ (hms 0)
     · rw [DH.sdec_eq_some.1 hr] at h

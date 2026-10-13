@@ -283,13 +283,10 @@ class Pub (T : Theory F) where
   in the module docstring. -/
   dtors : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T))
 
-/-- The attacker's operations on may-fail arguments, each giving the set of its
-results. -/
-def Pub.ops (T : Theory F) [Pub T] : Set (Σ n, (Fin n → Option (Msg T)) → Set (Msg T)) :=
-  (⋃ n, (fun f : F n => (⟨n, fun ms => {r | strict (fun as => some (Msg.app f as)) ms = some r}⟩ :
-      Σ n, (Fin n → Option (Msg T)) → Set (Msg T))) '' Pub.pubFun (T := T) n) ∪
-  (fun d : Σ n, (Fin n → Option (Msg T)) → Option (Msg T) =>
-    (⟨d.1, fun ms => {r | d.2 ms = some r}⟩ : Σ n, (Fin n → Option (Msg T)) → Set (Msg T)))
-    '' Pub.dtors (T := T)
+/-- The attacker's operations on may-fail arguments: the public constructors, which
+fail when an argument does, and the public destructors. -/
+def Pub.ops (T : Theory F) [Pub T] : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T)) :=
+  (⋃ n, (fun f : F n => (⟨n, strict fun as => some (Msg.app f as)⟩ :
+    Σ n, (Fin n → Option (Msg T)) → Option (Msg T))) '' Pub.pubFun (T := T) n) ∪ Pub.dtors
 
 end ProVerif

@@ -127,19 +127,20 @@ theorem secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
 
 /-! ## Attackers from public operations -/
 
-/-- `S` is closed under each operation in `ops`, an operation of some arity giving
-the set of its possible results.  An argument is either in `S` or `none`, the
-failure: the attacker can always pass `fail`, which is an expression of the calculus. -/
-def ClosedUnder (ops : Set (Σ n, (Fin n → Option M) → Set M)) (S : Set M) : Prop :=
-  ∀ o ∈ ops, ∀ args : Fin o.1 → Option M, (∀ i m, args i = some m → m ∈ S) → o.2 args ⊆ S
+/-- `S` is closed under each operation in `ops`, an operation of some arity on
+may-fail arguments, `none` being `fail`.  An argument is either in `S` or `none`: the
+attacker can always pass `fail`, which is an expression of the calculus. -/
+def ClosedUnder (ops : Set (Σ n, (Fin n → Option M) → Option M)) (S : Set M) : Prop :=
+  ∀ o ∈ ops, ∀ args : Fin o.1 → Option M, (∀ i m, args i = some m → m ∈ S) →
+    ∀ r, o.2 args = some r → r ∈ S
 
 /-- The attacker that can apply the public operations `ops`: ProVerif's
 `attacker` predicate for a term algebra. -/
 @[instance_reducible]
-def Attacker.ofOps (ops : Set (Σ n, (Fin n → Option M) → Set M)) : Attacker M where
+def Attacker.ofOps (ops : Set (Σ n, (Fin n → Option M) → Option M)) : Attacker M where
   derive := ClosureOperator.ofCompletePred (ClosedUnder ops) fun _ h o ho args hargs r hr => by
     simp only [Set.sInf_eq_sInter, Set.mem_sInter] at hargs ⊢
-    exact fun S hS => h S hS o ho args (fun i m hm => hargs i m hm S hS) hr
+    exact fun S hS => h S hS o ho args (fun i m hm => hargs i m hm S hS) r hr
 
 /-! ## Message algebras
 
@@ -164,7 +165,8 @@ theorem app_mem_derive [Pub T] {n : ℕ} {f : F n} (hf : f ∈ Pub.pubFun (T := 
   have hS : ClosedUnder (Pub.ops T) (derive S) :=
     (ClosureOperator.ofCompletePred_isClosed _ _ _).mp ((derive (M := Msg T)).isClosed_closure S)
   exact hS _ (Or.inl (Set.mem_iUnion.2 ⟨n, f, hf, rfl⟩)) (fun i => some (ms i))
-    (fun i m h => Option.some_injective _ h ▸ hms i) (strict_eq_some.2 ⟨ms, fun _ => rfl, rfl⟩)
+    (fun i m h => Option.some_injective _ h ▸ hms i) _
+    ((strict_eq_some (f := fun as => some (Msg.app f as))).2 ⟨ms, fun _ => rfl, rfl⟩)
 
 end algebra
 

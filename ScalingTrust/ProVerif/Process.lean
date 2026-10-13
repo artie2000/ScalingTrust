@@ -522,7 +522,7 @@ abbrev fresh [Names M] : Cont (Proc M) M := fun k => Proc.new k
 abbrev emit (e : M) : Cont (Proc M) Unit := fun k => Proc.event e (k ())
 
 /-- Fork: the rest of the body runs twice in parallel, with `true` and `false`. -/
-abbrev fork : Cont (Proc M) Bool := fun k => Proc.merge k
+abbrev fork : Cont (Proc M) Bool := fun k => Proc.par (k true) (k false)
 
 /-- Replicate the rest of the body. -/
 abbrev repl : Cont (Proc M) Unit := fun k => Proc.bang (k ())
