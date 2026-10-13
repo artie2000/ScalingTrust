@@ -8,16 +8,18 @@ import ScalingTrust.ProVerif.Term
 /-!
 # The attacker and the queries
 
-The attacker is a process, `Enemy K`: the traces a Dolev-Yao attacker with
-initial knowledge `K` can perform.  It may receive on any channel it can
-derive, send anything it can derive on any channel it can derive, create names,
-and `say` anything it can derive.  What it can derive from a set of messages is
-a closure operator, `Attacker.derive`.  For the messages of a translated model
-these come from its algebra, at the end of this file, and `K` is its public free
-names.
+The attacker is a process, `Enemy K`: the traces a Dolev-Yao attacker knowing
+`K` can perform.  It may receive on any channel it can derive, send anything it
+can derive on any channel it can derive, create names, and `say` anything it can
+derive.  What it can derive from a set of messages is a closure operator,
+`Attacker.derive`; for the messages of a translated model it comes from the
+algebra, at the end of this file.
 
-An *attack* on `P` is a trace of `P | Enemy K` in which every communication was
-completed; `Attacks P K` is the process of attacks.
+An *attack* on `P` is a trace of `P | Enemy ∅` in which every communication was
+completed; `Attacks P` is the process of attacks.  The attacker starts from
+nothing because ProVerif's starts from the public free names, which here are
+public constants and so derivable from nothing.
+
 Queries are properties of attacks.  A communication leaves no action, so an
 attack does not record what the attacker learnt; instead `say s` in an attack is
 the attacker's knowledge of `s` made visible, and secrecy and correspondences
@@ -49,8 +51,8 @@ inductive Enemy : Set M → Proc M
   | say {K e} (m : M) : m ∈ derive K → e ∈ Enemy K →
       Enemy K (.say m :: e)
 
-/-- The attacks of `P` by an attacker knowing `K`: the closed traces of `P | Enemy K`. -/
-def Attacks (P : Proc M) (K : Set M) : Set (Trace M) := {t ∈ Proc.par P (Enemy K) | Closed t}
+/-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
+def Attacks (P : Proc M) : Set (Trace M) := {t ∈ Proc.par P (Enemy ∅) | Closed t}
 
 /-- `query attacker(s)` fails: in no attack does the attacker come to know `s`.
 
@@ -64,9 +66,9 @@ and every term is secret, even one the attacker learns on the public constant `t
 
 Secrecy of names created by `new` (ProVerif's `query secret x`) is not implemented,
 so `s` should contain no nonce: the attacker can create any `Names.nonce n` itself,
-so `Secret P K (Names.nonce n)` never holds. -/
-def Secret (P : Proc M) (K : Set M) (s : M) : Prop :=
-  ∀ t ∈ Attacks P K, .say s ∉ t
+so `Secret P (Names.nonce n)` never holds. -/
+def Secret (P : Proc M) (s : M) : Prop :=
+  ∀ t ∈ Attacks P, .say s ∉ t
 
 /-- The non-injective correspondence `F ==> H`, where `Hyp σ a` says that `a` is the
 instance of `F` under the valuation `σ` of the query's variables, and `Concl σ b`
@@ -76,8 +78,8 @@ some `σ` whose instance of `H` occurs no later.
 This extends the survey's Def. 3.5 to equations by reading its `=` as `=_E`.  Modulo
 `E` an action may be an instance of `F` under several valuations; `H` is required
 under one of them. -/
-def Corr {V : Type} (P : Proc M) (K : Set M) (Hyp Concl : V → Act M → Prop) : Prop :=
-  ∀ t ∈ Attacks P K, ∀ l, l <+: t → ∀ a ∈ l.getLast?,
+def Corr {V : Type} (P : Proc M) (Hyp Concl : V → Act M → Prop) : Prop :=
+  ∀ t ∈ Attacks P, ∀ l, l <+: t → ∀ a ∈ l.getLast?,
     (∃ σ, Hyp σ a) → ∃ σ, Hyp σ a ∧ ∃ b ∈ l, Concl σ b
 
 /-! ## Bounding the attacker's knowledge -/
@@ -110,17 +112,17 @@ theorem Enemy.say_mem {K S : Set M} {e : Trace M} (h : e ∈ Enemy K) (hK : K �
     · exact ih hK (fun c' m' h' => he c' m' (List.mem_cons_of_mem _ h')) hm
 
 /-- The closed-set method for secrecy: if `S` is closed under derivation and contains
-the attacker's initial knowledge, every nonce, and every message `P` offers, and `P`
-never says anything itself, then nothing outside `S` is ever said. -/
-theorem secret_of_closed {P : Proc M} {K S : Set M} (hK : K ⊆ S) (hS : derive.IsClosed S)
+every nonce and every message `P` offers, and `P` never says anything itself, then
+nothing outside `S` is ever said. -/
+theorem secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ t ∈ P, ∀ c m, Act.out c m ∈ t → m ∈ S)
-    (hsay : ∀ t ∈ P, ∀ m, Act.say m ∉ t) {s : M} (hs : s ∉ S) : Secret P K s := by
+    (hsay : ∀ t ∈ P, ∀ m, Act.say m ∉ t) {s : M} (hs : s ∉ S) : Secret P s := by
   rintro t ⟨⟨⟨f, l, hf, hl, ht⟩, -⟩, hc⟩ hm
   obtain ⟨i, hi⟩ := mem_of_mem_comms ht hm
   rw [hl.mem_iff] at hi
   fin_cases i
   · exact hsay _ (hf 0) s hi
-  · refine hs (Enemy.say_mem (hf 1) hK hS hn (fun c m h => ?_) hi)
+  · refine hs (Enemy.say_mem (hf 1) (Set.empty_subset S) hS hn (fun c m h => ?_) hi)
     obtain ⟨j, hj, hj'⟩ := out_of_inp_comms ht hc (hl.mem_iff.2 h)
     fin_cases j
     · exact hP _ (hf 0) c m (hl.mem_iff.1 hj')
@@ -156,6 +158,16 @@ variable {F : Sig} {T : Theory F}
 instance : Names (Msg T) := ⟨⟨Msg.name, fun _ _ => Msg.name_inj⟩⟩
 
 instance [Pub T] : Attacker (Msg T) := .ofOps (Pub.ops T)
+
+/-- A public constructor applied to derivable messages is derivable; in particular a
+public free name is derivable from nothing. -/
+theorem app_mem_derive [Pub T] {n : ℕ} {f : F n} (hf : f ∈ Pub.pubFun (T := T) n)
+    {S : Set (Msg T)} {ms : Fin n → Msg T} (hms : ∀ i, ms i ∈ derive S) :
+    Msg.app f ms ∈ derive S := by
+  have hS : ClosedUnder (Pub.ops T) (derive S) :=
+    (ClosureOperator.ofCompletePred_isClosed _ _ _).mp ((derive (M := Msg T)).isClosed_closure S)
+  exact hS _ (Or.inl (Set.mem_iUnion.2 ⟨n, f, hf, rfl⟩)) (fun i => some (ms i))
+    (fun i m h => Option.some_injective _ h ▸ hms i) (strict_eq_some.2 ⟨ms, fun _ => rfl, rfl⟩)
 
 end algebra
 

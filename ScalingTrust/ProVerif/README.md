@@ -36,8 +36,9 @@ A model is translated piece by piece, types erased as in the survey's semantics.
 example.
 
 1. **Free names** (`free a`) become nullary constructors, `DH.Fun.const a` over a
-   type of the model's free names. The names `Msg.name n` are reserved for the
-   nonces that `new` creates, and nothing in a translated model writes one.
+   type of the model's free names (see "Free names are constants" below). The
+   names `Msg.name n` are reserved for the nonces that `new` creates, and nothing
+   in a translated model writes one.
 2. **Constructors** (`fun`, `const`) become the symbols of a signature `F : Sig`.
 3. **Equations** (`equation`) become a `Theory F`: the equations `E`, and the
    symbols declared *free*, every symbol that is not at the root of a side of an
@@ -51,8 +52,8 @@ example.
    may-fail variable is written on messages and lifted by `strict`; one with
    may-fail variables takes `Option (Msg T)` arguments directly.
 5. **Public and private** declarations become a `Pub T` instance: `pubFun` the
-   public constructors, including the public free names, and `dtors` the public
-   destructors.
+   public constructors, including the public free names (the survey's `N_pub`),
+   and `dtors` the public destructors. This is all the attacker knows initially.
 6. **The process** becomes a `do` block in `Cont (Proc (Msg T))`, closed with
    `Proc.run`: `out` is `Proc.send`, `in` is `Proc.recv`, `new` is `Proc.fresh`,
    `event` is `Proc.emit`, `P | Q` is `if ← Proc.fork then P else Q`, `!P` is
@@ -61,16 +62,13 @@ example.
    `if M = N then P else Q` a Lean `if` on the equation of messages: a condition
    is a Lean proposition, and booleans are messages only if the protocol sends
    them. The process never uses `Msg.name` or `say`.
-7. **The attacker's initial knowledge** `K`, the survey's `N_pub`, is the public
-   free names. They are public constants, so they are derivable already and
-   `K = ∅` gives the same attacker.
-8. **Queries**: `query attacker(M)` is `Secret`, for `M` without nonces;
+7. **Queries**: `query attacker(M)` is `Secret`, for `M` without nonces;
    `query F ==> H` is `Corr`, with `F` and `H` instantiated by valuations of the
    query's variables.
 
 Under this translation the attacker knows a nonce only once it has created or
-received it, as in the survey: `K` contains none, and no public operation
-produces one it was not given.
+received it, as in the survey: it starts from nothing, and no public operation
+produces a nonce it was not given.
 
 ## The semantics
 
@@ -128,18 +126,17 @@ ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
 names `Msg.name n`. `Enemy K` is the most general intruder as a process: knowing
 `K`, it may receive on any channel it can derive (learning the message), send
 anything it can derive on any channel it can derive, create names, and say
-anything it can derive.
+anything it can derive. `K` grows as it receives messages and creates names.
 
-**Attacks and queries.** `Attacks P K` is the process of traces of `P | Enemy K`
+**Attacks and queries.** `Attacks P` is the process of traces of `P | Enemy ∅`
 in which no action is unfinished: ProVerif's `P | Q` for every adversary `Q` at
-once. Queries are properties of the actions of an attack. `Secret P K s` says
-that in no attack does the attacker say `s`. `Corr P K Hyp Concl` says that each
+once. Queries are properties of the actions of an attack. `Secret P s` says
+that in no attack does the attacker say `s`. `Corr P Hyp Concl` says that each
 instance of `F` is one under a valuation whose instance of `H` occurs no later;
 `F` is an event, or `attacker(M)` as `say M`. `secret_of_closed` is the
-closed-set method for secrecy: a `derive`-closed set that contains the
-attacker's initial knowledge, every nonce and every message the protocol offers
-bounds everything the attacker can ever say, provided the protocol itself never
-says anything. `Examples.hashed_secret` uses it; `Examples.leak_attack` exhibits
+closed-set method for secrecy: a `derive`-closed set that contains every nonce
+and every message the protocol offers bounds everything the attacker can ever
+say, provided the protocol itself never says anything. `Examples.hashed_secret` uses it; `Examples.leak_attack` exhibits
 an attack instead.
 
 ## Design decisions
@@ -163,6 +160,19 @@ an attack instead.
 * **Channels are uniform.** Nothing marks a channel public or private: a
   private channel is a term the attacker cannot derive, on which `Enemy` makes
   no offers.
+* **Free names are constants.** The survey keeps names apart from function
+  symbols: free names are public or private through the environment
+  `(N_pub, N_priv)`, function symbols through their declaration, and rewrite
+  rules and equations may mention constants but not names. Here a free name is
+  a nullary constructor, as the ProVerif manual treats it (§6.7.3: a free name,
+  a constant and a top-level bound name "all declare a constant"), and only the
+  names `new` creates are names. Publicity is then one mechanism, `Pub`, and
+  the public free names are derivable from nothing, so the attacker starts from
+  `∅` rather than from an initial knowledge `K`. ProVerif's initial knowledge is
+  just the public free names; anything else, such as a leaked key, is modelled
+  in the process by an output on a public channel. The one definition this
+  changes is the survey's Def. 3.2, whose public channel must be a name; see
+  `Secret`.
 * **Freshness by index.** Rather than "the new name occurs nowhere", the
   indices of all the `new`s in a trace are distinct: `Proc.new` refuses to
   create a name the rest of the process creates again, `Proc.merge` refuses
@@ -170,7 +180,7 @@ an attack instead.
   as `Proc.new`. This is Paulson's `Nonce N ∉ used evs` pushed into the
   constructors, and the applied pi convention that bound names are pairwise
   distinct. It is sound because a translated model never writes a name
-  (steps 1, 4, 6 and 7).
+  (steps 1, 4 and 6) and the attacker starts from nothing.
 
 ## Not modelled
 

@@ -11,9 +11,7 @@ The translation of the survey's running example (§2.2), the simplified
 Denning-Sacco protocol, over the algebra of `ProVerif.DH`: its free names are a
 public channel `c` and a private secret `s`, and its roles and system are `do`
 blocks.  Then an attack, and a secrecy proof by the closed-set method, whose closed
-set is defined through the universal property of the message quotient.  The
-attacker's initial knowledge is `{c}`, the public free names, which `∅` would
-equal since `c` is a public constant.
+set is defined through the universal property of the message quotient.
 -/
 
 namespace ProVerif.Examples
@@ -80,11 +78,12 @@ noncomputable def system : Proc M := .run do
 /-! ## An attack -/
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
-theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) {c} s := by
+theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) s := by
   intro h
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have he : [Act.inp c s, .say s] ∈ Enemy {c} :=
-    .inp _ _ (derive.le_closure _ rfl) (.say _ (derive.le_closure _ (Set.mem_insert _ _)) .nil)
+  have he : [Act.inp c s, .say s] ∈ Enemy (∅ : Set M) :=
+    .inp _ _ (app_mem_derive (ms := ![]) rfl fun i => i.elim0)
+      (.say _ (derive.le_closure _ (Set.mem_insert _ _)) .nil)
   have hc : Closed [Act.say s] := fun _ ha h => by
     obtain rfl := List.mem_singleton.1 ha
     cases h
@@ -167,10 +166,6 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
       rw [hk] at h
       exact (hid_sign.1 h).1
 
-theorem hid_c : Hid c := by
-  rw [c, DH.const, hid_app]
-  exact fun i => i.elim0
-
 theorem not_hid_s : ¬ Hid s := by
   rw [s, DH.const, hid_app]
   exact id
@@ -181,11 +176,9 @@ theorem hid_hash (m : M) : Hid (DH.hash m) := by
 
 /-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
 in the closed set of messages in which `s` occurs only under a hash. -/
-theorem hashed_secret : Secret (Proc.out c (DH.hash s) Proc.nil) {c} s := by
-  refine secret_of_closed (S := {m | Hid m}) ?_ hid_closed
+theorem hashed_secret : Secret (Proc.out c (DH.hash s) Proc.nil) s := by
+  refine secret_of_closed (S := {m | Hid m}) hid_closed
     (fun n => show Hid (Msg.name n) from trivial) ?_ ?_ not_hid_s
-  · rintro _ rfl
-    exact hid_c
   · intro t ht c' m hm
     rcases ht with rfl | ⟨_, (rfl : _ = []), rfl⟩
     · simp at hm
