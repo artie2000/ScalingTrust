@@ -6,7 +6,7 @@ import ScalingTrust.ProVerif.Process
 import ScalingTrust.ProVerif.Term
 
 /-!
-# The attacker and the queries
+# The attacker and the security properties
 
 The attacker is a process, `Enemy K`: the traces a Dolev-Yao attacker knowing
 `K` can perform.  It may receive on any channel it can derive, send anything it
@@ -20,10 +20,11 @@ completed; `Attacks P` is the process of attacks.  The attacker starts from
 nothing because ProVerif's starts from the public free names, which here are
 public constants and so derivable from nothing.
 
-Queries are properties of attacks.  A communication leaves no action, so an
-attack does not record what the attacker learnt; instead `say s` in an attack is
-the attacker's knowledge of `s` made visible, and secrecy and correspondences
-alike read the actions of the attack.
+ProVerif states security properties as queries; here they are properties of
+attacks, `Secret` for `query attacker(s)` and `Corr` for `query F ==> H`.  A
+communication leaves no action, so an attack does not record what the attacker
+learnt; instead `say s` in an attack is the attacker's knowledge of `s` made
+visible, and secrecy and correspondences alike read the actions of the attack.
 
 Nothing here distinguishes public from private channels: a private channel is
 a term the attacker cannot derive, on which it therefore makes no offers.
@@ -54,7 +55,8 @@ inductive Enemy : Set M → Proc M
 /-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
 def Attacks (P : Proc M) : Set (Trace M) := {t ∈ Proc.par P (Enemy ∅) | Closed t}
 
-/-- `query attacker(s)` fails: in no attack does the attacker come to know `s`.
+/-- Secrecy of `s`, the property that `query attacker(s)` checks: in no attack does
+the attacker come to know `s`.
 
 The survey's secrecy (Defs. 3.2, 3.3) counts only outputs on a public free name.
 Whatever the attacker learns it can relay on one, so `Secret` agrees with it when the
@@ -67,10 +69,10 @@ so `Secret P (Names.nonce n)` never holds. -/
 def Secret (P : Proc M) (s : M) : Prop :=
   ∀ t ∈ Attacks P, .say s ∉ t
 
-/-- The non-injective correspondence `F ==> H`, where `Hyp σ a` says that `a` is the
-instance of `F` under the valuation `σ` of the query's variables, and `Concl σ b`
-that `b` is the instance of `H`: in every attack, each instance of `F` is one under
-some `σ` whose instance of `H` occurs no later.
+/-- The non-injective correspondence that `query F ==> H` checks, where `Hyp σ a`
+says that `a` is the instance of `F` under the valuation `σ` of the query's
+variables, and `Concl σ b` that `b` is the instance of `H`: in every attack, each
+instance of `F` is one under some `σ` whose instance of `H` occurs no later.
 
 This extends the survey's Def. 3.5 to equations by reading its `=` as `=_E`.  Modulo
 `E` an action may be an instance of `F` under several valuations; `H` is required

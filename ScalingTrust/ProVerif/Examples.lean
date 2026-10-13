@@ -2,7 +2,7 @@
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
 import ScalingTrust.ProVerif.DH
-import ScalingTrust.ProVerif.Query
+import ScalingTrust.ProVerif.Security
 
 /-!
 # Examples

@@ -19,7 +19,7 @@ documentation of the other folders only when a task genuinely spans them.
 | Folder | What it is | Language | Documentation |
 | --- | --- | --- | --- |
 | `ScalingTrust/Noise/` | The Noise Protocol Framework (Revision 34), its validity rules and a correctness proof | Lean 4 core only | `ScalingTrust/Noise/README.md` |
-| `ScalingTrust/ProVerif/` | A trace-based semantics of the process calculus behind ProVerif, with the attacker and the queries | Lean 4 with Mathlib | `ScalingTrust/ProVerif/README.md`; `Reference/` there holds the papers, the manual and two Noise Explorer models, with its own README |
+| `ScalingTrust/ProVerif/` | A trace-based semantics of the process calculus behind ProVerif, with the attacker and the security properties | Lean 4 with Mathlib | `ScalingTrust/ProVerif/README.md`; `Reference/` there holds the papers, the manual and two Noise Explorer models, with its own README |
 | `ScalingTrust/PsiCalculi/Isabelle/` | The AFP entry `Psi_Calculi` (Bengtson), kept for reference | Isabelle/HOL-Nominal | `document/root.tex` in that folder |
 
 ## Building

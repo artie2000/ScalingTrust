@@ -2,8 +2,8 @@
 
 A trace-based semantics for the calculus of Blanchet's survey *Modeling and
 Verifying Security Protocols with the Applied Pi Calculus and ProVerif* (FnTPS
-2016, Fig. 2.4), kept as simple as possible while still able to state ProVerif's
-queries. It is meant as the target of a translation from ProVerif models. The
+2016, Fig. 2.4), kept as simple as possible while still able to state the
+security properties of ProVerif's queries. It is meant as the target of a translation from ProVerif models. The
 embedding is shallow: a process is the set of traces it can perform, what a
 process computes between actions is ordinary Lean code, and the attacker is not
 a program but the set of traces the Dolev–Yao rules allow.
@@ -22,7 +22,7 @@ lake build ScalingTrust.ProVerif.Examples
 | --- | --- |
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
 | `ProVerif.Term` | Message algebras from ProVerif declarations: terms, the equations, `Msg`, views, destructors, public operations |
-| `ProVerif.Query` | The attacker as a process, attacks, `Secret`, `Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
+| `ProVerif.Security` | The attacker as a process, attacks, the security properties `Secret` and `Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
 | `ProVerif.DH` | A translated algebra: the survey's running-example primitives with Diffie–Hellman |
 | `ProVerif.Examples` | A translated model, the survey's Denning–Sacco example; an attack; a secrecy proof |
 
@@ -60,9 +60,9 @@ example.
    `let x = D in P else Q` is a Lean `match` on the destructor's result, and
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
    never uses `Msg.name` or `say`.
-7. **Queries**: `query attacker(M)` is `Secret`, for `M` without nonces;
-   `query F ==> H` is `Corr`, with `F` and `H` instantiated by valuations of the
-   query's variables.
+7. **Queries** become the security properties they check: `query attacker(M)`
+   is `Secret`, for `M` without nonces; `query F ==> H` is `Corr`, with `F` and
+   `H` instantiated by valuations of the query's variables.
 
 ## The semantics
 
@@ -70,7 +70,7 @@ example.
 where the name created by `new n` is `Names.nonce n`. `say m` is the attacker's
 declaration that it knows `m`; honest processes never use it. Processes and the
 attacker are written for any message type `M` with `Names M` and `Attacker M`;
-a translated model uses `Msg T` with the instances of `ProVerif.Query`.
+a translated model uses `Msg T` with the instances of `ProVerif.Security`.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed, so a trace is an execution so far and a process that blocks
@@ -115,9 +115,10 @@ intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
 derive, create names, and say anything it can derive.
 
-**Attacks and queries.** `Attacks P` is the process of traces of `P | Enemy ∅`
-in which no action is unfinished: ProVerif's `P | Q` for every adversary `Q` at
-once. Queries are properties of the actions of an attack. `Secret P s` says
+**Attacks and security properties.** `Attacks P` is the process of traces of
+`P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
+adversary `Q` at once. The security properties that ProVerif's queries check are
+properties of the actions of an attack. `Secret P s` says
 that in no attack does the attacker say `s`. `Corr P Hyp Concl` says that each
 instance of `F` is one under a valuation whose instance of `H` occurs no later;
 `F` is an event, or `attacker(M)` as `say M`. `secret_of_closed` is the
@@ -134,9 +135,9 @@ uses it; `Examples.leak_attack` exhibits an attack instead.
   must be distinct components, which is why communication is defined on the
   tagged interleaving, where the components are still known, rather than read
   off adjacent actions of an untagged trace.
-* **A communication leaves no action.** A query can observe the events of an attack
-  and what the attacker says, and nothing else; what was communicated is
-  recoverable from the component traces when a proof needs it.
+* **A communication leaves no action.** A security property can observe the
+  events of an attack and what the attacker says, and nothing else; what was
+  communicated is recoverable from the component traces when a proof needs it.
 * **The attacker speaks.** An attack does not record what the attacker learnt, so
   its knowledge is made visible by `say`, as with the intruder of Schneider's
   CSP approach: at any time it may say anything it can derive. This is what
@@ -172,9 +173,9 @@ phases, so they mark what remains.
 
 * B. Blanchet, *Modeling and Verifying Security Protocols with the Applied Pi
   Calculus and ProVerif*, FnTPS 2016: `Reference/BlanchetFnTPS16.pdf` (§2 for
-  the calculus, Fig. 2.4 for its semantics, §3 for the queries). The ProVerif
-  manual is next to it, as `Reference/proverif-manual.pdf` with a text
-  extraction `proverif-manual.txt` for searching.
+  the calculus, Fig. 2.4 for its semantics, §3 for the security properties).
+  The ProVerif manual is next to it, as `Reference/proverif-manual.pdf` with a
+  text extraction `proverif-manual.txt` for searching.
 * M. Abadi, B. Blanchet and C. Fournet, *The Applied Pi Calculus: Mobile
   Values, New Names, and Secure Communication*, JACM 2018:
   `Reference/AbadiBlanchetFournet18.pdf`. The full applied pi calculus, with
