@@ -50,15 +50,33 @@ inductive Enemy : Set M → Proc M
 /-- The attacks of `P` by an attacker knowing `K`: the closed traces of `P | Enemy K`. -/
 def Attacks (P : Proc M) (K : Set M) : Set (Trace M) := {t ∈ Proc.par P (Enemy K) | Closed t}
 
-/-- `query attacker(s)` fails: in no attack does the attacker come to know `s`. -/
+/-- `query attacker(s)` fails: in no attack does the attacker come to know `s`.
+
+This agrees with the survey's Def. 3.3 when `N_pub` is nonempty.  There
+(Def. 3.2) a run reveals `s` only by outputting it on a channel `N ∈ N_pub`, a public
+free *name*, so the attacker needs such a name to output what it finds on: whatever
+it learns, it can relay on a public name.  With none, nothing is ever output publicly
+and every term is secret, even one the attacker learns on the public constant `true`.
+`Secret` asks only that the attacker come to know `s`, as ProVerif's clauses do
+(§3.2.2).
+
+Secrecy of names created by `new` (ProVerif's `query secret x`) is not implemented,
+so `s` should contain no nonce: the attacker can create any `Names.nonce n` itself,
+so `Secret P K (Names.nonce n)` never holds. -/
 def Secret (P : Proc M) (K : Set M) (s : M) : Prop :=
   ∀ t ∈ Attacks P K, .say s ∉ t
 
-/-- A non-injective correspondence: in every attack, each action satisfying `Pre` is
-preceded by one related to it by `R`.  For `query event(e) ==> event(e')`, `Pre`
-picks out events; for `query attacker(M) ==> event(e')`, it picks out `say M`. -/
-def Corr (P : Proc M) (K : Set M) (Pre : Act M → Prop) (R : Act M → Act M → Prop) : Prop :=
-  ∀ t ∈ Attacks P K, ∀ pre a post, t = pre ++ a :: post → Pre a → ∃ b ∈ pre, R a b
+/-- The non-injective correspondence `F ==> H`, where `Hyp σ a` says that `a` is the
+instance of `F` under the valuation `σ` of the query's variables, and `Concl σ b`
+that `b` is the instance of `H`: in every attack, each instance of `F` is one under
+some `σ` whose instance of `H` occurs no later.
+
+This extends the survey's Def. 3.5 to equations by reading its `=` as `=_E`.  Modulo
+`E` an action may be an instance of `F` under several valuations; `H` is required
+under one of them. -/
+def Corr {V : Type} (P : Proc M) (K : Set M) (Hyp Concl : V → Act M → Prop) : Prop :=
+  ∀ t ∈ Attacks P K, ∀ l, l <+: t → ∀ a ∈ l.getLast?,
+    (∃ σ, Hyp σ a) → ∃ σ, Hyp σ a ∧ ∃ b ∈ l, Concl σ b
 
 /-! ## Bounding the attacker's knowledge -/
 
@@ -124,7 +142,9 @@ def Attacker.ofOps (ops : Set (Σ n, (Fin n → Option M) → Set M)) : Attacker
 
 /-! ## Message algebras
 
-The messages of a theory have the names and the attacker that the queries need.
+The Dolev-Yao model for the messages of a theory: the nonces that `new` creates are
+the algebra's names, and the attacker can apply exactly the public operations that
+its `Pub` instance declares.
 -/
 
 section algebra
