@@ -144,7 +144,7 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
   · rw [Set.mem_iUnion] at ho
     obtain ⟨n, f, hf, rfl⟩ := ho
     dsimp only at hr
-    obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr
+    obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
     obtain rfl := Option.some_injective _ hr
     show Hid (Msg.app f ms)
     rw [hid_app]
@@ -156,7 +156,7 @@ theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
     | hash => trivial
     | _ => exact fun i => hargs i _ (hms i)
   · rcases hd with rfl | rfl | rfl <;> dsimp only at hr <;>
-      obtain ⟨ms, hms, hr⟩ := strict_eq_some.1 hr <;>
+      obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr <;>
       have h : Hid (ms 0) := hargs 0 _ (hms 0)
     · rw [DH.sdec_eq_some.1 hr] at h
       exact (hid_senc.1 h).1

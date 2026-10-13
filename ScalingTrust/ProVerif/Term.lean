@@ -25,7 +25,7 @@ a ProVerif model, types erased:
   repeated variable an equality test.  A rule may match `fail` with a may-fail
   variable (p. 14), as `and(x, u) → false` does (p. 17), so destructors take
   may-fail arguments, `Option (Msg T)`; one whose rules have none is written on
-  messages and lifted by `strict`.
+  messages and lifted by `liftFail`.
 * The public declarations give a `Pub` instance, the operations the attacker may
   apply.
 
@@ -257,14 +257,14 @@ end Msg
 /-- A function of `n` arguments, lifted to may-fail arguments: it fails as soon as one
 of them does.  Constructors evaluate this way (p. 26), and so do destructors whose rules
 have no may-fail variables, since `fail` never instantiates an ordinary variable (p. 20). -/
-def strict {α β : Type} {n : ℕ} (f : (Fin n → α) → Option β) (a : Fin n → Option α) :
+def liftFail {α β : Type} {n : ℕ} (f : (Fin n → α) → Option β) (a : Fin n → Option α) :
     Option β :=
   if h : ∀ i, (a i).isSome then f fun i => (a i).get (h i) else none
 
-theorem strict_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option β}
+theorem liftFail_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option β}
     {a : Fin n → Option α} {r : β} :
-    strict f a = some r ↔ ∃ ms, (∀ i, a i = some (ms i)) ∧ f ms = some r := by
-  unfold strict
+    liftFail f a = some r ↔ ∃ ms, (∀ i, a i = some (ms i)) ∧ f ms = some r := by
+  unfold liftFail
   split_ifs with h
   · refine ⟨fun hr => ⟨_, fun i => (Option.some_get (h i)).symm, hr⟩, ?_⟩
     rintro ⟨ms, hms, hr⟩
@@ -286,7 +286,7 @@ class Pub (T : Theory F) where
 /-- The attacker's operations on may-fail arguments: the public constructors, which
 fail when an argument does, and the public destructors. -/
 def Pub.ops (T : Theory F) [Pub T] : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T)) :=
-  (⋃ n, (fun f : F n => (⟨n, strict fun as => some (Msg.app f as)⟩ :
+  (⋃ n, (fun f : F n => (⟨n, liftFail fun as => some (Msg.app f as)⟩ :
     Σ n, (Fin n → Option (Msg T)) → Option (Msg T))) '' Pub.pubFun (T := T) n) ∪ Pub.dtors
 
 end ProVerif

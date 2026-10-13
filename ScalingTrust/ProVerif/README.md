@@ -48,7 +48,7 @@ example.
    rewrite rule in order and a final `none`. A nested pattern over a free symbol
    is a nested match; a repeated variable is an equality test. A destructor
    whose rules have no may-fail variable is written on messages and lifted by
-   `strict`; one with may-fail variables takes `Option (Msg T)` arguments
+   `liftFail`; one with may-fail variables takes `Option (Msg T)` arguments
    directly.
 5. **Public and private** declarations become a `Pub T` instance: `pubFun` the
    public constructors, including the public free names, and `dtors` the public

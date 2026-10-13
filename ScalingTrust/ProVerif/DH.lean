@@ -82,7 +82,7 @@ theorem exp_exp_g (x y : Msg (T A)) : exp (exp g x) y = exp (exp g y) x := by
 Each is a match on the view with one branch for its rule, then failure; the nested
 pattern `pk(y)` of `adec` and `check`, which mentions a variable bound elsewhere, is
 an equality test.  No rule has a may-fail variable, so each destructor is written
-on messages and lifted by `strict` in `pub`.
+on messages and lifted by `liftFail` in `pub`.
 -/
 
 open Classical
@@ -163,7 +163,7 @@ theorem check_eq_some {s p m : Msg (T A)} :
 noncomputable def pub (P : Set A) : Pub (T A) where
   pubFun _ := {f | match f with | .const a => a ∈ P | _ => True}
   dtors :=
-    {⟨2, strict fun a => sdec (a 0) (a 1)⟩, ⟨2, strict fun a => adec (a 0) (a 1)⟩,
-     ⟨2, strict fun a => check (a 0) (a 1)⟩}
+    {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => adec (a 0) (a 1)⟩,
+     ⟨2, liftFail fun a => check (a 0) (a 1)⟩}
 
 end ProVerif.DH

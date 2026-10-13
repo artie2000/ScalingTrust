@@ -166,7 +166,7 @@ theorem app_mem_derive [Pub T] {n : ℕ} {f : F n} (hf : f ∈ Pub.pubFun (T := 
     (ClosureOperator.ofCompletePred_isClosed _ _ _).mp ((derive (M := Msg T)).isClosed_closure S)
   exact hS _ (Or.inl (Set.mem_iUnion.2 ⟨n, f, hf, rfl⟩)) (fun i => some (ms i))
     (fun i m h => Option.some_injective _ h ▸ hms i) _
-    ((strict_eq_some (f := fun as => some (Msg.app f as))).2 ⟨ms, fun _ => rfl, rfl⟩)
+    ((liftFail_eq_some (f := fun as => some (Msg.app f as))).2 ⟨ms, fun _ => rfl, rfl⟩)
 
 end algebra
 
