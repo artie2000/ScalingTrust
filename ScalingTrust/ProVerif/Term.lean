@@ -13,7 +13,7 @@ a ProVerif model, types erased:
 * `free a` and `fun`/`const` declarations give a signature `F : Sig`, the free names
   being nullary constructors.  Raw terms are the terms of that first-order language
   (Mathlib's `FirstOrder.Language.Term`) whose variables, `Msg.name n`, are the
-  nonces that `new` creates; a model never writes one.
+  nonces that `new` creates.
 * `equation` declarations give a `Theory`: the equations `E`, and the symbols
   declared *free*, those at the root of no equation.  Messages `Msg T` are terms
   modulo the congruence `Eqv` that `E` generates, so Lean's `=` on messages is the
@@ -25,8 +25,7 @@ a ProVerif model, types erased:
   repeated variable an equality test.  A rule may match `fail` with a may-fail
   variable (p. 14), as `and(x, u) → false` does (p. 17), so destructors take
   may-fail arguments, `Option (Msg T)`; one whose rules have none is written on
-  messages and lifted by `strict`.  Rules contain no names, so neither does a
-  destructor.
+  messages and lifted by `strict`.
 * The public declarations give a `Pub` instance, the operations the attacker may
   apply.
 
@@ -158,8 +157,7 @@ abbrev Msg (T : Theory F) : Type := Quotient T.setoid
 
 namespace Msg
 
-/-- The `n`-th nonce created by `new`.  A model's free names are constants instead,
-and a translated model never writes this. -/
+/-- The `n`-th nonce created by `new`. -/
 def name (n : ℕ) : Msg T := ⟦.var n⟧
 
 /-- Apply a constructor to messages. -/
