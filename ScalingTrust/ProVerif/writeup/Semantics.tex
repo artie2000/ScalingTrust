@@ -53,13 +53,11 @@
 \newcommand{\obs}{\operatorname{obs}}
 \newcommand{\Tr}{\operatorname{Tr}}
 \newcommand{\attacker}{\pv{attacker}}
-\newcommand{\fmessage}{\pv{message}}
 \newcommand{\event}{\pv{event}}
 \newcommand{\interleaves}{\operatorname{Interleaves}}
 \newcommand{\red}[1]{\text{(Red #1)}}
 \newcommand{\CQ}{\mathcal{C}_Q}
 \newcommand{\Azero}{\mathcal{A}_0}
-\newcommand{\Kn}{K}
 
 \title{A trace semantics for the process calculus of ProVerif}
 \author{}
@@ -241,7 +239,7 @@ In the development a process is a program in the continuation monad with answer 
 \subsection{The attacker and the security properties}
 
 \begin{definition}[Enemy]
-For $K\subseteq\Msg$, $\Enemy(K)\subseteq\Act^*$ is the least family of sets such that
+The processes $\Enemy(K)\in\Proc$, for $K\subseteq\Msg$, are the pointwise least such that
 \begin{enumerate}
 \item $\varepsilon\in\Enemy(K)$;
 \item if $K\vdash c$ and $e\in\Enemy(K\cup\{m\})$ then $\ain(c,m)\,e\in\Enemy(K)$, for every $m\in\Msg$;
@@ -326,31 +324,11 @@ Let $P_0$ be a closed process.
 \end{enumerate}
 \end{definition}
 
-The Horn clauses for the adversary (survey, \S3.2.2) are
-\begin{align*}
-&\attacker(a[\,])\ \text{for } a\in\Npub, \tag{Init}\\
-&\attacker(b_0[x]), \tag{Rn}\\
-&\attacker(\fail), \tag{Rfail}\\
-&\textstyle\attacker(U_{i,1})\wedge\dots\wedge\attacker(U_{i,n})\wedge\bigwedge_{j<i}\forall\tilde v_j.\,(U_{i,1},\dots,U_{i,n})\ne(U_{j,1},\dots,U_{j,n})\notag\\
-&\qquad\Rightarrow\attacker(U_i), \tag{Rh}\\
-&\fmessage(x,y)\wedge\attacker(x)\Rightarrow\attacker(y), \tag{Rl}\\
-&\attacker(x)\wedge\attacker(y)\Rightarrow\fmessage(x,y), \tag{Rs}
-\end{align*}
-one instance of (Rh) for each public $h$ and each rule $h(U_{i,1},\dots,U_{i,n})\to U_i$ of $\mathrm{def}(h)$.
-
-\begin{remark}
-Under Definition~\ref{def:rules}, $\langle\cdot\rangle$ is the least fixed point of (Init), (Rfail) and (Rh); clauses (Rl) and (Rs) are the $\ain$ and $\aout$ clauses of $\Enemy$, and (Rn) is its $\anew$ clause.
-\end{remark}
-
 Fix $\Npriv$ as in Definition~\ref{def:survey}, and for an $\Npub$-adversary $Q$ write $\CQ$ for the configuration $(\Npub,\Npriv),\{P_0,Q\}$.
 
-\begin{definition}[Adversary knowledge]\label{def:knowledge}
-In a trace $\mathrm{Tr}$ from $\CQ$, tag $P_0$ as honest and $Q$ as adversarial, each process introduced by a step inheriting the tag of the process whose continuation it is. $\Kn(\mathrm{Tr})$ is the least set of closed terms that contains $\Npub$, every name created by a step \red{Res} on an adversarial process, every term $M$ of a step \red{I/O$'$} whose input is adversarial, and every $M$ with $h(D_1,\dots,D_n)\ev M$ for a public $h$ and $D_1,\dots,D_n\in\Kn(\mathrm{Tr})\cup\{\fail\}$. The trace $\mathrm{Tr}$ \emph{satisfies} $\attacker(M)$ if $M=_E M'$ for some $M'\in\Kn(\mathrm{Tr})$, and \emph{satisfies} $\event(M)$ if it executes $\pv{event}(M)$.
+\begin{definition}[Satisfaction]\label{def:satisfies}
+A trace \emph{satisfies} $\attacker(M)$ if it outputs $M$ publicly, and \emph{satisfies} $\event(M)$ if it executes $\pv{event}(M)$.
 \end{definition}
-
-\begin{lemma}\label{lem:public}
-Let $\Npub\ne\emptyset$ and let $M$ be a closed term with $\fn(M)\subseteq\Npub\cup\Npriv$. Then $P_0$ preserves the secrecy of $M$ from $\Npub$ if and only if no trace from $\CQ$, for any $\Npub$-adversary $Q$, satisfies $\attacker(M)$.
-\end{lemma}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
 Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
@@ -398,25 +376,25 @@ Let $\Azero=\Attacks(\sem{P_0}\rho_0)$.
 \begin{theorem}[Attacks]\label{thm:A}
 The following hold.
 \begin{enumerate}
-\item[(S)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with $t{\restriction}_{\anew,\aev}=\obs(\mathrm{Tr})$ such that $t\,\asay(\iota M)\in\Azero$ for every $M$ for which $\mathrm{Tr}$ satisfies $\attacker(M)$.
-\item[(C)] For every $t\in\Azero$ there are an $\Npub$-adversary $Q$, a trace $\mathrm{Tr}$ from $\CQ$ and an injection $\iota$ with $\obs(\mathrm{Tr})=t{\restriction}_{\anew,\aev}$ such that, if $t=t'\,\asay(m)$, then $\mathrm{Tr}$ satisfies $\attacker(M)$ for some closed term $M$ with $\iota M=m$.
+\item[(S)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with $t{\restriction}_{\anew,\aev}=\obs(\mathrm{Tr})$; if moreover the last step of $\mathrm{Tr}$ outputs $M$ publicly, $t$ may be chosen so that $t\,\asay(\iota M)\in\Azero$.
+\item[(C)] For every $t\in\Azero$ there are an $\Npub$-adversary $Q$, a trace $\mathrm{Tr}$ from $\CQ$ and an injection $\iota$ with $\obs(\mathrm{Tr})=t{\restriction}_{\anew,\aev}$; if moreover $t=t'\,\asay(m)$ and $\Npub\ne\emptyset$, they may be chosen so that the last step of $\mathrm{Tr}$ outputs publicly a term $M$ with $\iota M=m$.
 \end{enumerate}
 \end{theorem}
 
 \begin{theorem}[Secrecy]\label{thm:secrecy}
-Let $M$ be a closed term with $\fn(M)\subseteq\Npub\cup\Npriv$ and let $s=\rho_0M$. Then $\Secret(\sem{P_0}\rho_0,s)$ holds if and only if no trace from $\CQ$, for any $\Npub$-adversary $Q$, satisfies $\attacker(M)$. If $\Npub\ne\emptyset$, this is the condition that $P_0$ preserves the secrecy of $M$ from $\Npub$, by Lemma~\ref{lem:public}.
+Let $\Npub\ne\emptyset$, let $M$ be a closed term with $\fn(M)\subseteq\Npub\cup\Npriv$ and let $s=\rho_0M$. Then $\Secret(\sem{P_0}\rho_0,s)$ holds if and only if $P_0$ preserves the secrecy of $M$ from $\Npub$.
 \end{theorem}
 
 \begin{remark}
-When $\Npub=\emptyset$, $P_0$ preserves the secrecy of every $M$ in the sense of Definition~\ref{def:survey}(3), whereas $\Secret(\sem{P_0}\rho_0,\rho_0M)$ fails whenever $\emptyset\vdash\rho_0M$, for instance for a public constant $M$.
+The hypothesis $\Npub\ne\emptyset$ cannot be dropped: when $\Npub=\emptyset$ no trace outputs anything publicly, so $P_0$ preserves the secrecy of every $M$, whereas $\Secret(\sem{P_0}\rho_0,\rho_0M)$ fails whenever $\emptyset\vdash\rho_0M$, for instance for a public constant $M$.
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F,H_1,\dots,H_m$ be facts over $X$ such that every $H_j$ is an event fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m H_j$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\Hyp,\Concl)$ holds for the relations of Definition~\ref{def:queries}.
+Let $F,H_1,\dots,H_m$ be facts over $X$ such that every $H_j$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m H_j$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\Hyp,\Concl)$ holds for the relations of Definition~\ref{def:queries}.
 \end{theorem}
 
 \begin{remark}
-The restriction on the $H_j$ cannot be dropped. For $H_j=\attacker(M)$, $\Concl$ demands an action $\asay(\sigma M)$, which $\Enemy$ is never obliged to perform: with $\Npub=\{c\}$ and $P_0=\pv{out}(c,s);\pv{event}(e)$, $P_0$ satisfies $\event(e)\rightsquigarrow\attacker(s)$, while the one-action trace $\aev(e)$ lies in $\Azero$ and no $\asay$ precedes $\aev(e)$ in it, so $\Corr$ fails. Conclusions $\bigwedge_{k}H_{jk}$ with $l_j>1$ have no reading in Definition~\ref{def:queries}, since $\Corr$ admits a single witness $b$.
+Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H_j=\attacker(M)$, $\Concl$ demands an action $\asay(\sigma M)$, which $\Enemy$ is never obliged to perform: with $\Npub=\{c\}$ and $P_0=\pv{out}(c,s);\pv{event}(e)$, $P_0$ satisfies $\event(e)\rightsquigarrow\attacker(s)$, while the one-action trace $\aev(e)$ lies in $\Azero$ and no $\asay$ precedes $\aev(e)$ in it, so $\Corr$ fails. Conclusions $\bigwedge_{k}H_{jk}$ with $l_j>1$ have no reading in Definition~\ref{def:queries}, since $\Corr$ admits a single witness $b$.
 \end{remark}
 
 \end{document}
