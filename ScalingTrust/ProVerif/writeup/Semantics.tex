@@ -285,8 +285,16 @@ The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secre
 \end{definition}
 
 \begin{definition}[Bounded traces]
-For $S\subseteq\Msg$, a trace $u$ is \emph{$S$-bounded} if for every prefix $l\le u$: if $m\in S$ for every $\ain(c,m)$ in $l$, then $m\in S$ for every $\aout(c,m)$ and every $\acomm(c,m)$ in $l$.
+For $S\subseteq\Msg$, \emph{$S$-boundedness} of a trace is defined by recursion: $\varepsilon$ is $S$-bounded; $\ain(c,m)\,u$ is $S$-bounded if $u$ is whenever $m\in S$; $\aout(c,m)\,u$ and $\acomm(c,m)\,u$ are $S$-bounded if $m\in S$ and $u$ is; and $a\,u$ is $S$-bounded if $u$ is, for every other action $a$.
 \end{definition}
+
+\begin{lemma}\label{lem:enemy}
+Let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and $K\subseteq S$. Every $e\in\Enemy(K)$ is $S$-bounded.
+\end{lemma}
+
+\begin{lemma}\label{lem:network}
+Let $\comms(s,t)$ with $\Closed(t)$, and let $s{\restriction}i$ be $S$-bounded for every $i$. Then $m\in S$ for every $\acomm(c,m)$ in $t$.
+\end{lemma}
 
 \begin{lemma}\label{lem:known}
 Let $S\subseteq\Msg$ be $\Ops$-closed, $K\subseteq S$, and $m\in S$ for every $\acomm(c,m)$ in $t$. Then $\known(K,t)\subseteq S$.
