@@ -40,8 +40,6 @@ P_B(skB, spkA) = ! in(c, y); let y' = adec(y, skB) in let xk = check(y', spkA) i
                    out(c, senc(s, xk))
 P₀ = new sskA; new skB; out(c, pk(sskA)); out(c, pk(skB)); (P_A(sskA, pk(skB)) | P_B(skB, pk(sskA)))
 ```
-
-The survey notes (Example 3.2) that this protocol does not keep `s` secret.
 -/
 
 /-- The role of `A`: create a session key, send it signed and encrypted, and decrypt
@@ -83,11 +81,13 @@ theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) s := by
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
   have hc : c ∈ derive (∅ : Set M) := app_mem_derive (ms := ![]) rfl fun i => i.elim0
   have he : [Act.inp c s] ∈ Enemy (∅ : Set M) := .inp _ _ hc .nil
-  refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)],
+  have hs : (Fact.knows s).Holds [Act.comm c s] := by
+    show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
+    exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
+  exact h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)],
     Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [comms]⟩,
-    List.nodup_nil⟩, fun _ ha h => by obtain rfl := List.mem_singleton.1 ha; cases h⟩ ?_
-  show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
-  exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
+    List.nodup_nil⟩, fun _ ha h => by obtain rfl := List.mem_singleton.1 ha; cases h⟩
+    _ (List.prefix_refl _) _ (Set.mem_singleton _) hs
 
 /-! ## A secrecy proof
 

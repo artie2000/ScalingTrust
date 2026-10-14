@@ -44,7 +44,6 @@
 \newcommand{\Secret}{\operatorname{Secret}}
 \newcommand{\Corr}{\operatorname{Corr}}
 \newcommand{\Hyp}{\mathrm{Hyp}}
-\newcommand{\Concl}{\mathrm{Concl}}
 \newcommand{\sem}[1]{\llbracket #1 \rrbracket}
 \newcommand{\pv}[1]{\mathsf{#1}}
 \newcommand{\fail}{\pv{fail}}
@@ -269,16 +268,13 @@ A \emph{fact} is $\event(e)$ or $\knows(m)$ with $e,m\in\Msg$; $\Fact$ is the se
 l\models\event(e)\iff\aev(e)\in l,\qquad
 l\models\knows(m)\iff m\in\known(\langle\emptyset\rangle,l).
 \]
-For $s\in\Msg$,
+For $\Hyp\subseteq\Fact$ and $H\subseteq\Fact\times\mathcal{P}(\Fact)$,
 \[
-\Secret(P,s)\iff\forall t\in\Attacks(P).\ s\notin\known(\langle\emptyset\rangle,t).
+\Corr(P,\Hyp,H)\iff
+\forall t\in\Attacks(P).\ \forall l\le t.\ \forall f\in\Hyp.\ l\models f
+\Rightarrow H\big(f,\{g\mid l\models g\}\big).
 \]
-For a set $V$, $F:V\to\Fact$ and $H:V\to\mathcal{P}(\Fact)$,
-\begin{multline*}
-\Corr(P,F,H)\iff
-\forall t\in\Attacks(P).\ \forall l\le t.\ \forall\sigma\in V.\ l\models F(\sigma)\\
-\Rightarrow\exists\sigma'\in V.\ F(\sigma')=F(\sigma)\ \wedge\ \forall f\in H(\sigma').\ l\models f.
-\end{multline*}
+For $s\in\Msg$, $\Secret(P,s)\iff\Corr(P,\{\knows(s)\},\emptyset)$, that is, $s\notin\known(\langle\emptyset\rangle,l)$ for every prefix $l$ of a trace in $\Attacks(P)$.
 \end{definition}
 
 \begin{proposition}[Prefix-closure]
@@ -287,7 +283,7 @@ $\mathbf{0}$ and $\Enemy(K)$ are prefix-closed. If $P$, every $F(m)$ and every $
 
 \begin{definition}[Queries]\label{def:queries}
 A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants, and let the \emph{instance} of a query fact under $\sigma$ be $\sigma\,\event(M)=\event(\sigma M)$ and $\sigma\,\attacker(M)=\knows(\sigma M)$.
-The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H_1\vee\dots\vee H_m$, with $F$ a query fact over $X$ and each $H_j$ a conjunction $H_{j1}\wedge\dots\wedge H_{jl_j}$ of query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\hat F,\hat H)$ with $V=\{1,\dots,m\}\times(X\to\Msg)$, $\hat F(j,\sigma)=\sigma F$ and $\hat H(j,\sigma)=\{\sigma H_{jk}\mid k\le l_j\}$.
+The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H_1\vee\dots\vee H_m$, with $F$ a query fact over $X$ and each $H_j$ a conjunction $H_{j1}\wedge\dots\wedge H_{jl_j}$ of query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\Hyp,H)$ with $\Hyp=\{\sigma F\mid\sigma:X\to\Msg\}$ and $H(f,G)\iff\exists j\le m.\ \exists\sigma:X\to\Msg.\ \sigma F=f\wedge\forall k\le l_j.\ \sigma H_{jk}\in G$.
 \end{definition}
 
 \begin{definition}[Bounded traces]
@@ -299,7 +295,7 @@ Let $S\subseteq\Msg$ be $\Ops$-closed, $K\subseteq S$, and $m\in S$ for every $\
 \end{lemma}
 
 \begin{theorem}[Closed-set method]\label{thm:closed}
-Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,t)\subseteq S$ for every $t\in\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
+Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,l)\subseteq S$ for every prefix $l$ of a trace in $\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
 \end{theorem}
 
 \section{Relation to the operational semantics of ProVerif}
@@ -402,7 +398,7 @@ The hypothesis $\Npub\ne\emptyset$ cannot be dropped: when $\Npub=\emptyset$ no 
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$ such that every $H_{jk}$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\hat F,\hat H)$ holds for the functions of Definition~\ref{def:queries}.
+Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$ such that every $H_{jk}$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\Hyp,H)$ holds for the $\Hyp$ and $H$ of Definition~\ref{def:queries}.
 \end{theorem}
 
 \begin{remark}

@@ -16,15 +16,13 @@ of a translated model it comes from the algebra, at the end of this file.
 
 An *attack* on `P` is a trace of `P | Enemy ∅` in which every communication was
 completed; `Attacks P` is the process of attacks.  The attacker starts from
-nothing because ProVerif's starts from the public free names, which here are
-public constants and so derivable from nothing.
+nothing: the public free names are public constants, derivable from nothing.
 
 What the attacker knows after a trace, `known`, is read off its communications:
 a message sent on a channel the attacker knew at the time becomes known, whoever
-received it, since the attacker could have received it instead.  ProVerif states
-security properties as queries over facts; here a `Fact` holds or not after each
-prefix of an attack, and `Secret` is `query attacker(s)` and `Corr` is
-`query F ==> H`.
+received it, since the attacker could have received it instead.  A `Fact` of a
+query holds or not after each prefix of an attack; `Secret` is
+`query attacker(s)` and `Corr` is `query F ==> H`.
 
 Nothing here distinguishes public from private channels: a private channel is
 a term the attacker cannot derive, on which it therefore makes no offers and
@@ -69,8 +67,17 @@ def Fact.Holds (l : Trace M) : Fact M → Prop
   | .event e => Act.event e ∈ l
   | .knows m => m ∈ known (derive ∅) l
 
-/-- Secrecy of `s`, the property that `query attacker(s)` checks: in no attack does
-the attacker come to know `s`.
+/-- The correspondence that `query F ==> H` checks: `Hyp` is the set of instances of `F`,
+and `H f holds` the conclusion for the instance `f`, a predicate on which facts hold.
+In every attack, whenever an instance of `F` holds, its conclusion holds of the facts
+that hold then.  For `F ==> ⋁ⱼ ⋀ₖ Hⱼₖ`, `H f holds` is `∃ j σ, σF = f ∧ ∀ k, holds (σHⱼₖ)`
+(the survey's Def. 3.5, with `=` read as `=_E`). -/
+def Corr (P : Proc M) (Hyp : Set (Fact M)) (H : Fact M → (Fact M → Prop) → Prop) : Prop :=
+  ∀ t ∈ Attacks P, ∀ l, l <+: t → ∀ f ∈ Hyp, f.Holds l → H f (Fact.Holds l)
+
+/-- Secrecy of `s`, the property that `query attacker(s)` checks: the correspondence with
+hypothesis `knows s` and conclusion `False`, so that in no attack does the attacker come
+to know `s`.
 
 The survey's secrecy (Defs. 3.2, 3.3) counts the outputs on a public free name.
 Whatever the attacker knows it can relay on one, so `Secret` agrees with it when the
@@ -78,17 +85,7 @@ model has a public free name; without one, the survey's counts nothing.
 
 `s` should contain no nonce: a nonce is identified by its index, which does not say
 which `new` created it. -/
-def Secret (P : Proc M) (s : M) : Prop := ∀ t ∈ Attacks P, s ∉ known (derive ∅) t
-
-/-- The correspondence `F ==> H₁ || ... || Hₘ`, each `Hⱼ` a conjunction of facts, that
-`query F ==> H` checks, with the disjunction folded into the valuations `V` of the
-query's variables: `F σ` is the instance of `F` under `σ`, and `H σ` the facts of the
-conjunct `σ` selects.  In every attack, whenever an instance of `F` holds, every fact
-of `H` holds under some valuation giving `F` the same instance (the survey's Def. 3.5,
-with `=` read as `=_E`). -/
-def Corr {V : Type} (P : Proc M) (F : V → Fact M) (H : V → Set (Fact M)) : Prop :=
-  ∀ t ∈ Attacks P, ∀ l, l <+: t → ∀ σ, (F σ).Holds l →
-    ∃ σ', F σ' = F σ ∧ ∀ f ∈ H σ', f.Holds l
+def Secret (P : Proc M) (s : M) : Prop := Corr P {.knows s} fun _ _ => False
 
 /-! ## Bounding the attacker's knowledge -/
 
@@ -197,22 +194,24 @@ theorem known_subset {S K : Set M} (hS : derive.IsClosed S) (hK : K ⊆ S) :
       h c m (by subst ha; exact List.mem_cons_self)) hS) fun c m hm => h c m (List.mem_cons_of_mem _ hm)
 
 /-- The closed-set method: if `S` is closed under derivation and contains every nonce, and
-every trace of `P` is `Bounded S`, then the attacker never knows anything outside `S`. -/
+every trace of `P` is `Bounded S`, then at no point of an attack does the attacker know
+anything outside `S`. -/
 theorem known_subset_of_bounded {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
-    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, Bounded S u) {t : Trace M}
-    (ht : t ∈ Attacks P) : known (derive ∅) t ⊆ S := by
-  obtain ⟨⟨⟨f, s, hf, hl, hts⟩, -⟩, hc⟩ := ht
+    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, Bounded S u) {t l : Trace M}
+    (ht : t ∈ Attacks P) (hl : l <+: t) : known (derive ∅) l ⊆ S := by
+  obtain ⟨⟨⟨f, s, hf, hs, hts⟩, -⟩, hc⟩ := ht
   refine known_subset hS (ClosureOperator.closure_min (Set.empty_subset S) hS) fun c m hm =>
-    comm_mem_of_bounded hS hn hts hc (Set.empty_subset S) ?_ ?_ c m hm
-  · rw [hl 0]
+    comm_mem_of_bounded hS hn hts hc (Set.empty_subset S) ?_ ?_ c m (hl.subset hm)
+  · rw [hs 0]
     exact hP _ (hf 0)
-  · rw [hl 1]
+  · rw [hs 1]
     exact hf 1
 
 theorem secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, Bounded S u) {s : M} (hs : s ∉ S) :
-    Secret P s :=
-  fun _ ht hm => hs (known_subset_of_bounded hS hn hP ht hm)
+    Secret P s := by
+  rintro t ht l hl f (rfl : f = _) hf
+  exact hs (known_subset_of_bounded hS hn hP ht hl hf)
 
 /-! ## Attackers from public operations -/
 

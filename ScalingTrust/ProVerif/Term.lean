@@ -48,8 +48,7 @@ the survey's condition for pattern-matching on data constructors (p. 35):
 `f(M₁, …, Mₙ) =_E M'` exactly when `M'` is `f(M'₁, …, M'ₙ)` with `Mᵢ =_E M'ᵢ`.  Under
 it, matching modulo `E` is matching on any representative, evaluation is a
 function, and the two semantics agree.  A destructor whose pattern mentions an
-equated symbol cannot be written; none occurs in the examples of the ProVerif
-manual or in Noise Explorer's models.
+equated symbol cannot be written.
 -/
 
 namespace ProVerif

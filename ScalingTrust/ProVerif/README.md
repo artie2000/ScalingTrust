@@ -2,11 +2,11 @@
 
 A trace-based semantics for the calculus of Blanchet's survey *Modeling and
 Verifying Security Protocols with the Applied Pi Calculus and ProVerif* (FnTPS
-2016, Fig. 2.4), kept as simple as possible while still able to state the
-security properties of ProVerif's queries. It is meant as the target of a translation from ProVerif models. The
-embedding is shallow: a process is the set of traces it can perform, what a
-process computes between actions is ordinary Lean code, and the attacker is not
-a program but the set of traces the Dolev–Yao rules allow.
+2016, Fig. 2.4) and for the security properties of ProVerif's queries, as the
+target of a translation from ProVerif models. The embedding is shallow: a
+process is the set of traces it can perform, what a process computes between
+actions is ordinary Lean code, and the attacker is not a program but the set of
+traces the Dolev–Yao rules allow.
 
 This folder depends on Mathlib (pinned in the root `lakefile.toml`; fetch it
 with `lake exe cache get`). It is not part of the default target yet; build it
@@ -64,17 +64,20 @@ example.
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
    never uses `Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
-   is `Secret`, for `M` without nonces; `query F ==> H` is `Corr`, with `F` and
-   the conjuncts of `H` as `Fact`s instantiated by valuations of the query's
-   variables, `attacker(M)` being `Fact.knows`.
+   is `Secret`, for `M` without nonces; `query F ==> H` is `Corr`, whose
+   hypotheses are the instances of `F` under the valuations of the query's
+   variables and whose conclusion for such an instance is `H`, read as a
+   predicate on which facts hold, under the valuations that give `F` that
+   instance; `attacker(M)` is `Fact.knows`.
 
 ## The semantics
 
 **Actions.** `Act M` has the offers `out c m` and `inp c m`, the completed
 communication `comm c m`, `new n`, whose name is `Names.nonce n`, and `event e`.
-Processes and the attacker are written for any message type `M` with `Names M`
-and `Attacker M`; a translated model uses `Msg T` with the instances of
-`ProVerif.Security`.
+The offers are the unfinished actions (`Act.Unfinished`); a trace with none is
+one in which every offer met a partner. Processes and the attacker are written
+for any message type `M` with `Names M` and `Attacker M`; a translated model
+uses `Msg T` with the instances of `ProVerif.Security`.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed, so a trace is an execution so far and a process that blocks
@@ -86,7 +89,7 @@ step 6 is built from these in the continuation monad.
 **Parallel composition.** Two stages. First the component traces
 `f : ι → List (Act M)` are interleaved into a tagged trace
 `s : List (ι × Act M)`: `Interleaves f s` says that each component reads its
-own trace back off `s` by projection, so interleaving needs no rules at all.
+own trace back off `s` by projection.
 Then `comms s` is the set of traces obtained by letting an output immediately
 followed by a matching input of a *different* component meet in a
 communication, the survey's rule (Red I/O), which the trace records as `comm`.
@@ -95,9 +98,6 @@ distinct, so that different components never create the same name; `Proc.par`
 is the merge over `Fin 2` and `Proc.bang` the merge over `ℕ` (a trace is
 finite, so only finitely many copies act). `Proc.bang_eq`, `!P = P | !P`, is
 (Red Repl).
-
-**Completed communications.** `out` and `inp` are offers. A trace with no
-unfinished action (`Act.Unfinished`) is one in which every offer met a partner.
 
 **Messages.** `Msg.view` shows a message's head symbol and arguments when the
 symbol is free and nothing otherwise, and `Theory.view_congr` proves it
@@ -123,29 +123,24 @@ it, since the attacker could have received it instead.
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
 adversary `Q` at once. The facts of a query, `Fact`, are events and `knows m`,
 and `Fact.Holds` says whether one holds after a prefix of an attack. `Secret P s`
-says that in no attack does the attacker come to know `s`. `Corr P F H` says
-that whenever an instance of `F` holds, every fact of the conjunct `H` holds
-under some valuation that gives `F` the same instance. `secret_of_closed` is
-the closed-set method for secrecy: a `derive`-closed set that contains every
-nonce, and that the protocol never leaves as long as it receives only messages
-in it (`Bounded`), bounds everything the attacker can ever know.
-`Examples.hashed_secret` uses it; `Examples.leak_attack` exhibits an attack
-instead.
+says that in no attack does the attacker come to know `s`. `Corr P Hyp H` says
+that whenever a hypothesis `f` in `Hyp` holds, its conclusion `H f` holds of
+the facts that hold then. `secret_of_closed` is the closed-set method for
+secrecy: a `derive`-closed set that contains every nonce, and that the protocol
+never leaves as long as it receives only messages in it (`Bounded`), bounds
+everything the attacker can ever know. `Examples.hashed_secret` uses it;
+`Examples.leak_attack` exhibits an attack instead.
 
 ## Design decisions
 
-* **Synchronous.** Communication is a rendezvous, as in the survey, not
-  ProVerif's Horn-clause approximation in which outputs are persistent facts.
-  A single sequential process cannot communicate with itself: the two partners
-  must be distinct components, which is why communication is defined on the
-  tagged interleaving, where the components are still known, rather than read
-  off adjacent actions of an untagged trace.
+* **Synchronous.** Communication is a rendezvous between two distinct
+  components, the survey's (Red I/O), not ProVerif's Horn-clause approximation
+  in which outputs are persistent facts. It is therefore defined on the tagged
+  interleaving, where the components are still known.
 * **A communication is an action.** A completed communication is recorded as
-  `comm c m`, and the attacker's knowledge is read off these actions. The
-  marker is needed because an `out` directly followed by a matching `inp` may
-  also be two unmatched offers, as in the trace of `out(c, m); in(c, x)`;
-  without it a later merge could not tell the two apart, and a sequential
-  process could talk to itself.
+  `comm c m`. The attacker's knowledge is read off these actions, and they keep
+  an exchange apart from an `out` directly followed by a matching `inp` that
+  are two unmatched offers, as in the trace of `out(c, m); in(c, x)`.
 * **The attacker learns by listening.** `known` counts a message as known once
   it is communicated on a channel the attacker knows at the time, whoever
   received it. The attack does not record the receiver, and need not: the
@@ -189,8 +184,8 @@ phases, so they mark what remains.
 * M. Abadi, B. Blanchet and C. Fournet, *The Applied Pi Calculus: Mobile
   Values, New Names, and Secure Communication*, JACM 2018:
   `Reference/AbadiBlanchetFournet18.pdf`. The full applied pi calculus, with
-  the labelled semantics (§4.3) that this folder deliberately does not follow;
-  the `Reference` README says how they differ.
+  the labelled semantics (§4.3) that this folder does not follow; the
+  `Reference` README says how they differ.
 * B. Dutertre and S. Schneider, *Using a PVS Embedding of CSP to Verify
   Authentication Protocols*, TPHOLs 1997: `Reference/DutertreSchneider97.pdf`.
   The same design, processes as trace sets and an enemy process built from a
