@@ -21,7 +21,7 @@ lake build ScalingTrust.ProVerif.Examples
 | Module | Contents |
 | --- | --- |
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
-| `ProVerif.Term` | Message algebras from ProVerif declarations: terms, the equations, `Msg`, views, destructors, public operations |
+| `ProVerif.Term` | Message algebras from ProVerif declarations: terms, the equations, `Theory.Msg`, views, destructors, `MsgAlgebra` |
 | `ProVerif.Security` | The attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Proc.Secret` and `Proc.Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
 | `ProVerif.DH` | A translated algebra: the survey's running-example primitives with Diffie–Hellman |
 | `ProVerif.Examples` | A translated model, the survey's Denning–Sacco example; an attack; a secrecy proof |
@@ -39,30 +39,30 @@ A model is translated piece by piece, types erased as in the survey's semantics.
 example.
 
 1. **Free names** (`free a`) become nullary constructors, `DH.Fun.const a` over a
-   type of the model's free names; `Msg.name n` is reserved for the nonces that
+   type of the model's free names; `Theory.Msg.name n` is reserved for the nonces that
    `new` creates.
 2. **Constructors** (`fun`, `const`) become the symbols of a signature `F : Sig`.
 3. **Equations** (`equation`) become a `Theory F`: the equations `E`, and the
    symbols declared *free*, every symbol that is not at the root of a side of an
-   equation (`Theory.heads`, proved by `rfl`). `Msg T`, terms modulo `E`, is the
+   equation (`Theory.heads`, proved by `rfl`). `T.Msg`, terms modulo `E`, is the
    message type, and Lean's `=` on it is the survey's `=_E`.
-4. **Destructors** (`reduc`) become Lean functions to `Option (Msg T)`, `none`
-   being `fail`: a `match` on `Msg.view` of the arguments, with one branch per
+4. **Destructors** (`reduc`) become Lean functions to `Option T.Msg`, `none`
+   being `fail`: a `match` on `Theory.Msg.view` of the arguments, with one branch per
    rewrite rule in order and a final `none`. A nested pattern over a free symbol
    is a nested match; a repeated variable is an equality test. A destructor
    whose rules have no may-fail variable is written on messages and lifted by
-   `liftFail`; one with may-fail variables takes `Option (Msg T)` arguments
+   `liftFail`; one with may-fail variables takes `Option T.Msg` arguments
    directly.
-5. **Public and private** declarations become a `Pub T` instance: `pubFun` the
-   public constructors, including the public free names, and `dtors` the public
-   destructors.
-6. **The process** becomes a `do` block in `Cont (Proc (Msg T))`, closed with
+5. **Public and private** declarations complete a `MsgAlgebra F`, the theory
+   extended by `pubFun`, the public constructors, including the public free
+   names, and `pubDtors`, the public destructors.
+6. **The process** becomes a `do` block in `Cont (Proc T.Msg)`, closed with
    `Proc.run`: `out` is `Proc.send`, `in` is `Proc.recv`, `new` is `Proc.fresh`,
    `event` is `Proc.emit`, `P | Q` is `if ← Proc.fork then P else Q`, `!P` is
    `Proc.repl` followed by `P`, and `0` is `Proc.stop` or the end of the block.
    `let x = D in P else Q` is a Lean `match` on the destructor's result, and
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
-   never uses `Msg.name`.
+   never uses `Theory.Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
    is `Proc.Secret`, for `M` without nonces; `query F ==> H` is `Proc.Corr`, whose
    hypotheses are the instances of `F` under the valuations of the query's
@@ -75,9 +75,10 @@ example.
 **Actions.** `Act M` has the offers `out c m` and `inp c m`, the completed
 communication `comm c m`, `new n`, whose name is `Names.nonce n`, and `event e`.
 The offers are the unfinished actions (`Act.Unfinished`); a trace with none is
-one in which every offer met a partner. Processes and the attacker are written
-for any message type `M` with `Names M` and `Attacker M`; a translated model
-uses `Msg T` with the instances of `ProVerif.Security`.
+one in which every offer met a partner. Processes are written for any message
+type `M` with `Names M`, and the attacker and the security properties for any
+closure operator `derive` on `Set M` besides; a translated model with algebra
+`A` uses `A.Msg` and `A.derive`.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed, so a trace is an execution so far and a process that blocks
@@ -99,20 +100,20 @@ is the merge over `Fin 2` and `Proc.bang` the merge over `ℕ` (a trace is
 finite, so only finitely many copies act). `Proc.bang_eq`, `!P = P | !P`, is
 (Red Repl).
 
-**Messages.** `Msg.view` shows a message's head symbol and arguments when the
+**Messages.** `Theory.Msg.view` shows a message's head symbol and arguments when the
 symbol is free and nothing otherwise, and `Theory.view_congr` proves it
 invariant under `E`, so a destructor matching on the view is a function on
 messages. This deviates from the survey, which matches rewrite rules modulo `E`;
 the head of `Term.lean` says why the two agree for every destructor that can be
-written. A predicate on messages has to respect `E`; `Msg.lift` produces one
+written. A predicate on messages has to respect `E`; `Theory.Satisfies.lift` produces one
 from any structure that satisfies the equations, and that is how the closed
 sets of secrecy proofs are defined.
 
-**The attacker.** For `Msg T` the attacker is the Dolev–Yao attacker of the
-algebra. What it can deduce from a set of messages, `derive`, is the least
-superset closed under the public operations of `Pub T` (`Attacker.ofOps`),
+**The attacker.** For a message algebra `A` the attacker is the Dolev–Yao
+attacker: what it can deduce from a set of messages, `A.derive`, is the least
+superset closed under the public operations `A.ops` (`deriveOfOps`),
 ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
-(`none`), which the attacker can always write. `Enemy K` is the most general
+(`none`), which the attacker can always write. `Enemy derive K` is the most general
 intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
 derive, and create names. `t.attackerKnowledge K` reads its knowledge off a
@@ -122,8 +123,8 @@ whoever received it, since the attacker could have received it instead.
 **Attacks and security properties.** `P.Attacks` is the process of traces of
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
 adversary `Q` at once. The facts of a query, `Fact`, are events and `knows m`,
-and `Fact.Holds` says whether one holds after a prefix of an attack. `P.Secret s`
-says that in no attack does the attacker come to know `s`. `P.Corr Hyp H` says
+and `Fact.Holds` says whether one holds after a prefix of an attack. `P.Secret derive s`
+says that in no attack does the attacker come to know `s`. `P.Corr derive Hyp H` says
 that whenever a hypothesis `f` in `Hyp` holds, its conclusion `H f` holds of
 the facts that hold then. `Proc.secret_of_closed` is the closed-set method for
 secrecy: a `derive`-closed set that contains every nonce, and that the protocol
@@ -155,7 +156,7 @@ bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
   `(N_pub, N_priv)`. Here a free name is a nullary constructor, as the ProVerif
   manual treats it (§6.7.3: a free name, a constant and a top-level bound name
   "all declare a constant"), and only the names `new` creates are names. So
-  `Pub` alone says what is public, and the attacker starts from `∅`, the public
+  the `MsgAlgebra` alone says what is public, and the attacker starts from `∅`, the public
   free names being derivable from nothing. The survey's Def. 3.2, whose public
   channel must be a name, is the one definition this changes; see `Secret`.
 * **Freshness by index.** Rather than "the new name occurs nowhere", the

@@ -16,7 +16,7 @@ set is defined through the universal property of the message quotient.
 
 namespace ProVerif.Examples
 
-open FirstOrder.Language Attacker
+open FirstOrder.Language
 
 /-- The free names: a public channel and a private secret. -/
 inductive Free
@@ -25,9 +25,10 @@ inductive Free
   deriving DecidableEq
 
 /-- Messages over the Diffie-Hellman algebra with these free names. -/
-abbrev M : Type := Msg (DH.T Free)
+abbrev M : Type := (DH.T Free).Msg
 
-noncomputable instance pubFree : Pub (DH.T Free) := DH.pub {.c}
+/-- The algebra: `c` is public and `s` private. -/
+noncomputable abbrev alg : MsgAlgebra (DH.Fun Free) := DH.alg {.c}
 
 def c : M := DH.const .c
 def s : M := DH.const .s
@@ -76,16 +77,17 @@ noncomputable def system : Proc M := .run do
 /-! ## An attack -/
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
-theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret s := by
+theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret alg.derive s := by
   intro h
-  have hc : c ∈ derive (∅ : Set M) := Msg.app_mem_derive (ms := ![]) rfl fun i => i.elim0
+  have hc : c ∈ alg.derive (∅ : Set M) :=
+    MsgAlgebra.app_mem_derive (ms := ![]) rfl fun i => i.elim0
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have he : [Act.inp c s] ∈ Enemy (∅ : Set M) := .inp _ _ hc .nil
+  have he : [Act.inp c s] ∈ Enemy alg.derive (∅ : Set M) := .inp _ _ hc .nil
   refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)], Fin.forall_fin_two.2 ⟨ht, he⟩,
     Fin.forall_fin_two.2 ⟨rfl, rfl⟩, .pair (by decide) c s .nil⟩, List.nodup_nil⟩,
     List.forall_mem_singleton.2 nofun⟩ _ (List.prefix_refl _) _ (Set.mem_singleton _) ?_
-  show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
-  exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
+  show s ∈ alg.derive (alg.derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ alg.derive ∅})
+  exact alg.derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
 
 /-! ## A secrecy proof
 
@@ -115,24 +117,24 @@ theorem hid_satisfies : (DH.T Free).Satisfies Prop := by
   simp [and_comm]
 
 /-- Messages in which `s` occurs only under a hash. -/
-def Hid : M → Prop := Msg.lift hid_satisfies fun _ => True
+def Hid : M → Prop := hid_satisfies.lift fun _ => True
 
 theorem hid_app {n : ℕ} (f : DH.Fun Free n) (ms : Fin n → M) :
-    Hid (Msg.app f ms) = hid f fun i => Hid (ms i) :=
-  Msg.lift_app _ _ f ms
+    Hid (.app f ms) = hid f fun i => Hid (ms i) :=
+  hid_satisfies.lift_app _ f ms
 
 theorem hid_app₂ {f : DH.Fun Free 2} (hf : ∀ args, hid f args = ∀ i, args i) {m k : M} :
-    Hid (Msg.app f ![m, k]) ↔ Hid m ∧ Hid k := by
+    Hid (.app f ![m, k]) ↔ Hid m ∧ Hid k := by
   rw [hid_app, hf]
   exact Fin.forall_fin_two
 
-theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
+theorem hid_closed : ClosedUnder alg.ops {m | Hid m} := by
   rintro o (ho | hd) args hargs r hr
   · obtain ⟨n, f, hf, rfl⟩ := Set.mem_iUnion.1 ho
     dsimp only at hr
     obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
     obtain rfl := Option.some_injective _ hr
-    show Hid (Msg.app f ms)
+    show Hid (.app f ms)
     rw [hid_app]
     cases f with
     | const a => cases a <;> first | exact fun i => i.elim0 | exact nomatch (hf : Free.s = Free.c)
@@ -158,11 +160,10 @@ theorem hid_hash (m : M) : Hid (DH.hash m) := by
 
 /-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
 in the closed set of messages in which `s` occurs only under a hash. -/
-theorem hashed_secret : (Proc.out c (DH.hash s) Proc.nil).Secret s := by
+theorem hashed_secret : (Proc.out c (DH.hash s) Proc.nil).Secret alg.derive s := by
   refine Proc.secret_of_closed (S := {m | Hid m}) hid_closed (fun _ => trivial) ?_ not_hid_s
-  rintro u (rfl | ⟨_, (rfl : _ = []), rfl⟩) l hl - c' m hm
-  · rcases hm with hm | hm <;> simpa using hl.subset hm
-  · rcases hm with hm | hm <;> cases List.mem_singleton.1 (hl.subset hm)
-    exact hid_hash s
+  rintro u (rfl | ⟨_, (rfl : _ = []), rfl⟩)
+  · trivial
+  · exact ⟨hid_hash s, trivial⟩
 
 end ProVerif.Examples

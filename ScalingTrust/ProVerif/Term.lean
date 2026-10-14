@@ -13,29 +13,29 @@ a ProVerif model, types erased:
 
 * `free a` and `fun`/`const` declarations give a signature `F : Sig`, the free names
   being nullary constructors.  Raw terms are the terms of that first-order language
-  (Mathlib's `FirstOrder.Language.Term`) whose variables, `Msg.name n`, are the
+  (Mathlib's `FirstOrder.Language.Term`) whose variables, `Theory.Msg.name n`, are the
   nonces that `new` creates.
 * `equation` declarations give a `Theory`: the equations `E`, and the symbols
-  declared *free*, those at the root of no equation.  Messages `Msg T` are terms
+  declared *free*, those at the root of no equation.  Messages `T.Msg` are terms
   modulo the congruence `Eqv` that `E` generates, so Lean's `=` on messages is the
   survey's `=_E`, and every instance of an equation is an equality of messages
   (`Theory.satisfies_msg`).
-* A `reduc` declaration gives a destructor: a Lean function to `Option (Msg T)`,
-  `none` being `fail`, that matches on `Msg.view` with one branch per rewrite rule in
+* A `reduc` declaration gives a destructor: a Lean function to `Option T.Msg`,
+  `none` being `fail`, that matches on `Theory.Msg.view` with one branch per rewrite rule in
   order and a final `none`.  A nested pattern over a free symbol is a nested match, a
   repeated variable an equality test.  A rule may match `fail` with a may-fail
   variable (p. 14), as `and(x, u) → false` does (p. 17), so destructors take
-  may-fail arguments, `Option (Msg T)`; one whose rules have none is written on
+  may-fail arguments, `Option T.Msg`; one whose rules have none is written on
   messages and lifted by `liftFail`.
-* The public declarations give a `Pub` instance, the operations the attacker may
-  apply.
+* The public declarations complete a `MsgAlgebra`: the theory, extended by the
+  operations the attacker may apply.
 
-`Msg.view` shows a message's head symbol and arguments when the symbol is free, and
+`Theory.Msg.view` shows a message's head symbol and arguments when the symbol is free, and
 nothing otherwise; since every equation has a non-free symbol at the root of both
 sides (`Theory.heads`), the view is invariant under `E` (`Theory.view_congr`).
 
 A predicate on messages, such as "the secret occurs only under a hash", must be
-invariant under `E`; `Msg.lift` gives one from any structure that satisfies the
+invariant under `E`; `Theory.Satisfies.lift` gives one from any structure that satisfies the
 equations, by the universal property of the quotient.
 
 ## Deviation from the formal semantics
@@ -153,35 +153,36 @@ instance : F.lang.Prestructure T.setoid where
   rel_equiv := fun {_} {r} _ _ _ => r.elim
 
 /-- Messages: terms modulo `E`. -/
-abbrev Msg (T : Theory F) : Type := Quotient T.setoid
+abbrev Theory.Msg (T : Theory F) : Type := Quotient T.setoid
 
-namespace Msg
+namespace Theory.Msg
 
 /-- The `n`-th nonce created by `new`. -/
-def name (n : ℕ) : Msg T := ⟦.var n⟧
+def name (n : ℕ) : T.Msg := ⟦.var n⟧
 
 /-- Apply a constructor to messages. -/
-abbrev app {n : ℕ} (f : F n) (ms : Fin n → Msg T) : Msg T :=
+abbrev app {n : ℕ} (f : F n) (ms : Fin n → T.Msg) : T.Msg :=
   Structure.funMap (L := F.lang) f ms
 
 theorem app_mk {n : ℕ} (f : F n) (ts : Fin n → Term F) :
-    app f (fun i => (⟦ts i⟧ : Msg T)) = ⟦.func f ts⟧ :=
+    app f (fun i => (⟦ts i⟧ : T.Msg)) = ⟦.func f ts⟧ :=
   funMap_quotient_mk' (L := F.lang) T.setoid f ts
+
+end Theory.Msg
 
 /-- The universal property: a structure satisfying the equations receives the
 messages, by evaluating any representative. -/
-def lift (hM : T.Satisfies M) (v : ℕ → M) : Msg T → M :=
+def Theory.Satisfies.lift (hM : T.Satisfies M) (v : ℕ → M) : T.Msg → M :=
   Quotient.lift (Term.realize v) fun _ _ h => h.realize_eq hM v
 
-@[simp] theorem lift_app (hM : T.Satisfies M) (v : ℕ → M) {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
-    lift hM v (app f ms) = Structure.funMap (L := F.lang) f fun i => lift hM v (ms i) := by
+@[simp] theorem Theory.Satisfies.lift_app (hM : T.Satisfies M) (v : ℕ → M) {n : ℕ} (f : F n)
+    (ms : Fin n → T.Msg) :
+    hM.lift v (.app f ms) = Structure.funMap (L := F.lang) f fun i => hM.lift v (ms i) := by
   induction ms using Quotient.induction_on_pi with
-  | h ts => exact (app_mk f ts).symm ▸ Term.realize_func _ _ _
-
-end Msg
+  | h ts => exact (Msg.app_mk f ts).symm ▸ Term.realize_func _ _ _
 
 /-- The messages satisfy the equations. -/
-theorem Theory.satisfies_msg (T : Theory F) : T.Satisfies (Msg T) := by
+theorem Theory.satisfies_msg (T : Theory F) : T.Satisfies T.Msg := by
   intro e he v
   have hv : v = fun n => ⟦(v n).out⟧ := funext fun n => (Quotient.out_eq _).symm
   rw [hv, Term.realize_quotient_mk', Term.realize_quotient_mk']
@@ -193,7 +194,7 @@ theorem Theory.satisfies_msg (T : Theory F) : T.Satisfies (Msg T) := by
 a free symbol, and `other` otherwise. -/
 inductive View (T : Theory F) : Type
   | name (n : ℕ)
-  | app {n : ℕ} (f : F n) (args : Fin n → Msg T)
+  | app {n : ℕ} (f : F n) (args : Fin n → T.Msg)
   | other
 
 /-- The view of a raw term. -/
@@ -220,22 +221,22 @@ theorem Theory.view_congr {s t : Term F} (h : Eqv T s t) : T.view s = T.view t :
     · rfl
   | ax hE σ => rw [(T.heads _ hE).1.view_realize, (T.heads _ hE).2.view_realize]
 
-namespace Msg
+namespace Theory.Msg
 
 /-- The view of a message. -/
-def view : Msg T → View T := Quotient.lift T.view fun _ _ h => T.view_congr h
+def view : T.Msg → View T := Quotient.lift T.view fun _ _ h => T.view_congr h
 
-@[simp] theorem view_app {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
+@[simp] theorem view_app {n : ℕ} (f : F n) (ms : Fin n → T.Msg) :
     (app f ms).view = if T.free _ f then .app f ms else .other := by
   induction ms using Quotient.induction_on_pi with
   | h ts => rw [app_mk]; rfl
 
-theorem name_inj {n m : ℕ} (h : (name n : Msg T) = name m) : n = m :=
+theorem name_inj {n m : ℕ} (h : (name n : T.Msg) = name m) : n = m :=
   View.name.inj (congrArg view h)
 
 /-- A message whose view is `app f a` is `app f a`: the inversion principle behind
 destructors. -/
-theorem eq_app_of_view {m : Msg T} {n : ℕ} {f : F n} {a : Fin n → Msg T}
+theorem eq_app_of_view (m : T.Msg) {n : ℕ} {f : F n} {a : Fin n → T.Msg}
     (h : m.view = .app f a) : m = app f a := by
   induction m using Quotient.inductionOn with
   | h t =>
@@ -248,7 +249,7 @@ theorem eq_app_of_view {m : Msg T} {n : ℕ} {f : F n} {a : Fin n → Msg T}
       cases h
       exact (app_mk _ ts).symm
 
-end Msg
+end Theory.Msg
 
 /-! ## May-fail arguments -/
 
@@ -270,21 +271,21 @@ theorem liftFail_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option
       funext fun i => Option.some_injective _ ((Option.some_get _).trans (hms i))]
   · exact iff_of_false (by simp) fun ⟨ms, hms, _⟩ => h fun i => by rw [hms i]; rfl
 
-/-! ## Public operations -/
+/-! ## Message algebras -/
 
-/-- The symbols and destructors the attacker may apply: a model's declarations not
-marked `[private]`. -/
-class Pub (T : Theory F) where
+/-- A message algebra, from a model's declarations: the theory, and the symbols and
+destructors the attacker may apply, the declarations not marked `[private]`. -/
+structure MsgAlgebra (F : Sig) extends Theory F where
   /-- The public constructors, including the public free names. -/
   pubFun : ∀ n, Set (F n)
   /-- The public destructors, each of some arity, on may-fail arguments, written as
   in the module docstring. -/
-  dtors : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T))
+  pubDtors : Set (Σ n, (Fin n → Option toTheory.Msg) → Option toTheory.Msg)
 
 /-- The attacker's operations on may-fail arguments: the public constructors, which
 fail when an argument does, and the public destructors. -/
-def Pub.ops (T : Theory F) [Pub T] : Set (Σ n, (Fin n → Option (Msg T)) → Option (Msg T)) :=
-  (⋃ n, (fun f : F n => (⟨n, liftFail fun as => some (Msg.app f as)⟩ :
-    Σ n, (Fin n → Option (Msg T)) → Option (Msg T))) '' Pub.pubFun (T := T) n) ∪ Pub.dtors
+def MsgAlgebra.ops (A : MsgAlgebra F) : Set (Σ n, (Fin n → Option A.Msg) → Option A.Msg) :=
+  (⋃ n, (fun f : F n => (⟨n, liftFail fun as => some (.app f as)⟩ :
+    Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubFun n) ∪ A.pubDtors
 
 end ProVerif
