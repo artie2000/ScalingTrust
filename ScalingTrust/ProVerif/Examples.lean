@@ -76,18 +76,16 @@ noncomputable def system : Proc M := .run do
 /-! ## An attack -/
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
-theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) s := by
+theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret s := by
   intro h
+  have hc : c ∈ derive (∅ : Set M) := Msg.app_mem_derive (ms := ![]) rfl fun i => i.elim0
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have hc : c ∈ derive (∅ : Set M) := app_mem_derive (ms := ![]) rfl fun i => i.elim0
   have he : [Act.inp c s] ∈ Enemy (∅ : Set M) := .inp _ _ hc .nil
-  have hs : (Fact.knows s).Holds [Act.comm c s] := by
-    show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
-    exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
-  exact h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)],
-    Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [comms]⟩,
-    List.nodup_nil⟩, fun _ ha h => by obtain rfl := List.mem_singleton.1 ha; cases h⟩
-    _ (List.prefix_refl _) _ (Set.mem_singleton _) hs
+  refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)], Fin.forall_fin_two.2 ⟨ht, he⟩,
+    Fin.forall_fin_two.2 ⟨rfl, rfl⟩, .pair (by decide) c s .nil⟩, List.nodup_nil⟩,
+    List.forall_mem_singleton.2 nofun⟩ _ (List.prefix_refl _) _ (Set.mem_singleton _) ?_
+  show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
+  exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
 
 /-! ## A secrecy proof
 
@@ -111,9 +109,7 @@ instance : (Sig.lang (DH.Fun Free)).Structure Prop where
     Structure.funMap (L := Sig.lang (DH.Fun Free)) f args = hid f args := rfl
 
 theorem hid_satisfies : (DH.T Free).Satisfies Prop := by
-  intro e he v
-  rw [show (DH.T Free).E = DH.E Free from rfl, DH.E, Set.mem_singleton_iff] at he
-  subst he
+  rintro e (rfl : e = _) v
   simp only [Term.realize_func₂, Term.realize_func₀, Term.realize_var, funMap_prop, hid,
     Fin.forall_fin_two, Matrix.cons_val_zero, Matrix.cons_val_one]
   simp [and_comm]
@@ -125,44 +121,32 @@ theorem hid_app {n : ℕ} (f : DH.Fun Free n) (ms : Fin n → M) :
     Hid (Msg.app f ms) = hid f fun i => Hid (ms i) :=
   Msg.lift_app _ _ f ms
 
-theorem hid_senc {m k : M} : Hid (DH.senc m k) ↔ Hid m ∧ Hid k := by
-  rw [DH.senc, hid_app]
-  exact Fin.forall_fin_two
-
-theorem hid_aenc {m p : M} : Hid (DH.aenc m p) ↔ Hid m ∧ Hid p := by
-  rw [DH.aenc, hid_app]
-  exact Fin.forall_fin_two
-
-theorem hid_sign {m k : M} : Hid (DH.sign m k) ↔ Hid m ∧ Hid k := by
-  rw [DH.sign, hid_app]
+theorem hid_app₂ {f : DH.Fun Free 2} (hf : ∀ args, hid f args = ∀ i, args i) {m k : M} :
+    Hid (Msg.app f ![m, k]) ↔ Hid m ∧ Hid k := by
+  rw [hid_app, hf]
   exact Fin.forall_fin_two
 
 theorem hid_closed : ClosedUnder (Pub.ops (DH.T Free)) {m | Hid m} := by
   rintro o (ho | hd) args hargs r hr
-  · rw [Set.mem_iUnion] at ho
-    obtain ⟨n, f, hf, rfl⟩ := ho
+  · obtain ⟨n, f, hf, rfl⟩ := Set.mem_iUnion.1 ho
     dsimp only at hr
     obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
     obtain rfl := Option.some_injective _ hr
     show Hid (Msg.app f ms)
     rw [hid_app]
     cases f with
-    | const a =>
-      cases a
-      · exact fun i => i.elim0
-      · exact nomatch (hf : Free.s = Free.c)
+    | const a => cases a <;> first | exact fun i => i.elim0 | exact nomatch (hf : Free.s = Free.c)
     | hash => trivial
     | _ => exact fun i => hargs i _ (hms i)
   · rcases hd with rfl | rfl | rfl <;> dsimp only at hr <;>
-      obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr <;>
-      have h : Hid (ms 0) := hargs 0 _ (hms 0)
-    · rw [DH.sdec_eq_some.1 hr] at h
-      exact (hid_senc.1 h).1
-    · rw [DH.adec_eq_some.1 hr] at h
-      exact (hid_aenc.1 h).1
+      obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr <;> have h : Hid (ms 0) := hargs 0 _ (hms 0)
+    · rw [DH.sdec_eq_some.1 hr, DH.senc] at h
+      exact ((hid_app₂ fun _ => rfl).1 h).1
+    · rw [DH.adec_eq_some.1 hr, DH.aenc] at h
+      exact ((hid_app₂ fun _ => rfl).1 h).1
     · obtain ⟨k, hk, -⟩ := DH.check_eq_some.1 hr
-      rw [hk] at h
-      exact (hid_sign.1 h).1
+      rw [hk, DH.sign] at h
+      exact ((hid_app₂ fun _ => rfl).1 h).1
 
 theorem not_hid_s : ¬ Hid s := by
   rw [s, DH.const, hid_app]
@@ -174,17 +158,11 @@ theorem hid_hash (m : M) : Hid (DH.hash m) := by
 
 /-- Outputting `hash s` keeps `s` secret: everything the attacker can ever know lies
 in the closed set of messages in which `s` occurs only under a hash. -/
-theorem hashed_secret : Secret (Proc.out c (DH.hash s) Proc.nil) s := by
-  refine secret_of_closed (S := {m | Hid m}) hid_closed
-    (fun n => show Hid (Msg.name n) from trivial) ?_ not_hid_s
+theorem hashed_secret : (Proc.out c (DH.hash s) Proc.nil).Secret s := by
+  refine Proc.secret_of_closed (S := {m | Hid m}) hid_closed (fun _ => trivial) ?_ not_hid_s
   rintro u (rfl | ⟨_, (rfl : _ = []), rfl⟩) l hl - c' m hm
-  · obtain ⟨r, hr⟩ := hl
-    simp at hr
-    obtain ⟨rfl, -⟩ := hr
-    simp at hm
-  · rcases hm with hm | hm
-    · obtain ⟨rfl, rfl⟩ := Act.out.inj (List.mem_singleton.1 (hl.subset hm))
-      exact hid_hash s
-    · cases List.mem_singleton.1 (hl.subset hm)
+  · rcases hm with hm | hm <;> simpa using hl.subset hm
+  · rcases hm with hm | hm <;> cases List.mem_singleton.1 (hl.subset hm)
+    exact hid_hash s
 
 end ProVerif.Examples

@@ -15,14 +15,14 @@ from a set of messages is a closure operator, `Attacker.derive`; for the message
 of a translated model it comes from the algebra, at the end of this file.
 
 An *attack* on `P` is a trace of `P | Enemy ∅` in which every communication was
-completed; `Attacks P` is the process of attacks.  The attacker starts from
+completed; `P.Attacks` is the process of attacks.  The attacker starts from
 nothing: the public free names are public constants, derivable from nothing.
 
-What the attacker knows after a trace, `known`, is read off its communications:
-a message sent on a channel the attacker knew at the time becomes known, whoever
-received it, since the attacker could have received it instead.  A `Fact` of a
-query holds or not after each prefix of an attack; `Secret` is
-`query attacker(s)` and `Corr` is `query F ==> H`.
+What the attacker knows after a trace, `Trace.attackerKnowledge`, is read off its
+communications: a message sent on a channel the attacker knew at the time becomes
+known, whoever received it, since the attacker could have received it instead.  A
+`Fact` of a query holds or not after each prefix of an attack; `Proc.Secret` is
+`query attacker(s)` and `Proc.Corr` is `query F ==> H`.
 
 Nothing here distinguishes public from private channels: a private channel is
 a term the attacker cannot derive, on which it therefore makes no offers and
@@ -46,15 +46,15 @@ inductive Enemy : Set M → Proc M
       Enemy K (.inp c m :: e) -- defeq abuse for `(.inp c m :: e) ∈ Enemy K`, etc.
   | out {K e} (c m : M) : c ∈ derive K → m ∈ derive K → e ∈ Enemy K →
       Enemy K (.out c m :: e)
-  | new {K e} (n : ℕ) : n ∉ nonces e → e ∈ Enemy (insert (Names.nonce n) K) →
+  | new {K} {e : Trace M} (n : ℕ) : n ∉ e.nonces → e ∈ Enemy (insert (Names.nonce n) K) →
       Enemy K (.new n :: e)
 
 /-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
-def Attacks (P : Proc M) : Set (Trace M) := {t ∈ Proc.par P (Enemy ∅) | Closed t}
+def Proc.Attacks (P : Proc M) : Proc M := {t ∈ P.par (Enemy ∅) | t.Closed}
 
 /-- The attacker's knowledge after `t`, starting from `K`: a message communicated on a
 channel the attacker knows at the time becomes known. -/
-def known (K : Set M) (t : Trace M) : Set M :=
+def Trace.attackerKnowledge (K : Set M) (t : Trace M) : Set M :=
   t.foldl (fun K a => derive (K ∪ {m | ∃ c, a = .comm c m ∧ c ∈ K})) K
 
 /-- A fact of a query: an event, or the attacker's knowledge of a message. -/
@@ -65,15 +65,15 @@ inductive Fact (M : Type) where
 /-- Whether a fact holds after the trace `l` of an attack. -/
 def Fact.Holds (l : Trace M) : Fact M → Prop
   | .event e => Act.event e ∈ l
-  | .knows m => m ∈ known (derive ∅) l
+  | .knows m => m ∈ l.attackerKnowledge (derive ∅)
 
 /-- The correspondence that `query F ==> H` checks: `Hyp` is the set of instances of `F`,
 and `H f holds` the conclusion for the instance `f`, a predicate on which facts hold.
 In every attack, whenever an instance of `F` holds, its conclusion holds of the facts
 that hold then.  For `F ==> ⋁ⱼ ⋀ₖ Hⱼₖ`, `H f holds` is `∃ j σ, σF = f ∧ ∀ k, holds (σHⱼₖ)`
 (the survey's Def. 3.5, with `=` read as `=_E`). -/
-def Corr (P : Proc M) (Hyp : Set (Fact M)) (H : Fact M → (Fact M → Prop) → Prop) : Prop :=
-  ∀ t ∈ Attacks P, ∀ l, l <+: t → ∀ f ∈ Hyp, f.Holds l → H f (Fact.Holds l)
+def Proc.Corr (P : Proc M) (Hyp : Set (Fact M)) (H : Fact M → (Fact M → Prop) → Prop) : Prop :=
+  ∀ t ∈ P.Attacks, ∀ l : Trace M, l <+: t → ∀ f ∈ Hyp, f.Holds l → H f (Fact.Holds l)
 
 /-- Secrecy of `s`, the property that `query attacker(s)` checks: the correspondence with
 hypothesis `knows s` and conclusion `False`, so that in no attack does the attacker come
@@ -85,19 +85,19 @@ model has a public free name; without one, the survey's counts nothing.
 
 `s` should contain no nonce: a nonce is identified by its index, which does not say
 which `new` created it. -/
-def Secret (P : Proc M) (s : M) : Prop := Corr P {.knows s} fun _ _ => False
+def Proc.Secret (P : Proc M) (s : M) : Prop := P.Corr {.knows s} fun _ _ => False
 
 /-! ## Bounding the attacker's knowledge -/
 
 /-- Dutertre and Schneider's condition on a user: on every prefix of `u` on which every
 message received lies in `S`, every message sent or communicated lies in `S`. -/
-def Bounded (S : Set M) (u : Trace M) : Prop :=
-  ∀ l, l <+: u → (∀ c m, Act.inp c m ∈ l → m ∈ S) →
+def Trace.Bounded (S : Set M) (u : Trace M) : Prop :=
+  ∀ l : Trace M, l <+: u → (∀ c m, Act.inp c m ∈ l → m ∈ S) →
     ∀ c m, Act.out c m ∈ l ∨ Act.comm c m ∈ l → m ∈ S
 
 omit [Attacker M] [Names M] in
-theorem Bounded.tail {S : Set M} {a : Act M} {u : Trace M} (h : Bounded S (a :: u))
-    (ha : ∀ c m, a = .inp c m → m ∈ S) : Bounded S u := by
+theorem Trace.Bounded.tail {S : Set M} {a : Act M} {u : Trace M} (h : Bounded S (a :: u))
+    (ha : ∀ c m, a = .inp c m → m ∈ S) : u.Bounded S := by
   intro l ⟨r, hr⟩ hin c m hm
   refine h (a :: l) ⟨r, by rw [List.cons_append, hr]⟩ (fun c' m' h' => ?_) c m
     (hm.imp (List.mem_cons_of_mem a) (List.mem_cons_of_mem a))
@@ -106,112 +106,86 @@ theorem Bounded.tail {S : Set M} {a : Act M} {u : Trace M} (h : Bounded S (a :: 
   · exact hin c' m' h'
 
 omit [Attacker M] [Names M] in
-theorem Bounded.head {S : Set M} {a : Act M} {u : Trace M} (h : Bounded S (a :: u)) {c m : M}
-    (ha : a = .out c m ∨ a = .comm c m) : m ∈ S := by
-  rcases ha with rfl | rfl
-  · exact h [_] ⟨u, rfl⟩ (fun _ _ h' => by cases List.mem_singleton.1 h') _ _
-      (Or.inl (List.mem_singleton_self _))
-  · exact h [_] ⟨u, rfl⟩ (fun _ _ h' => by cases List.mem_singleton.1 h') _ _
-      (Or.inr (List.mem_singleton_self _))
+theorem Trace.Bounded.head {S : Set M} {a : Act M} {u : Trace M} (h : Bounded S (a :: u))
+    {c m : M} (ha : a = .out c m ∨ a = .comm c m) : m ∈ S :=
+  h [a] ⟨u, rfl⟩ (fun _ _ h' => by rcases ha with rfl | rfl <;> cases List.mem_singleton.1 h') c m
+    (by rcases ha with rfl | rfl <;> simp)
 
 /-- In a closed trace of a `Bounded S` process against the enemy, every message
 communicated lies in `S`, if `S` is closed under derivation and contains every nonce
 and the enemy's initial knowledge. -/
-theorem comm_mem_of_bounded {S : Set M} (hS : derive.IsClosed S) (hn : ∀ n, Names.nonce n ∈ S) :
-    ∀ {s : List (Fin 2 × Act M)} {t : Trace M} {K : Set M}, t ∈ comms s → Closed t → K ⊆ S →
-      Bounded S (proj 0 s) → proj 1 s ∈ Enemy K → ∀ c m, Act.comm c m ∈ t → m ∈ S := by
-  intro s
-  induction s using comms.induct with
-  | case1 =>
-    intro t K ht _ _ _ _ c m hm
-    obtain rfl : t = [] := ht
-    simp at hm
-  | case2 i c m j c' m' s _ ih =>
-    intro t K ht hc hK hP hE c₀ m₀ hm
-    rw [comms.eq_2] at ht
-    rcases ht with ⟨t₀, -, rfl⟩ | ⟨t₀, ⟨h₀, hij, rfl, rfl⟩, rfl⟩
-    · exact (hc _ List.mem_cons_self (.out _ _)).elim
-    have hc₀ : Closed t₀ := fun b hb => hc b (List.mem_cons_of_mem _ hb)
-    simp at hP hE
-    fin_cases i <;> fin_cases j
-    · exact absurd rfl hij
-    · have hmS : m ∈ S := hP.head (Or.inl rfl)
-      generalize hp : proj 1 s = e at hE
-      cases hE with
-      | inp _ _ _ hE =>
-        subst hp
-        rcases List.mem_cons.1 hm with h | h
-        · obtain ⟨rfl, rfl⟩ := Act.comm.inj h
-          exact hmS
-        · exact ih h₀ hc₀ (Set.insert_subset_iff.2 ⟨hmS, hK⟩) (hP.tail fun _ _ h => by cases h)
-            hE c₀ m₀ h
-    · generalize hp : proj 1 s = e at hE
-      cases hE with
-      | out _ _ _ hmK hE =>
-        subst hp
-        have hmS : m ∈ S := ClosureOperator.closure_min hK hS hmK
-        rcases List.mem_cons.1 hm with h | h
-        · obtain ⟨rfl, rfl⟩ := Act.comm.inj h
-          exact hmS
-        · refine ih h₀ hc₀ hK (hP.tail fun _ _ h => ?_) hE c₀ m₀ h
-          obtain ⟨rfl, rfl⟩ := Act.inp.inj h
-          exact hmS
-    · exact absurd rfl hij
-  | case3 i a s hne ih =>
-    intro t K ht hc hK hP hE c₀ m₀ hm
-    rw [comms.eq_3 _ _ _ hne] at ht
-    obtain ⟨t₀, h₀, rfl⟩ := ht
-    have hc₀ : Closed t₀ := fun b hb => hc b (List.mem_cons_of_mem _ hb)
-    simp at hP hE
-    fin_cases i
-    · rcases List.mem_cons.1 hm with h | h
-      · subst h
-        exact hP.head (Or.inr rfl)
-      · refine ih h₀ hc₀ hK (hP.tail fun _ _ ha => ?_) hE c₀ m₀ h
-        subst ha
-        exact (hc _ List.mem_cons_self (.inp _ _)).elim
-    · generalize hp : proj 1 s = e at hE
-      cases hE with
-      | inp => exact (hc _ List.mem_cons_self (.inp _ _)).elim
-      | out => exact (hc _ List.mem_cons_self (.out _ _)).elim
+theorem Trace.comm_mem_of_bounded {S : Set M} (hS : derive.IsClosed S)
+    (hn : ∀ n, Names.nonce n ∈ S) {s : TaggedTrace (Fin 2) M} {t : Trace M} (h : s.Comms t) :
+    ∀ {K : Set M}, t.Closed → K ⊆ S → (s.proj 0).Bounded S → s.proj 1 ∈ Enemy K →
+      ∀ c m, Act.comm c m ∈ t → m ∈ S := by
+  induction h with
+  | nil => simp
+  | cons i a _ ih =>
+    intro K hc hK hP hE c₀ m₀ hm
+    obtain ⟨ha, hc'⟩ := List.forall_mem_cons.1 hc
+    fin_cases i <;> simp at hP hE
+    · rcases List.mem_cons.1 hm with rfl | hm
+      · exact hP.head (Or.inr rfl)
+      · exact ih hc' hK (hP.tail fun _ _ h => (ha (h ▸ .inp _ _)).elim) hE c₀ m₀ hm
+    · cases hE with
+      | inp => exact (ha (.inp _ _)).elim
+      | out => exact (ha (.out _ _)).elim
       | new n _ hE =>
-        subst hp
-        rcases List.mem_cons.1 hm with h | h
+        rcases List.mem_cons.1 hm with h | hm
         · cases h
-        · exact ih h₀ hc₀ (Set.insert_subset_iff.2 ⟨hn n, hK⟩) hP hE c₀ m₀ h
+        · exact ih hc' (Set.insert_subset_iff.2 ⟨hn n, hK⟩) hP hE c₀ m₀ hm
+  | @pair _ _ i j hij c m _ ih =>
+    intro K hc hK hP hE c₀ m₀ hm
+    obtain ⟨-, hc'⟩ := List.forall_mem_cons.1 hc
+    fin_cases i <;> fin_cases j <;> simp at hP hE
+    · exact absurd rfl hij
+    · cases hE with
+      | inp _ _ _ hE =>
+        have hmS : m ∈ S := hP.head (Or.inl rfl)
+        rcases List.mem_cons.1 hm with h | hm
+        · exact (Act.comm.inj h).2 ▸ hmS
+        · exact ih hc' (Set.insert_subset_iff.2 ⟨hmS, hK⟩) (hP.tail fun _ _ h => by cases h) hE
+            c₀ m₀ hm
+    · cases hE with
+      | out _ _ _ hmK hE =>
+        have hmS : m ∈ S := derive.closure_min hK hS hmK
+        rcases List.mem_cons.1 hm with h | hm
+        · exact (Act.comm.inj h).2 ▸ hmS
+        · exact ih hc' hK (hP.tail fun _ _ h => (Act.inp.inj h).2 ▸ hmS) hE c₀ m₀ hm
+    · exact absurd rfl hij
 
 omit [Names M] in
 /-- The attacker's knowledge stays within a closed set containing what it knew and every
 message communicated. -/
-theorem known_subset {S K : Set M} (hS : derive.IsClosed S) (hK : K ⊆ S) :
-    ∀ {t : Trace M}, (∀ c m, Act.comm c m ∈ t → m ∈ S) → known K t ⊆ S := by
+theorem Trace.attackerKnowledge_subset {S K : Set M} (hS : derive.IsClosed S) (hK : K ⊆ S) :
+    ∀ {t : Trace M}, (∀ c m, Act.comm c m ∈ t → m ∈ S) → t.attackerKnowledge K ⊆ S := by
   intro t
   induction t generalizing K with
   | nil => exact fun _ => hK
   | cons a t ih =>
     intro h
-    exact ih (ClosureOperator.closure_min (Set.union_subset hK fun m ⟨c, ha, _⟩ =>
+    exact ih (derive.closure_min (Set.union_subset hK fun m ⟨c, ha, _⟩ =>
       h c m (by subst ha; exact List.mem_cons_self)) hS) fun c m hm => h c m (List.mem_cons_of_mem _ hm)
 
 /-- The closed-set method: if `S` is closed under derivation and contains every nonce, and
 every trace of `P` is `Bounded S`, then at no point of an attack does the attacker know
 anything outside `S`. -/
-theorem known_subset_of_bounded {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
-    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, Bounded S u) {t l : Trace M}
-    (ht : t ∈ Attacks P) (hl : l <+: t) : known (derive ∅) l ⊆ S := by
+theorem Trace.attackerKnowledge_subset_of_bounded {P : Proc M} {S : Set M}
+    (hS : derive.IsClosed S) (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, u.Bounded S)
+    {t l : Trace M} (ht : t ∈ P.Attacks) (hl : l <+: t) : l.attackerKnowledge (derive ∅) ⊆ S := by
   obtain ⟨⟨⟨f, s, hf, hs, hts⟩, -⟩, hc⟩ := ht
-  refine known_subset hS (ClosureOperator.closure_min (Set.empty_subset S) hS) fun c m hm =>
+  refine attackerKnowledge_subset hS (derive.closure_min (Set.empty_subset S) hS) fun c m hm =>
     comm_mem_of_bounded hS hn hts hc (Set.empty_subset S) ?_ ?_ c m (hl.subset hm)
   · rw [hs 0]
     exact hP _ (hf 0)
   · rw [hs 1]
     exact hf 1
 
-theorem secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
-    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, Bounded S u) {s : M} (hs : s ∉ S) :
-    Secret P s := by
+theorem Proc.secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
+    (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, u.Bounded S) {s : M} (hs : s ∉ S) :
+    P.Secret s := by
   rintro t ht l hl f (rfl : f = _) hf
-  exact hs (known_subset_of_bounded hS hn hP ht hl hf)
+  exact hs (Trace.attackerKnowledge_subset_of_bounded hS hn hP ht hl hf)
 
 /-! ## Attackers from public operations -/
 
@@ -247,7 +221,7 @@ instance [Pub T] : Attacker (Msg T) := .ofOps (Pub.ops T)
 
 /-- A public constructor applied to derivable messages is derivable; in particular a
 public free name is derivable from nothing. -/
-theorem app_mem_derive [Pub T] {n : ℕ} {f : F n} (hf : f ∈ Pub.pubFun (T := T) n)
+theorem Msg.app_mem_derive [Pub T] {n : ℕ} {f : F n} (hf : f ∈ Pub.pubFun (T := T) n)
     {S : Set (Msg T)} {ms : Fin n → Msg T} (hms : ∀ i, ms i ∈ derive S) :
     Msg.app f ms ∈ derive S := by
   have hS : ClosedUnder (Pub.ops T) (derive S) :=

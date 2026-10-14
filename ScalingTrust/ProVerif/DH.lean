@@ -111,50 +111,26 @@ theorem vec_eta₂ (a : Fin 2 → Msg (T A)) : ![a 0, a 1] = a :=
   funext (Fin.forall_fin_two.2 ⟨rfl, rfl⟩)
 
 theorem sdec_eq_some {c k m : Msg (T A)} : sdec c k = some m ↔ c = senc m k := by
-  constructor
-  · intro h
-    unfold sdec at h
-    generalize hv : c.view = w at h
-    cases w with
-    | name _ => simp at h
-    | other => simp at h
-    | app f a =>
-      cases f <;> simp at h
-      obtain ⟨rfl, rfl⟩ := h
-      rw [Msg.eq_app_of_view hv, senc, vec_eta₂]
-  · rintro rfl
-    simp [sdec, senc, free]
+  refine ⟨fun h => ?_, fun h => by simp [h, sdec, senc, free]⟩
+  rcases hv : c.view with _ | ⟨f, a⟩ | _ <;> simp [sdec, hv] at h
+  cases f <;> simp at h
+  obtain ⟨rfl, rfl⟩ := h
+  rw [Msg.eq_app_of_view hv, senc, vec_eta₂]
 
 theorem adec_eq_some {c k m : Msg (T A)} : adec c k = some m ↔ c = aenc m (pk k) := by
-  constructor
-  · intro h
-    unfold adec at h
-    generalize hv : c.view = w at h
-    cases w with
-    | name _ => simp at h
-    | other => simp at h
-    | app f a =>
-      cases f <;> simp at h
-      obtain ⟨hk, rfl⟩ := h
-      rw [Msg.eq_app_of_view hv, aenc, ← hk, vec_eta₂]
-  · rintro rfl
-    simp [adec, aenc, free]
+  refine ⟨fun h => ?_, fun h => by simp [h, adec, aenc, free]⟩
+  rcases hv : c.view with _ | ⟨f, a⟩ | _ <;> simp [adec, hv] at h
+  cases f <;> simp at h
+  obtain ⟨hk, rfl⟩ := h
+  rw [Msg.eq_app_of_view hv, aenc, ← hk, vec_eta₂]
 
 theorem check_eq_some {s p m : Msg (T A)} :
     check s p = some m ↔ ∃ k, s = sign m k ∧ p = pk k := by
-  constructor
-  · intro h
-    unfold check at h
-    generalize hv : s.view = w at h
-    cases w with
-    | name _ => simp at h
-    | other => simp at h
-    | app f a =>
-      cases f <;> simp at h
-      obtain ⟨rfl, rfl⟩ := h
-      exact ⟨a 1, by rw [Msg.eq_app_of_view hv, sign, vec_eta₂], rfl⟩
-  · rintro ⟨k, rfl, rfl⟩
-    simp [check, sign, free]
+  refine ⟨fun h => ?_, fun ⟨k, hs, hp⟩ => by simp [hs, hp, check, sign, free]⟩
+  rcases hv : s.view with _ | ⟨f, a⟩ | _ <;> simp [check, hv] at h
+  cases f <;> simp at h
+  obtain ⟨rfl, rfl⟩ := h
+  exact ⟨a 1, by rw [Msg.eq_app_of_view hv, sign, vec_eta₂], rfl⟩
 
 /-! ## Public operations -/
 

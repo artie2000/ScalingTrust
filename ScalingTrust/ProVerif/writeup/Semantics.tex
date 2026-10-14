@@ -167,24 +167,22 @@ a\cdot P &= \{\varepsilon\}\cup\{a\,t\mid t\in P\}, &
 \end{definition}
 
 \begin{definition}[Parallel composition]\label{def:par}
-Let $I$ be a set. For $s\in(I\times\Act)^*$ and $i\in I$, $s{\restriction}i\in\Act^*$ is the word of actions of $s$ tagged $i$, in order, and $\overline{s}\in\Act^*$ is $s$ with tags removed. For $f:I\to\Act^*$, $\interleaves(f,s)$ holds if $s{\restriction}i=f(i)$ for all $i$. Define $\comms:(I\times\Act)^*\to\mathcal{P}(\Act^*)$ by recursion on the word:
+Let $I$ be a set. For $s\in(I\times\Act)^*$ and $i\in I$, $s{\restriction}i\in\Act^*$ is the word of actions of $s$ tagged $i$, in order, and $\overline{s}\in\Act^*$ is $s$ with tags removed. For $f:I\to\Act^*$, $\interleaves(f,s)$ holds if $s{\restriction}i=f(i)$ for all $i$. The relation $\comms\subseteq(I\times\Act)^*\times\Act^*$ is the least one such that
 \begin{align*}
-\comms(\varepsilon)&=\{\varepsilon\},\\
-\comms\big((i,\aout(c,m))\,(j,\ain(c',m'))\,s\big)&=
-\aout(c,m)\cdot\comms\big((j,\ain(c',m'))\,s\big)\\
-&\quad\cup\;\acomm(c,m)\cdot\{t\in\comms(s)\mid i\ne j,\ c=c',\ m=m'\},\\
-\comms((i,a)\,s)&=a\cdot\comms(s)\quad\text{in all other cases,}
+&\comms(\varepsilon,\varepsilon),\\
+&\comms(s,t)\Rightarrow\comms\big((i,a)\,s,\ a\,t\big),\\
+&\comms(s,t)\wedge i\ne j\Rightarrow\comms\big((i,\aout(c,m))\,(j,\ain(c,m))\,s,\ \acomm(c,m)\,t\big).
 \end{align*}
-where $a\cdot X=\{a\,t\mid t\in X\}$. For $P:I\to\Proc$,
+For $P:I\to\Proc$,
 \begin{multline*}
 \mrg_I(P)=\{t\mid \exists f,s.\ (\forall i.\ f(i)\in P(i))\ \wedge\ \interleaves(f,s)\\
-\wedge\ t\in\comms(s)\ \wedge\ \nonces(t)\text{ has no repeated letter}\}.
+\wedge\ \comms(s,t)\ \wedge\ \nonces(t)\text{ has no repeated letter}\}.
 \end{multline*}
 $P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P)$.
 \end{definition}
 
 \begin{proposition}\label{prop:comms}
-Let $t\in\comms(s)$.
+Let $\comms(s,t)$.
 \begin{enumerate}
 \item $\nonces(t)=\nonces(\overline{s})$.
 \item If $a$ occurs in $t$ then $(i,a)$ occurs in $s$ for some $i$, or $a=\acomm(c,m)$ and $(i,\aout(c,m))$, $(j,\ain(c,m))$ occur in $s$ for some $i\ne j$.

@@ -22,7 +22,7 @@ lake build ScalingTrust.ProVerif.Examples
 | --- | --- |
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
 | `ProVerif.Term` | Message algebras from ProVerif declarations: terms, the equations, `Msg`, views, destructors, public operations |
-| `ProVerif.Security` | The attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Secret` and `Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
+| `ProVerif.Security` | The attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Proc.Secret` and `Proc.Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
 | `ProVerif.DH` | A translated algebra: the survey's running-example primitives with Diffie–Hellman |
 | `ProVerif.Examples` | A translated model, the survey's Denning–Sacco example; an attack; a secrecy proof |
 
@@ -64,7 +64,7 @@ example.
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
    never uses `Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
-   is `Secret`, for `M` without nonces; `query F ==> H` is `Corr`, whose
+   is `Proc.Secret`, for `M` without nonces; `query F ==> H` is `Proc.Corr`, whose
    hypotheses are the instances of `F` under the valuations of the query's
    variables and whose conclusion for such an instance is `H`, read as a
    predicate on which facts hold, under the valuations that give `F` that
@@ -87,11 +87,11 @@ name that the rest of the process does not create again. The `do`-notation of
 step 6 is built from these in the continuation monad.
 
 **Parallel composition.** Two stages. First the component traces
-`f : ι → List (Act M)` are interleaved into a tagged trace
-`s : List (ι × Act M)`: `Interleaves f s` says that each component reads its
-own trace back off `s` by projection.
-Then `comms s` is the set of traces obtained by letting an output immediately
-followed by a matching input of a *different* component meet in a
+`f : ι → Trace M` are interleaved into a tagged trace `s : TaggedTrace ι M`:
+`s.Interleaves f` says that each component reads its own trace back off `s` by
+projection.
+Then `s.Comms t` says that `t` is obtained from `s` by letting an output
+immediately followed by a matching input of a *different* component meet in a
 communication, the survey's rule (Red I/O), which the trace records as `comm`.
 `Proc.merge` combines the two and keeps only the traces whose created names are
 distinct, so that different components never create the same name; `Proc.par`
@@ -115,20 +115,20 @@ ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
 (`none`), which the attacker can always write. `Enemy K` is the most general
 intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
-derive, and create names. `known K t` reads its knowledge off a trace: a message
-communicated on a channel it knew at the time becomes known, whoever received
-it, since the attacker could have received it instead.
+derive, and create names. `t.attackerKnowledge K` reads its knowledge off a
+trace: a message communicated on a channel it knew at the time becomes known,
+whoever received it, since the attacker could have received it instead.
 
-**Attacks and security properties.** `Attacks P` is the process of traces of
+**Attacks and security properties.** `P.Attacks` is the process of traces of
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
 adversary `Q` at once. The facts of a query, `Fact`, are events and `knows m`,
-and `Fact.Holds` says whether one holds after a prefix of an attack. `Secret P s`
-says that in no attack does the attacker come to know `s`. `Corr P Hyp H` says
+and `Fact.Holds` says whether one holds after a prefix of an attack. `P.Secret s`
+says that in no attack does the attacker come to know `s`. `P.Corr Hyp H` says
 that whenever a hypothesis `f` in `Hyp` holds, its conclusion `H f` holds of
-the facts that hold then. `secret_of_closed` is the closed-set method for
+the facts that hold then. `Proc.secret_of_closed` is the closed-set method for
 secrecy: a `derive`-closed set that contains every nonce, and that the protocol
-never leaves as long as it receives only messages in it (`Bounded`), bounds
-everything the attacker can ever know. `Examples.hashed_secret` uses it;
+never leaves as long as it receives only messages in it (`Trace.Bounded`),
+bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
 `Examples.leak_attack` exhibits an attack instead.
 
 ## Design decisions
@@ -141,7 +141,7 @@ everything the attacker can ever know. `Examples.hashed_secret` uses it;
   `comm c m`. The attacker's knowledge is read off these actions, and they keep
   an exchange apart from an `out` directly followed by a matching `inp` that
   are two unmatched offers, as in the trace of `out(c, m); in(c, x)`.
-* **The attacker learns by listening.** `known` counts a message as known once
+* **The attacker learns by listening.** `Trace.attackerKnowledge` counts a message as known once
   it is communicated on a channel the attacker knows at the time, whoever
   received it. The attack does not record the receiver, and need not: the
   attacker could have received the message instead, and the survey's Def. 3.2
@@ -189,8 +189,8 @@ phases, so they mark what remains.
 * B. Dutertre and S. Schneider, *Using a PVS Embedding of CSP to Verify
   Authentication Protocols*, TPHOLs 1997: `Reference/DutertreSchneider97.pdf`.
   The same design, processes as trace sets and an enemy process built from a
-  deduction relation, in PVS; `Bounded` and `secret_of_closed` are its rank
-  condition and rank theorem.
+  deduction relation, in PVS; `Trace.Bounded` and `Proc.secret_of_closed` are
+  its rank condition and rank theorem.
 * K. Claessen, *A Poor Man's Concurrency Monad*, JFP 1999:
   `Reference/Claessen99.pdf`. The continuation-monad presentation behind the
   `do`-notation.

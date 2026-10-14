@@ -2,6 +2,7 @@
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
 import Mathlib.Data.Fin.VecNotation
+import Mathlib.Data.Fintype.Quotient
 import Mathlib.ModelTheory.Quotients
 
 /-!
@@ -174,9 +175,8 @@ def lift (hM : T.Satisfies M) (v : ℕ → M) : Msg T → M :=
 
 @[simp] theorem lift_app (hM : T.Satisfies M) (v : ℕ → M) {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
     lift hM v (app f ms) = Structure.funMap (L := F.lang) f fun i => lift hM v (ms i) := by
-  have hm : ms = fun i => ⟦(ms i).out⟧ := funext fun i => (Quotient.out_eq _).symm
-  rw [hm, app_mk]
-  exact Term.realize_func _ _ _
+  induction ms using Quotient.induction_on_pi with
+  | h ts => exact (app_mk f ts).symm ▸ Term.realize_func _ _ _
 
 end Msg
 
@@ -227,9 +227,8 @@ def view : Msg T → View T := Quotient.lift T.view fun _ _ h => T.view_congr h
 
 @[simp] theorem view_app {n : ℕ} (f : F n) (ms : Fin n → Msg T) :
     (app f ms).view = if T.free _ f then .app f ms else .other := by
-  have hm : ms = fun i => ⟦(ms i).out⟧ := funext fun i => (Quotient.out_eq _).symm
-  rw [hm, app_mk]
-  rfl
+  induction ms using Quotient.induction_on_pi with
+  | h ts => rw [app_mk]; rfl
 
 theorem name_inj {n m : ℕ} (h : (name n : Msg T) = name m) : n = m :=
   View.name.inj (congrArg view h)
