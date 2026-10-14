@@ -81,15 +81,13 @@ noncomputable def system : Proc M := .run do
 theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) s := by
   intro h
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have he : [Act.inp c s, .say s] ∈ Enemy (∅ : Set M) :=
-    .inp _ _ (app_mem_derive (ms := ![]) rfl fun i => i.elim0)
-      (.say _ (derive.le_closure _ (Set.mem_insert _ _)) .nil)
-  have hc : Closed [Act.say s] := fun _ ha h => by
-    obtain rfl := List.mem_singleton.1 ha
-    cases h
-  exact h [.say s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s), (1, .say s)],
+  have hc : c ∈ derive (∅ : Set M) := app_mem_derive (ms := ![]) rfl fun i => i.elim0
+  have he : [Act.inp c s] ∈ Enemy (∅ : Set M) := .inp _ _ hc .nil
+  refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)],
     Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [comms]⟩,
-    List.nodup_nil⟩, hc⟩ List.mem_cons_self
+    List.nodup_nil⟩, fun _ ha h => by obtain rfl := List.mem_singleton.1 ha; cases h⟩ ?_
+  simp [known, hc]
+  exact derive.le_closure _ (Set.mem_insert _ _)
 
 /-! ## A secrecy proof
 
@@ -178,14 +176,15 @@ theorem hid_hash (m : M) : Hid (DH.hash m) := by
 in the closed set of messages in which `s` occurs only under a hash. -/
 theorem hashed_secret : Secret (Proc.out c (DH.hash s) Proc.nil) s := by
   refine secret_of_closed (S := {m | Hid m}) hid_closed
-    (fun n => show Hid (Msg.name n) from trivial) ?_ ?_ not_hid_s
-  · intro t ht c' m hm
-    rcases ht with rfl | ⟨_, (rfl : _ = []), rfl⟩
-    · simp at hm
-    · simp at hm
-      obtain ⟨rfl, rfl⟩ := hm
+    (fun n => show Hid (Msg.name n) from trivial) ?_ not_hid_s
+  rintro u (rfl | ⟨_, (rfl : _ = []), rfl⟩) l hl - c' m hm
+  · obtain ⟨r, hr⟩ := hl
+    simp at hr
+    obtain ⟨rfl, -⟩ := hr
+    simp at hm
+  · rcases hm with hm | hm
+    · obtain ⟨rfl, rfl⟩ := Act.out.inj (List.mem_singleton.1 (hl.subset hm))
       exact hid_hash s
-  · intro t ht m hm
-    rcases ht with rfl | ⟨_, (rfl : _ = []), rfl⟩ <;> simp at hm
+    · cases List.mem_singleton.1 (hl.subset hm)
 
 end ProVerif.Examples

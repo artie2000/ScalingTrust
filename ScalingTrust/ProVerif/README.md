@@ -22,7 +22,7 @@ lake build ScalingTrust.ProVerif.Examples
 | --- | --- |
 | `ProVerif.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
 | `ProVerif.Term` | Message algebras from ProVerif declarations: terms, the equations, `Msg`, views, destructors, public operations |
-| `ProVerif.Security` | The attacker as a process, attacks, the security properties `Secret` and `Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
+| `ProVerif.Security` | The attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Secret` and `Corr`, the closed-set method; the Dolev–Yao model of a message algebra |
 | `ProVerif.DH` | A translated algebra: the survey's running-example primitives with Diffie–Hellman |
 | `ProVerif.Examples` | A translated model, the survey's Denning–Sacco example; an attack; a secrecy proof |
 
@@ -62,18 +62,19 @@ example.
    `Proc.repl` followed by `P`, and `0` is `Proc.stop` or the end of the block.
    `let x = D in P else Q` is a Lean `match` on the destructor's result, and
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
-   never uses `Msg.name` or `say`.
+   never uses `Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
    is `Secret`, for `M` without nonces; `query F ==> H` is `Corr`, with `F` and
-   `H` instantiated by valuations of the query's variables.
+   the conjuncts of `H` as `Fact`s instantiated by valuations of the query's
+   variables, `attacker(M)` being `Fact.knows`.
 
 ## The semantics
 
-**Actions.** `Act M` has `out c m`, `inp c m`, `new n`, `event e` and `say m`,
-where the name created by `new n` is `Names.nonce n`. `say m` is the attacker's
-declaration that it knows `m`; honest processes never use it. Processes and the
-attacker are written for any message type `M` with `Names M` and `Attacker M`;
-a translated model uses `Msg T` with the instances of `ProVerif.Security`.
+**Actions.** `Act M` has the offers `out c m` and `inp c m`, the completed
+communication `comm c m`, `new n`, whose name is `Names.nonce n`, and `event e`.
+Processes and the attacker are written for any message type `M` with `Names M`
+and `Attacker M`; a translated model uses `Msg T` with the instances of
+`ProVerif.Security`.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed, so a trace is an execution so far and a process that blocks
@@ -88,7 +89,7 @@ step 6 is built from these in the continuation monad.
 own trace back off `s` by projection, so interleaving needs no rules at all.
 Then `comms s` is the set of traces obtained by letting an output immediately
 followed by a matching input of a *different* component meet in a
-communication, the survey's rule (Red I/O), which leaves nothing in the trace.
+communication, the survey's rule (Red I/O), which the trace records as `comm`.
 `Proc.merge` combines the two and keeps only the traces whose created names are
 distinct, so that different components never create the same name; `Proc.par`
 is the merge over `Fin 2` and `Proc.bang` the merge over `ℕ` (a trace is
@@ -96,9 +97,7 @@ finite, so only finitely many copies act). `Proc.bang_eq`, `!P = P | !P`, is
 (Red Repl).
 
 **Completed communications.** `out` and `inp` are offers. A trace with no
-unfinished action (`Act.Unfinished`) is one in which every offer met a partner,
-and then `out_of_inp_comms` says that whatever one component received, another
-component sent.
+unfinished action (`Act.Unfinished`) is one in which every offer met a partner.
 
 **Messages.** `Msg.view` shows a message's head symbol and arguments when the
 symbol is free and nothing otherwise, and `Theory.view_congr` proves it
@@ -116,19 +115,22 @@ ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
 (`none`), which the attacker can always write. `Enemy K` is the most general
 intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
-derive, create names, and say anything it can derive.
+derive, and create names. `known K t` reads its knowledge off a trace: a message
+communicated on a channel it knew at the time becomes known, whoever received
+it, since the attacker could have received it instead.
 
 **Attacks and security properties.** `Attacks P` is the process of traces of
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
-adversary `Q` at once. The security properties that ProVerif's queries check are
-properties of the actions of an attack. `Secret P s` says
-that in no attack does the attacker say `s`. `Corr P Hyp Concl` says that each
-instance of `F` is one under a valuation whose instance of `H` occurs no later;
-`F` is an event, or `attacker(M)` as `say M`. `secret_of_closed` is the
-closed-set method for secrecy: a `derive`-closed set that contains every nonce
-and every message the protocol offers bounds everything the attacker can ever
-say, provided the protocol itself never says anything. `Examples.hashed_secret`
-uses it; `Examples.leak_attack` exhibits an attack instead.
+adversary `Q` at once. The facts of a query, `Fact`, are events and `knows m`,
+and `Fact.Holds` says whether one holds after a prefix of an attack. `Secret P s`
+says that in no attack does the attacker come to know `s`. `Corr P F H` says
+that whenever an instance of `F` holds, every fact of the conjunct `H` holds
+under some valuation that gives `F` the same instance. `secret_of_closed` is
+the closed-set method for secrecy: a `derive`-closed set that contains every
+nonce, and that the protocol never leaves as long as it receives only messages
+in it (`Bounded`), bounds everything the attacker can ever know.
+`Examples.hashed_secret` uses it; `Examples.leak_attack` exhibits an attack
+instead.
 
 ## Design decisions
 
@@ -138,16 +140,21 @@ uses it; `Examples.leak_attack` exhibits an attack instead.
   must be distinct components, which is why communication is defined on the
   tagged interleaving, where the components are still known, rather than read
   off adjacent actions of an untagged trace.
-* **A communication leaves no action.** A security property can observe the
-  events of an attack and what the attacker says, and nothing else; what was
-  communicated is recoverable from the component traces when a proof needs it.
-* **The attacker speaks.** An attack does not record what the attacker learnt, so
-  its knowledge is made visible by `say`, as with the intruder of Schneider's
-  CSP approach: at any time it may say anything it can derive. This is what
-  lets `attacker(M)` appear in a correspondence like an event.
+* **A communication is an action.** A completed communication is recorded as
+  `comm c m`, and the attacker's knowledge is read off these actions. The
+  marker is needed because an `out` directly followed by a matching `inp` may
+  also be two unmatched offers, as in the trace of `out(c, m); in(c, x)`;
+  without it a later merge could not tell the two apart, and a sequential
+  process could talk to itself.
+* **The attacker learns by listening.** `known` counts a message as known once
+  it is communicated on a channel the attacker knows at the time, whoever
+  received it. The attack does not record the receiver, and need not: the
+  attacker could have received the message instead, and the survey's Def. 3.2
+  and ProVerif's clauses count it the same way. The attacker's own names count
+  only once it sends them, since the trace does not say who created a name.
 * **Channels are uniform.** Nothing marks a channel public or private: a
   private channel is a term the attacker cannot derive, on which `Enemy` makes
-  no offers.
+  no offers and from which it learns nothing.
 * **Free names are constants.** The survey keeps free names apart from
   function symbols, making them public or private through an environment
   `(N_pub, N_priv)`. Here a free name is a nullary constructor, as the ProVerif
@@ -187,7 +194,8 @@ phases, so they mark what remains.
 * B. Dutertre and S. Schneider, *Using a PVS Embedding of CSP to Verify
   Authentication Protocols*, TPHOLs 1997: `Reference/DutertreSchneider97.pdf`.
   The same design, processes as trace sets and an enemy process built from a
-  deduction relation, in PVS.
+  deduction relation, in PVS; `Bounded` and `secret_of_closed` are its rank
+  condition and rank theorem.
 * K. Claessen, *A Poor Man's Concurrency Monad*, JFP 1999:
   `Reference/Claessen99.pdf`. The continuation-monad presentation behind the
   `do`-notation.

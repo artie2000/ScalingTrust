@@ -31,7 +31,10 @@
 \newcommand{\ain}{\mathsf{in}}
 \newcommand{\anew}{\mathsf{new}}
 \newcommand{\aev}{\mathsf{ev}}
-\newcommand{\asay}{\mathsf{say}}
+\newcommand{\acomm}{\mathsf{comm}}
+\newcommand{\known}{\operatorname{known}}
+\newcommand{\knows}{\pv{knows}}
+\newcommand{\Fact}{\mathrm{Fact}}
 \newcommand{\Closed}{\mathrm{Closed}}
 \newcommand{\nonces}{\operatorname{nonces}}
 \newcommand{\comms}{\operatorname{comms}}
@@ -147,7 +150,7 @@ $\langle\cdot\rangle$ is a closure operator on $\mathcal{P}(\Msg)$, $\langle K\r
 
 \begin{definition}[Actions, traces]
 \[
-\Act=\{\aout(c,m),\ \ain(c,m),\ \anew(k),\ \aev(m),\ \asay(m)\mid c,m\in\Msg,\ k\in\N\}.
+\Act=\{\aout(c,m),\ \ain(c,m),\ \acomm(c,m),\ \anew(k),\ \aev(m)\mid c,m\in\Msg,\ k\in\N\}.
 \]
 A \emph{trace} is a word $t\in\Act^*$; $\varepsilon$ is the empty trace and $l\le t$ means $l$ is a prefix of $t$. The actions $\aout(c,m)$ and $\ain(c,m)$ are \emph{unfinished}; $\Closed(t)$ holds if no action of $t$ is unfinished. $\nonces(t)\in\N^*$ is the image of $t$ under the monoid homomorphism with $\anew(k)\mapsto k$ and every other action $\mapsto\varepsilon$. A \emph{process} is a subset of $\Act^*$; $\Proc=\mathcal{P}(\Act^*)$.
 \end{definition}
@@ -170,7 +173,7 @@ Let $I$ be a set. For $s\in(I\times\Act)^*$ and $i\in I$, $s{\restriction}i\in\A
 \comms(\varepsilon)&=\{\varepsilon\},\\
 \comms\big((i,\aout(c,m))\,(j,\ain(c',m'))\,s\big)&=
 \aout(c,m)\cdot\comms\big((j,\ain(c',m'))\,s\big)\\
-&\qquad\cup\;\{t\in\comms(s)\mid i\ne j,\ c=c',\ m=m'\},\\
+&\quad\cup\;\acomm(c,m)\cdot\{t\in\comms(s)\mid i\ne j,\ c=c',\ m=m'\},\\
 \comms((i,a)\,s)&=a\cdot\comms(s)\quad\text{in all other cases,}
 \end{align*}
 where $a\cdot X=\{a\,t\mid t\in X\}$. For $P:I\to\Proc$,
@@ -185,7 +188,7 @@ $P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P
 Let $t\in\comms(s)$.
 \begin{enumerate}
 \item $\nonces(t)=\nonces(\overline{s})$.
-\item If $a$ occurs in $t$ then $(i,a)$ occurs in $s$ for some $i$.
+\item If $a$ occurs in $t$ then $(i,a)$ occurs in $s$ for some $i$, or $a=\acomm(c,m)$ and $(i,\aout(c,m))$, $(j,\ain(c,m))$ occur in $s$ for some $i\ne j$.
 \item If $\Closed(t)$ and $(k,\ain(c,m))$ occurs in $s$, then $(i,\aout(c,m))$ occurs in $s$ for some $i\ne k$.
 \item $!P=P\mid{!P}$ for every $P\in\Proc$.
 \end{enumerate}
@@ -229,7 +232,7 @@ for a constructor $f$ and a destructor $g$. Processes are translated by
 &&\sem{\pv{if}\ M\ \pv{then}\ P\ \pv{else}\ Q}\rho&=
 \begin{cases}\sem{P}\rho&\rho M=\true,\\ \sem{Q}\rho&\rho M\ne\true.\end{cases}
 \end{align*}
-The translation of $P_0$ is $\sem{P_0}\rho_0$. A translated process contains no $\asay$ action and mentions no $\nu_k$ except through $\anew$.
+The translation of $P_0$ is $\sem{P_0}\rho_0$. A translated process mentions no $\nu_k$ except through $\anew$.
 \end{definition}
 
 \begin{remark}
@@ -244,25 +247,38 @@ The processes $\Enemy(K)\in\Proc$, for $K\subseteq\Msg$, are the pointwise least
 \item $\varepsilon\in\Enemy(K)$;
 \item if $K\vdash c$ and $e\in\Enemy(K\cup\{m\})$ then $\ain(c,m)\,e\in\Enemy(K)$, for every $m\in\Msg$;
 \item if $K\vdash c$, $K\vdash m$ and $e\in\Enemy(K)$ then $\aout(c,m)\,e\in\Enemy(K)$;
-\item if $k\notin\nonces(e)$ and $e\in\Enemy(K\cup\{\nu_k\})$ then $\anew(k)\,e\in\Enemy(K)$;
-\item if $K\vdash m$ and $e\in\Enemy(K)$ then $\asay(m)\,e\in\Enemy(K)$.
+\item if $k\notin\nonces(e)$ and $e\in\Enemy(K\cup\{\nu_k\})$ then $\anew(k)\,e\in\Enemy(K)$.
 \end{enumerate}
 \end{definition}
 
-\begin{definition}[Attacks, secrecy, correspondence]
+\begin{definition}[Attacks, knowledge]
 For $P\in\Proc$,
 \[
 \Attacks(P)=\{t\in P\mid\Enemy(\emptyset)\ :\ \Closed(t)\}.
 \]
+For $K\subseteq\Msg$, $\known(K,\cdot):\Act^*\to\mathcal{P}(\Msg)$ is defined by
+\begin{align*}
+\known(K,\varepsilon)&=K,\\
+\known(K,\acomm(c,m)\,t)&=\begin{cases}\known(\langle K\cup\{m\}\rangle,t)& c\in K,\\ \known(K,t)& c\notin K,\end{cases}\\
+\known(K,a\,t)&=\known(K,t)\quad\text{in all other cases.}
+\end{align*}
+\end{definition}
+
+\begin{definition}[Facts, secrecy, correspondence]
+A \emph{fact} is $\event(e)$ or $\knows(m)$ with $e,m\in\Msg$; $\Fact$ is the set of facts. A fact \emph{holds} after $l\in\Act^*$, written $l\models f$, if
+\[
+l\models\event(e)\iff\aev(e)\in l,\qquad
+l\models\knows(m)\iff m\in\known(\langle\emptyset\rangle,l).
+\]
 For $s\in\Msg$,
 \[
-\Secret(P,s)\iff\forall t\in\Attacks(P).\ \asay(s)\notin t .
+\Secret(P,s)\iff\forall t\in\Attacks(P).\ s\notin\known(\langle\emptyset\rangle,t).
 \]
-For a set $V$ and relations $\Hyp,\Concl\subseteq V\times\Act$,
+For a set $V$, $F:V\to\Fact$ and $H:V\to\mathcal{P}(\Fact)$,
 \begin{multline*}
-\Corr(P,\Hyp,\Concl)\iff
-\forall t\in\Attacks(P).\ \forall l\le t.\ \forall a.\ \big(l=l'a\ \wedge\ \exists\sigma.\,\Hyp(\sigma,a)\big)\\
-\Rightarrow\exists\sigma.\ \Hyp(\sigma,a)\ \wedge\ \exists b\in l.\ \Concl(\sigma,b).
+\Corr(P,F,H)\iff
+\forall t\in\Attacks(P).\ \forall l\le t.\ \forall\sigma\in V.\ l\models F(\sigma)\\
+\Rightarrow\exists\sigma'\in V.\ F(\sigma')=F(\sigma)\ \wedge\ \forall f\in H(\sigma').\ l\models f.
 \end{multline*}
 \end{definition}
 
@@ -271,23 +287,20 @@ $\mathbf{0}$ and $\Enemy(K)$ are prefix-closed. If $P$, every $F(m)$ and every $
 \end{proposition}
 
 \begin{definition}[Queries]\label{def:queries}
-A \emph{fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants. For a fact $F$ let
-\[
-\Hyp_F(\sigma,a)\iff
-\begin{cases}
-a=\aev(\sigma M)& F=\event(M),\\
-a=\asay(\sigma M)& F=\attacker(M).
-\end{cases}
-\]
-The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H_1\vee\dots\vee H_m$ with facts $F,H_1,\dots,H_m$ over $X$ denotes $\Corr(\sem{P_0}\rho_0,\Hyp,\Concl)$ with $V=\{1,\dots,m\}\times(X\to\Msg)$, $\Hyp((j,\sigma),a)\iff\Hyp_F(\sigma,a)$ and $\Concl((j,\sigma),b)\iff\Hyp_{H_j}(\sigma,b)$.
+A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants, and let the \emph{instance} of a query fact under $\sigma$ be $\sigma\,\event(M)=\event(\sigma M)$ and $\sigma\,\attacker(M)=\knows(\sigma M)$.
+The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H_1\vee\dots\vee H_m$, with $F$ a query fact over $X$ and each $H_j$ a conjunction $H_{j1}\wedge\dots\wedge H_{jl_j}$ of query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\hat F,\hat H)$ with $V=\{1,\dots,m\}\times(X\to\Msg)$, $\hat F(j,\sigma)=\sigma F$ and $\hat H(j,\sigma)=\{\sigma H_{jk}\mid k\le l_j\}$.
 \end{definition}
 
-\begin{lemma}\label{lem:enemy}
-Let $e\in\Enemy(K)$ and let $S\subseteq\Msg$ be $\Ops$-closed with $K\subseteq S$, $\nu_k\in S$ for all $k$, and $m\in S$ whenever $\ain(c,m)$ occurs in $e$. Then $m\in S$ whenever $\asay(m)$ occurs in $e$.
+\begin{definition}[Bounded traces]
+For $S\subseteq\Msg$, a trace $u$ is \emph{$S$-bounded} if for every prefix $l\le u$: if $m\in S$ for every $\ain(c,m)$ in $l$, then $m\in S$ for every $\aout(c,m)$ and every $\acomm(c,m)$ in $l$.
+\end{definition}
+
+\begin{lemma}\label{lem:known}
+Let $S\subseteq\Msg$ be $\Ops$-closed, $K\subseteq S$, and $m\in S$ for every $\acomm(c,m)$ in $t$. Then $\known(K,t)\subseteq S$.
 \end{lemma}
 
 \begin{theorem}[Closed-set method]\label{thm:closed}
-Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$. Suppose that for every $t\in P$, $\aout(c,m)\in t$ implies $m\in S$, and no $t\in P$ contains a $\asay$ action. Then $s\notin S$ implies $\Secret(P,s)$.
+Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,t)\subseteq S$ for every $t\in\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
 \end{theorem}
 
 \section{Relation to the operational semantics of ProVerif}
@@ -331,7 +344,7 @@ A trace \emph{satisfies} $\attacker(M)$ if it outputs $M$ publicly, and \emph{sa
 \end{definition}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
+Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
 \end{definition}
 
 \subsection{The correspondence}
@@ -376,8 +389,8 @@ Let $\Azero=\Attacks(\sem{P_0}\rho_0)$.
 \begin{theorem}[Attacks]\label{thm:A}
 The following hold.
 \begin{enumerate}
-\item[(S)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with $t{\restriction}_{\anew,\aev}=\obs(\mathrm{Tr})$; if moreover the last step of $\mathrm{Tr}$ outputs $M$ publicly, $t$ may be chosen so that $t\,\asay(\iota M)\in\Azero$.
-\item[(C)] For every $t\in\Azero$ there are an $\Npub$-adversary $Q$, a trace $\mathrm{Tr}$ from $\CQ$ and an injection $\iota$ with $\obs(\mathrm{Tr})=t{\restriction}_{\anew,\aev}$; if moreover $t=t'\,\asay(m)$ and $\Npub\ne\emptyset$, they may be chosen so that the last step of $\mathrm{Tr}$ outputs publicly a term $M$ with $\iota M=m$.
+\item[(S)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with $t{\restriction}_{\anew,\aev}=\obs(\mathrm{Tr})$ such that $\iota M\in\known(\langle\emptyset\rangle,t)$ whenever $\mathrm{Tr}$ outputs $M$ publicly.
+\item[(C)] For every $t\in\Azero$ there are an $\Npub$-adversary $Q$, a trace $\mathrm{Tr}$ from $\CQ$ and an injection $\iota$ with $\obs(\mathrm{Tr})=t{\restriction}_{\anew,\aev}$; if moreover $m\in\known(\langle\emptyset\rangle,t)$ and $\Npub\ne\emptyset$, $\mathrm{Tr}$ extends to a trace with the same observation whose last step outputs publicly a term $M$ with $\iota M=m$.
 \end{enumerate}
 \end{theorem}
 
@@ -390,11 +403,11 @@ The hypothesis $\Npub\ne\emptyset$ cannot be dropped: when $\Npub=\emptyset$ no 
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F,H_1,\dots,H_m$ be facts over $X$ such that every $H_j$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m H_j$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\Hyp,\Concl)$ holds for the relations of Definition~\ref{def:queries}.
+Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$ such that every $H_{jk}$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\hat F,\hat H)$ holds for the functions of Definition~\ref{def:queries}.
 \end{theorem}
 
 \begin{remark}
-Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H_j=\attacker(M)$, $\Concl$ demands an action $\asay(\sigma M)$, which $\Enemy$ is never obliged to perform: with $\Npub=\{c\}$ and $P_0=\pv{out}(c,s);\pv{event}(e)$, $P_0$ satisfies $\event(e)\rightsquigarrow\attacker(s)$, while the one-action trace $\aev(e)$ lies in $\Azero$ and no $\asay$ precedes $\aev(e)$ in it, so $\Corr$ fails. Conclusions $\bigwedge_{k}H_{jk}$ with $l_j>1$ have no reading in Definition~\ref{def:queries}, since $\Corr$ admits a single witness $b$.
+Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H_{jk}=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
 \end{remark}
 
 \end{document}
