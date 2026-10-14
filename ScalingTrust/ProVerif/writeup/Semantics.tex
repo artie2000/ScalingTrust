@@ -259,8 +259,7 @@ For $P\in\Proc$,
 For $K\subseteq\Msg$, $\known(K,\cdot):\Act^*\to\mathcal{P}(\Msg)$ is defined by
 \begin{align*}
 \known(K,\varepsilon)&=K,\\
-\known(K,\acomm(c,m)\,t)&=\begin{cases}\known(\langle K\cup\{m\}\rangle,t)& c\in K,\\ \known(K,t)& c\notin K,\end{cases}\\
-\known(K,a\,t)&=\known(K,t)\quad\text{in all other cases.}
+\known(K,a\,t)&=\known\big(\langle K\cup\{m\mid a=\acomm(c,m),\ c\in K\}\rangle,\,t\big).
 \end{align*}
 \end{definition}
 

@@ -54,13 +54,10 @@ inductive Enemy : Set M → Proc M
 /-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
 def Attacks (P : Proc M) : Set (Trace M) := {t ∈ Proc.par P (Enemy ∅) | Closed t}
 
-open Classical in
 /-- The attacker's knowledge after `t`, starting from `K`: a message communicated on a
 channel the attacker knows at the time becomes known. -/
-noncomputable def known (K : Set M) : Trace M → Set M
-  | [] => K
-  | .comm c m :: t => known (if c ∈ K then derive (insert m K) else K) t
-  | _ :: t => known K t
+def known (K : Set M) (t : Trace M) : Set M :=
+  t.foldl (fun K a => derive (K ∪ {m | ∃ c, a = .comm c m ∧ c ∈ K})) K
 
 /-- A fact of a query: an event, or the attacker's knowledge of a message. -/
 inductive Fact (M : Type) where
@@ -196,17 +193,8 @@ theorem known_subset {S K : Set M} (hS : derive.IsClosed S) (hK : K ⊆ S) :
   | nil => exact fun _ => hK
   | cons a t ih =>
     intro h
-    have h' : ∀ c m, Act.comm c m ∈ t → m ∈ S := fun c m hm => h c m (List.mem_cons_of_mem _ hm)
-    rcases a with _ | _ | ⟨c, m⟩ | _ | _
-    · exact ih hK h'
-    · exact ih hK h'
-    · rw [known]
-      split_ifs
-      · exact ih (ClosureOperator.closure_min
-          (Set.insert_subset_iff.2 ⟨h c m List.mem_cons_self, hK⟩) hS) h'
-      · exact ih hK h'
-    · exact ih hK h'
-    · exact ih hK h'
+    exact ih (ClosureOperator.closure_min (Set.union_subset hK fun m ⟨c, ha, _⟩ =>
+      h c m (by subst ha; exact List.mem_cons_self)) hS) fun c m hm => h c m (List.mem_cons_of_mem _ hm)
 
 /-- The closed-set method: if `S` is closed under derivation and contains every nonce, and
 every trace of `P` is `Bounded S`, then the attacker never knows anything outside `S`. -/

@@ -86,8 +86,8 @@ theorem leak_attack : ¬ Secret (Proc.out c s Proc.nil) s := by
   refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)],
     Fin.forall_fin_two.2 ⟨ht, he⟩, Fin.forall_fin_two.2 ⟨rfl, rfl⟩, by simp [comms]⟩,
     List.nodup_nil⟩, fun _ ha h => by obtain rfl := List.mem_singleton.1 ha; cases h⟩ ?_
-  simp [known, hc]
-  exact derive.le_closure _ (Set.mem_insert _ _)
+  show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
+  exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
 
 /-! ## A secrecy proof
 
