@@ -1,8 +1,8 @@
 (* The rest of the fragment, on a one-message protocol: destructors with several
    rules and with may-fail arguments (the manual's eq, test and catchfail,
    §4.2.1), a type converter, a private channel and private constructors, a
-   conditional, a destructor in an output, else branches, events, and queries
-   with variables. *)
+   conditional, a destructor in an output, else branches, events, queries with
+   variables, and queries that a fact never holds. *)
 
 type key.
 type nonce.
@@ -37,6 +37,8 @@ event Received(nonce).
 query n : nonce; event(Received(n)) ==> event(Sent(n)).
 query n : nonce; attacker(tag(n)) ==> event(Sent(n)).
 query attacker(empty).
+query n : nonce; (attacker(tag(n))) ==> (false).
+query n : nonce; event(Sent(n)).
 
 let sender(k : key) =
   new n : nonce;

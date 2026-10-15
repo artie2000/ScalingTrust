@@ -67,11 +67,13 @@ syntax (priority := high) "event" ident ("(" pv_term,* ")")? ("; " pv_proc)? : p
 
 /-! ## Queries (Figure A.5)
 
-A fact is `attacker(M)` or an event; a query is a fact, or a correspondence between
-two facts. -/
+A fact is `attacker(M)` or an event, possibly in parentheses; a query is a fact, or a
+correspondence between two facts, or a fact followed by `==> false`. -/
 
 syntax "attacker" "(" pv_term ")" : pv_fact
 syntax "event" "(" ident ("(" pv_term,* ")")? ")" : pv_fact
+syntax "(" pv_fact ")" : pv_fact
+syntax "false" : pv_fact
 syntax pv_query := pv_fact (" ==> " pv_fact)?
 /-- The variables of a query, `x : t, y : u;`. -/
 syntax pv_qvars := pv_binders,+ ";"

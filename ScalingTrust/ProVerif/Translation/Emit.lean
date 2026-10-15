@@ -1031,11 +1031,16 @@ def emitQuery (i : Nat) (q : Query) : EmitM (Array (String × Command)) := do
     out := out.push (s!"The variables of `{q.print}`.", ← `(inductive $vars:ident $ctors:ctor*))
   let prop ← match q.conclusion with
     | none =>
-      let .attacker m := q.premise
-        | throwError "the query `{q.print}` is not a secrecy query nor a correspondence"
-      let m ← emitPure env m
-      if q.vars.isEmpty then `(system.Secret alg.derive $m)
-      else `(∀ $σ:ident : $vars → T.Msg, system.Secret alg.derive $m)
+      match q.premise with
+      | .attacker m =>
+        let m ← emitPure env m
+        if q.vars.isEmpty then `(system.Secret alg.derive $m)
+        else `(∀ $σ:ident : $vars → T.Msg, system.Secret alg.derive $m)
+      | .event .. =>
+        let f ← emitFact env q.premise
+        if q.vars.isEmpty then `(∀ t₀ ∈ system.Attacks alg.derive, ¬ ($f).Holds alg.derive t₀)
+        else `(∀ $σ:ident : $vars → T.Msg, ∀ t₀ ∈ system.Attacks alg.derive,
+          ¬ ($f).Holds alg.derive t₀)
     | some h =>
       let f ← emitFact env q.premise
       let g ← emitFact env h

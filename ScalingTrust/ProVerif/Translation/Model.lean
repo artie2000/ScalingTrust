@@ -81,10 +81,12 @@ inductive Fact where
   | event (e : String) (args : Array Term)
   deriving Repr
 
-/-- `query x₁ : t₁, …; F` or `query x₁ : t₁, …; F ==> H`. -/
+/-- `query x₁ : t₁, …; F ==> H`, or `query x₁ : t₁, …; F`, which asks that `F` never
+holds, as does `F ==> false`. -/
 structure Query where
   vars : Array String
   premise : Fact
+  /-- `H`, or `none` when the query asks that the premise never holds. -/
   conclusion : Option Fact
   deriving Repr
 
@@ -237,17 +239,30 @@ where
   terms (args : Option (Syntax.TSepArray `pv_term ",")) : ConvM (Array Term) :=
     (args.map (·.getElems)).getD #[] |>.mapM Term.ofSyntax
 
-def Fact.ofSyntax (stx : TSyntax `pv_fact) : ConvM Fact :=
+partial def Fact.ofSyntax (stx : TSyntax `pv_fact) : ConvM Fact :=
   match stx with
   | `(pv_fact| attacker($m)) => return .attacker (← Term.ofSyntax m)
   | `(pv_fact| event($e:ident $[($args:pv_term,*)]?)) => do
     return .event (← identStr e) (← (args.map (·.getElems)).getD #[] |>.mapM Term.ofSyntax)
+  | `(pv_fact| ($f)) => ofSyntax f
+  | `(pv_fact| false) => throwAt stx "`false` is not a fact"
   | _ => throwAt stx "unexpected fact"
+
+/-- The conclusion of a correspondence: a fact, or `false`, which makes the query ask that
+its premise never holds. -/
+partial def conclusion (stx : TSyntax `pv_fact) : ConvM (Option Fact) :=
+  match stx with
+  | `(pv_fact| ($h)) => conclusion h
+  | `(pv_fact| false) => pure none
+  | _ => some <$> Fact.ofSyntax stx
 
 def query (vars : Array String) (stx : TSyntax ``pv_query) : ConvM Query :=
   match stx with
-  | `(pv_query| $f $[==> $h]?) =>
-    return { vars, premise := ← Fact.ofSyntax f, conclusion := ← h.mapM Fact.ofSyntax }
+  | `(pv_query| $f $[==> $h]?) => do
+    let concl ← match h with
+      | none => pure none
+      | some h => conclusion h
+    return { vars, premise := ← Fact.ofSyntax f, conclusion := concl }
   | _ => throwAt stx "unexpected query"
 
 /-- The rules of one destructor: all for the same symbol, all of its arity. -/

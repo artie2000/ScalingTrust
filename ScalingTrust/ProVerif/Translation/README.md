@@ -53,16 +53,17 @@ options `private`, `data` and `typeConverter`, `reduc` and `fun … reduc …
 otherwise …` with may-fail variables and the constant `fail`, `equation`,
 `event`, `let` process macros and `query`; the processes `0`, `P | Q`, `!P`,
 `new`, `in` and `out`, `event`, macro calls, `let x = D in P else Q` and
-`if D = D' then P else Q` or `if D <> D' then P else Q`; and the queries
-`attacker(M)` and `F ==> H` for single facts `F` and `H`, with variables
-declared before them. Terms are identifiers and applications; `(M)` is `M`.
+`if D = D' then P else Q` or `if D <> D' then P else Q`; and the queries `F`,
+`F ==> false` and `F ==> H` for single facts `F` and `H`, `attacker(M)` or an
+event, possibly in parentheses, with variables declared before them. Terms are
+identifiers and applications; `(M)` is `M`.
 
 Not translated: tuples and numerals, patterns other than a variable in `in` and
 `let`, booleans and the boolean operators as terms (`if D then P` has to compare),
 `letfun`, `let` in equations and rules, tables, phases, and queries other than
-the two above, so none with `&&`, `||`, `false`, `inj-event`, nested
-correspondences or `secret`. A model whose symbols include a name the
-translation uses, listed in `Emit.reserved`, is rejected too.
+the three above, so none with `&&`, `||`, `inj-event`, nested correspondences or
+`secret`. A model whose symbols include a name the translation uses, listed in
+`Emit.reserved`, is rejected too.
 
 Lean's tokenizer reads the model. Its identifiers are Lean's, so an identifier
 that is a reserved word of Lean, such as `at`, does not parse. `adapt` rewrites
@@ -127,12 +128,15 @@ A model is translated piece by piece, types erased as in the survey's semantics.
    `t₀`, with `Proc.stop` for `none`, and `if M = N then P else Q` is then a Lean
    `if` on the equation of messages. Variables keep their names, prefixed with
    `_` when nothing uses them. The process never uses `Theory.Msg.name`.
-7. **Queries** become the properties they check, `query₁`, `query₂`, … in order:
-   `query attacker(M)` is `system.Secret alg.derive M`, under `∀ σ` when the
-   query declares variables, and `query F ==> H` is `system.Corr alg.derive F H`
-   with `F` and `H` functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
-   variables, the inductive type `Varsᵢ`, the survey's Def. 3.5; `attacker(M)`
-   is `Fact.knows M` and `event(e(M))` is `Fact.event (e M)`.
+7. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
+   with `attacker(M)` as `Fact.knows M` and `event(e(M))` as `Fact.event (e M)`.
+   `query F` and `query F ==> false` both ask that `F` never holds: for
+   `attacker(M)` this is `system.Secret alg.derive M`, and for an event it is
+   written out, `∀ t₀ ∈ system.Attacks alg.derive, ¬ F.Holds alg.derive t₀`;
+   `query F ==> H` is `system.Corr alg.derive F H`, the survey's Def. 3.5. The
+   facts are functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
+   variables, the inductive type `Varsᵢ`, and a never-holds query with variables
+   is quantified over `σ`.
 8. **Theorems**, with generated proofs:
    * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
      instantiating `Theory.satisfies_msg` at the raw equation and evaluating

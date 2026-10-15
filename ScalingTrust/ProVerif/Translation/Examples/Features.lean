@@ -367,6 +367,23 @@ def query₂ : Prop :=
 def query₃ : Prop :=
   system.Secret alg.derive empty
 
+/-- The variables of `query n; attacker(tag(n))`. -/
+inductive Vars₄
+  | n
+
+/-- `query n; attacker(tag(n))` -/
+def query₄ : Prop :=
+  ∀ σ : Vars₄ → T.Msg, system.Secret alg.derive (tag (σ .n))
+
+/-- The variables of `query n; event(Sent(n))`. -/
+inductive Vars₅
+  | n
+
+/-- `query n; event(Sent(n))` -/
+def query₅ : Prop :=
+  ∀ σ : Vars₅ → T.Msg,
+    ∀ t₀ ∈ system.Attacks alg.derive, ¬(Fact.event (Sent (σ .n))).Holds alg.derive t₀
+
 end Features
 
 end
