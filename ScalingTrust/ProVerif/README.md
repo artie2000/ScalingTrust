@@ -64,11 +64,9 @@ example.
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
    never uses `Theory.Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
-   is `Proc.Secret`, for `M` without nonces; `query F ==> H` is `Proc.Corr`, whose
-   hypotheses are the instances of `F` under the valuations of the query's
-   variables and whose conclusion for such an instance is `H`, read as a
-   predicate on which facts hold, under the valuations that give `F` that
-   instance; `attacker(M)` is `Fact.knows`.
+   is `Proc.Secret`, for `M` without nonces; `query F ==> H`, for single facts
+   `F` and `H` whose variables all occur in `F`, is `Proc.Corr (σF) (σH)` for
+   every valuation `σ` of the query's variables; `attacker(M)` is `Fact.knows`.
 
 ## The semantics
 
@@ -81,8 +79,10 @@ closure operator `derive` on `Set M` besides; a translated model with algebra
 `A` uses `A.Msg` and `A.derive`.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
-prefix-closed, so a trace is an execution so far and a process that blocks
-simply has no longer traces. `Proc.out`, `Proc.inp`, `Proc.new` and
+prefix-closed (Mathlib's `Descriptive.tree`; `aesop` proves it of a translated
+`do` block, as `Examples.system_mem_tree` shows, and `Proc.merge_mem_tree` of a
+merge), so a trace is an execution so far and a process that blocks simply has
+no longer traces. `Proc.out`, `Proc.inp`, `Proc.new` and
 `Proc.event` prepend an action and `Proc.nil` is `0`; `Proc.new` creates a
 name that the rest of the process does not create again. The `do`-notation of
 step 6 is built from these in the continuation monad.
@@ -116,17 +116,19 @@ ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
 (`none`), which the attacker can always write. `Enemy derive K` is the most general
 intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
-derive, and create names. `t.attackerKnowledge K` reads its knowledge off a
+derive, to the protocol or to itself, and create names. `t.attackerKnowledge K` reads its knowledge off a
 trace: a message communicated on a channel it knew at the time becomes known,
 whoever received it, since the attacker could have received it instead.
 
 **Attacks and security properties.** `P.Attacks` is the process of traces of
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
-adversary `Q` at once. The facts of a query, `Fact`, are events and `knows m`,
-and `Fact.Holds` says whether one holds after a prefix of an attack. `P.Secret derive s`
-says that in no attack does the attacker come to know `s`. `P.Corr derive Hyp H` says
-that whenever a hypothesis `f` in `Hyp` holds, its conclusion `H f` holds of
-the facts that hold then. `Proc.secret_of_closed` is the closed-set method for
+adversary `Q` at once. A prefix of an attack is an attack
+(`Proc.attacks_mem_tree`), so a property of every attack is a property of
+every point of every attack. The facts of a query, `Fact`, are events and
+`knows m`, and `Fact.Holds` says whether one holds after an attack.
+`P.Secret derive s` says that in no attack does the attacker come to know `s`.
+`P.Corr derive F H` says that `H` holds in every attack in which `F` does, so
+by the time `F` does. `Proc.secret_of_closed` is the closed-set method for
 secrecy: a `derive`-closed set that contains every nonce, and that the protocol
 never leaves as long as it receives only messages in it (`Trace.Bounded`),
 bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
@@ -141,13 +143,17 @@ bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
 * **A communication is an action.** A completed communication is recorded as
   `comm c m`. The attacker's knowledge is read off these actions, and they keep
   an exchange apart from an `out` directly followed by a matching `inp` that
-  are two unmatched offers, as in the trace of `out(c, m); in(c, x)`.
+  are two unmatched offers, as in the trace of `out(c, m); in(c, x)`. The
+  attacker, being one component, also performs `comm c m` on its own: an output
+  to itself, which the survey's Def. 3.2 counts as a public output when `c` is
+  public.
 * **The attacker learns by listening.** `Trace.attackerKnowledge` counts a message as known once
   it is communicated on a channel the attacker knows at the time, whoever
   received it. The attack does not record the receiver, and need not: the
   attacker could have received the message instead, and the survey's Def. 3.2
   and ProVerif's clauses count it the same way. The attacker's own names count
-  only once it sends them, since the trace does not say who created a name.
+  only once it sends them, to the protocol or to itself, since the trace does
+  not say who created a name.
 * **Channels are uniform.** Nothing marks a channel public or private: a
   private channel is a term the attacker cannot derive, on which `Enemy` makes
   no offers and from which it learns nothing.
@@ -166,13 +172,20 @@ bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
   as `Proc.new`. This is Paulson's `Nonce N ∉ used evs` pushed into the
   constructors, and the applied pi convention that bound names are pairwise
   distinct.
+* **Properties of whole attacks.** `Secret` and `Corr` quantify over attacks,
+  not over their prefixes. `Attacks` is prefix-closed, so a property of every
+  attack holds at every point of every attack; this is how the survey's
+  Defs. 3.3 and 3.5 quantify over all traces, and how ProVerif reads
+  `F ==> H` as "`H` before `F`", by stopping the execution just after `F`
+  (manual §4.3.1).
 
 ## Not modelled
 
 Tables (`insert` and `get`; the ProVerif manual, §6.7.3, encodes them with
 private channels), phases (attacks are ordered, so ordering constraints can be
-stated directly), injective correspondences and the secrecy of bound names
-(`query secret x`). The Noise Explorer models in `Reference/` use tables and
+stated directly), queries with more than one fact on a side of `==>`
+(conjunctions, disjunctions, nested and injective correspondences) and the
+secrecy of bound names (`query secret x`). The Noise Explorer models in `Reference/` use tables and
 phases, so they mark what remains.
 
 ## References

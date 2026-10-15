@@ -10,10 +10,12 @@ import ScalingTrust.ProVerif.Term
 
 The attacker is a process, `Enemy derive K`: the traces a Dolev-Yao attacker knowing
 `K` can perform.  It may receive on any channel it can derive, send anything it
-can derive on any channel it can derive, and create names.  What it can derive
-from a set of messages is a closure operator, `derive`, a parameter of everything
-here; for the messages of a translated model it is `MsgAlgebra.derive`, at the end
-of this file.
+can derive on any channel it can derive, and create names.  It may also send to
+itself, a `comm` that needs no partner: the survey's Definition 3.2 counts an
+adversary's output on a public channel whoever receives it, and so does
+`Trace.attackerKnowledge`.  What it can derive from a set of messages is a closure
+operator, `derive`, a parameter of everything here; for the messages of a translated
+model it is `MsgAlgebra.derive`, at the end of this file.
 
 An *attack* on `P` is a trace of `P | Enemy ∅` in which every communication was
 completed; `P.Attacks` is the process of attacks.  The attacker starts from
@@ -22,8 +24,9 @@ nothing: the public free names are public constants, derivable from nothing.
 What the attacker knows after a trace, `Trace.attackerKnowledge`, is read off its
 communications: a message sent on a channel the attacker knew at the time becomes
 known, whoever received it, since the attacker could have received it instead.  A
-`Fact` of a query holds or not after each prefix of an attack; `Proc.Secret` is
-`query attacker(s)` and `Proc.Corr` is `query F ==> H`.
+`Fact` of a query holds or not after an attack; `Proc.Secret` is `query attacker(s)`
+and `Proc.Corr` is `query F ==> H`.  A prefix of an attack is an attack, so a property
+of every attack is a property of every point of every attack.
 
 Nothing here distinguishes public from private channels: a private channel is
 a term the attacker cannot derive, on which it therefore makes no offers and
@@ -31,6 +34,8 @@ from which it learns nothing.
 -/
 
 namespace ProVerif
+
+open Descriptive
 
 section
 
@@ -43,11 +48,52 @@ inductive Enemy : Set M → Proc M
       Enemy K (.inp c m :: e) -- defeq abuse for `(.inp c m :: e) ∈ Enemy derive K`, etc.
   | out {K e} (c m : M) : c ∈ derive K → m ∈ derive K → e ∈ Enemy K →
       Enemy K (.out c m :: e)
+  | comm {K e} (c m : M) : c ∈ derive K → m ∈ derive K → e ∈ Enemy K →
+      Enemy K (.comm c m :: e)
   | new {K} {e : Trace M} (n : ℕ) : n ∉ e.nonces → e ∈ Enemy (insert (Names.nonce n) K) →
       Enemy K (.new n :: e)
 
+/-- The enemy is prefix-closed: it can stop at any point. -/
+theorem Enemy.mem_tree (K : Set M) : Enemy derive K ∈ tree (Act M) := by
+  refine mem_tree_of_prefix fun l e hl he => ?_
+  induction he generalizing l with
+  | nil =>
+    obtain rfl := List.prefix_nil.1 hl
+    exact .nil
+  | inp c m hc _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact .nil
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      exact .inp c m hc (ih _ hl)
+  | out c m hc hm _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact .nil
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      exact Enemy.out c m hc hm (ih _ hl)
+  | comm c m hc hm _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact .nil
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      exact Enemy.comm c m hc hm (ih _ hl)
+  | new n hn _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact .nil
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      exact .new n (fun h => hn ((Trace.nonces_sublist hl.sublist).subset h)) (ih _ hl)
+
 /-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
 def Proc.Attacks (P : Proc M) : Proc M := {t ∈ P.par (Enemy derive ∅) | t.Closed}
+
+/-- A prefix of an attack on a prefix-closed process is an attack. -/
+theorem Proc.attacks_mem_tree {P : Proc M} (hP : P ∈ tree (Act M)) :
+    P.Attacks derive ∈ tree (Act M) :=
+  mem_tree_of_prefix fun _ _ hl ⟨ht, hc⟩ =>
+    ⟨Tree.mem_of_prefix (T := ⟨_, Proc.par_mem_tree hP (Enemy.mem_tree derive ∅)⟩) hl ht,
+      fun a ha => hc a (hl.subset ha)⟩
 
 /-- The attacker's knowledge after `t`, starting from `K`: a message communicated on a
 channel the attacker knows at the time becomes known. -/
@@ -59,23 +105,20 @@ inductive Fact (M : Type) where
   | event (e : M)
   | knows (m : M)
 
-/-- Whether a fact holds after the trace `l` of an attack. -/
-def Fact.Holds (l : Trace M) : Fact M → Prop
-  | .event e => Act.event e ∈ l
-  | .knows m => m ∈ l.attackerKnowledge derive (derive ∅)
+/-- Whether a fact holds after the trace `t`. -/
+def Fact.Holds (t : Trace M) : Fact M → Prop
+  | .event e => Act.event e ∈ t
+  | .knows m => m ∈ t.attackerKnowledge derive (derive ∅)
 
-/-- The correspondence that `query F ==> H` checks: `Hyp` is the set of instances of `F`,
-and `H f holds` the conclusion for the instance `f`, a predicate on which facts hold.
-In every attack, whenever an instance of `F` holds, its conclusion holds of the facts
-that hold then.  For `F ==> ⋁ⱼ ⋀ₖ Hⱼₖ`, `H f holds` is `∃ j σ, σF = f ∧ ∀ k, holds (σHⱼₖ)`
-(the survey's Def. 3.5, with `=` read as `=_E`). -/
-def Proc.Corr (P : Proc M) (Hyp : Set (Fact M)) (H : Fact M → (Fact M → Prop) → Prop) : Prop :=
-  ∀ t ∈ P.Attacks derive, ∀ l : Trace M, l <+: t → ∀ f ∈ Hyp, f.Holds derive l →
-    H f (Fact.Holds derive l)
+/-- The correspondence that `query F ==> H` checks for single facts `F` and `H`: `H` holds
+in every attack in which `F` holds.  Attacks are prefix-closed, so `H` holds by the time
+`F` does, as in the survey's Def. 3.5 (with `=` read as `=_E`).  A query with variables
+is the conjunction of its instances. -/
+def Proc.Corr (P : Proc M) (F H : Fact M) : Prop :=
+  ∀ t ∈ P.Attacks derive, F.Holds derive t → H.Holds derive t
 
-/-- Secrecy of `s`, the property that `query attacker(s)` checks: the correspondence with
-hypothesis `knows s` and conclusion `False`, so that in no attack does the attacker come
-to know `s`.
+/-- Secrecy of `s`, the property that `query attacker(s)` checks: in no attack does the
+attacker come to know `s`.
 
 The survey's secrecy (Defs. 3.2, 3.3) counts the outputs on a public free name.
 Whatever the attacker knows it can relay on one, so `Secret` agrees with it when the
@@ -83,7 +126,8 @@ model has a public free name; without one, the survey's counts nothing.
 
 `s` should contain no nonce: a nonce is identified by its index, which does not say
 which `new` created it. -/
-def Proc.Secret (P : Proc M) (s : M) : Prop := P.Corr derive {.knows s} fun _ _ => False
+def Proc.Secret (P : Proc M) (s : M) : Prop :=
+  ∀ t ∈ P.Attacks derive, ¬ (Fact.knows s).Holds derive t
 
 /-! ## Bounding the attacker's knowledge -/
 
@@ -110,6 +154,7 @@ theorem Enemy.bounded {S : Set M} (hS : derive.IsClosed S) (hn : ∀ n, Names.no
   | nil => trivial
   | inp c m _ _ ih => exact fun hm => ih (Set.insert_subset_iff.2 ⟨hm, hK⟩)
   | out c m _ hm _ ih => exact ⟨derive.closure_min hK hS hm, ih hK⟩
+  | comm c m _ hm _ ih => exact ⟨derive.closure_min hK hS hm, ih hK⟩
   | new n _ _ ih => exact ih (Set.insert_subset_iff.2 ⟨hn n, hK⟩)
 
 omit [Names M] in
@@ -161,15 +206,14 @@ theorem Trace.attackerKnowledge_subset {S K : Set M} (hS : derive.IsClosed S) (h
       h c m (by subst ha; exact List.mem_cons_self)) hS) fun c m hm => h c m (List.mem_cons_of_mem _ hm)
 
 /-- The closed-set method: if `S` is closed under derivation and contains every nonce, and
-every trace of `P` is `Bounded S`, then at no point of an attack does the attacker know
-anything outside `S`. -/
+every trace of `P` is `Bounded S`, then in no attack does the attacker know anything
+outside `S`. -/
 theorem Trace.attackerKnowledge_subset_of_bounded {P : Proc M} {S : Set M}
     (hS : derive.IsClosed S) (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, u.Bounded S)
-    {t l : Trace M} (ht : t ∈ P.Attacks derive) (hl : l <+: t) :
-    l.attackerKnowledge derive (derive ∅) ⊆ S := by
+    {t : Trace M} (ht : t ∈ P.Attacks derive) : t.attackerKnowledge derive (derive ∅) ⊆ S := by
   obtain ⟨⟨⟨f, s, hf, hs, hts⟩, -⟩, hc⟩ := ht
   refine attackerKnowledge_subset hS (derive.closure_min (Set.empty_subset S) hS) fun c m hm =>
-    hts.comm_mem_of_bounded hc (fun i => ?_) (hl.subset hm)
+    hts.comm_mem_of_bounded hc (fun i => ?_) hm
   rw [hs i]
   fin_cases i
   · exact hP _ (hf 0)
@@ -177,9 +221,8 @@ theorem Trace.attackerKnowledge_subset_of_bounded {P : Proc M} {S : Set M}
 
 theorem Proc.secret_of_closed {P : Proc M} {S : Set M} (hS : derive.IsClosed S)
     (hn : ∀ n, Names.nonce n ∈ S) (hP : ∀ u ∈ P, u.Bounded S) {s : M} (hs : s ∉ S) :
-    P.Secret derive s := by
-  rintro t ht l hl f (rfl : f = _) hf
-  exact hs (Trace.attackerKnowledge_subset_of_bounded hS hn hP ht hl hf)
+    P.Secret derive s := fun _ ht hf =>
+  hs (Trace.attackerKnowledge_subset_of_bounded hS hn hP ht hf)
 
 /-! ## Attackers from public operations -/
 

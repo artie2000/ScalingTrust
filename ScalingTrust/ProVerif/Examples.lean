@@ -10,13 +10,25 @@ import ScalingTrust.ProVerif.Security
 The translation of the survey's running example (§2.2), the simplified
 Denning-Sacco protocol, over the algebra of `ProVerif.DH`: its free names are a
 public channel `c` and a private secret `s`, and its roles and system are `do`
-blocks.  Then an attack, and a secrecy proof by the closed-set method, whose closed
-set is defined through the universal property of the message quotient.
+blocks.  Only its prefix-closure is proved.  The attack and the secrecy proof that follow
+are on the one-action processes `out(c, s)` and `out(c, hash(s))`, which exercise
+`Proc.Secret` and the closed-set method but not the protocol.
+
+A property of the protocol is further work.  The survey's attack (Example 3.2) is
+on its strengthened model, in which `A` first receives its interlocutor's key; it
+is a closed trace of that system with the enemy, as in `leak_attack`.  Secrecy of
+the model below is beyond `Proc.secret_of_closed`, whose closed set must contain
+every nonce, so `A`'s session key `k`, then `senc(s, k)` since it is output, then
+`s` by `sdec`.  The method must first be generalised to a closed set that depends
+on the nonces the protocol created; and the set for this protocol must look at the
+arguments of a symbol, not only at whether they are safe (`aenc(sign(k, sskA),
+pk(skB))` is safe and `sign(k, sskA)` is not), which the structure on `Prop` used
+below cannot express.
 -/
 
 namespace ProVerif.Examples
 
-open FirstOrder.Language
+open FirstOrder.Language Descriptive
 
 /-- The free names: a public channel and a private secret. -/
 inductive Free
@@ -33,7 +45,10 @@ noncomputable abbrev alg : MsgAlgebra (DH.Fun Free) := DH.alg {.c}
 def c : M := DH.const .c
 def s : M := DH.const .s
 
-/-! ## The protocol
+/-! ## A protocol
+
+The survey's first model (p. 21), in which `A` talks only to `B`, with types and the
+converters `k2b` and `b2k` erased:
 
 ```
 P_A(sskA, pkB) = ! new k; out(c, aenc(sign(k, sskA), pkB)); in(c, x); let z = sdec(x, k) in 0
@@ -41,6 +56,10 @@ P_B(skB, spkA) = ! in(c, y); let y' = adec(y, skB) in let xk = check(y', spkA) i
                    out(c, senc(s, xk))
 P₀ = new sskA; new skB; out(c, pk(sskA)); out(c, pk(skB)); (P_A(sskA, pk(skB)) | P_B(skB, pk(sskA)))
 ```
+
+From Example 2.2 on, the survey strengthens `P_A` to
+`! in(c, x_pkB); new k; out(c, aenc(sign(k, sskA), x_pkB)); …`, so that the attacker
+can take `B`'s place; that is the model its attack is on.
 -/
 
 /-- The role of `A`: create a session key, send it signed and encrypted, and decrypt
@@ -74,6 +93,13 @@ noncomputable def system : Proc M := .run do
   .send c (DH.pk skB)
   if ← .fork then initiator sskA (DH.pk skB) else responder skB (DH.pk sskA)
 
+example : Proc.out c (DH.hash s) Proc.nil ∈ tree (Act M) := by aesop
+
+/-- The protocol is prefix-closed: `aesop` runs the `do` blocks down to the constructors
+and splits the `match` of each `let`. -/
+theorem system_mem_tree : system ∈ tree (Act M) := by
+  aesop (add norm simp [system, initiator, responder])
+
 /-! ## An attack -/
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
@@ -85,7 +111,7 @@ theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret alg.derive s := by
   have he : [Act.inp c s] ∈ Enemy alg.derive (∅ : Set M) := .inp _ _ hc .nil
   refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)], Fin.forall_fin_two.2 ⟨ht, he⟩,
     Fin.forall_fin_two.2 ⟨rfl, rfl⟩, .pair (by decide) c s .nil⟩, List.nodup_nil⟩,
-    List.forall_mem_singleton.2 nofun⟩ _ (List.prefix_refl _) _ (Set.mem_singleton _) ?_
+    List.forall_mem_singleton.2 nofun⟩ ?_
   show s ∈ alg.derive (alg.derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ alg.derive ∅})
   exact alg.derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
 

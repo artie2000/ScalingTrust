@@ -43,7 +43,6 @@
 \newcommand{\Attacks}{\operatorname{Attacks}}
 \newcommand{\Secret}{\operatorname{Secret}}
 \newcommand{\Corr}{\operatorname{Corr}}
-\newcommand{\Hyp}{\mathrm{Hyp}}
 \newcommand{\sem}[1]{\llbracket #1 \rrbracket}
 \newcommand{\pv}[1]{\mathsf{#1}}
 \newcommand{\fail}{\pv{fail}}
@@ -244,6 +243,7 @@ The processes $\Enemy(K)\in\Proc$, for $K\subseteq\Msg$, are the pointwise least
 \item $\varepsilon\in\Enemy(K)$;
 \item if $K\vdash c$ and $e\in\Enemy(K\cup\{m\})$ then $\ain(c,m)\,e\in\Enemy(K)$, for every $m\in\Msg$;
 \item if $K\vdash c$, $K\vdash m$ and $e\in\Enemy(K)$ then $\aout(c,m)\,e\in\Enemy(K)$;
+\item if $K\vdash c$, $K\vdash m$ and $e\in\Enemy(K)$ then $\acomm(c,m)\,e\in\Enemy(K)$, an output to itself;
 \item if $k\notin\nonces(e)$ and $e\in\Enemy(K\cup\{\nu_k\})$ then $\anew(k)\,e\in\Enemy(K)$.
 \end{enumerate}
 \end{definition}
@@ -260,28 +260,27 @@ For $K\subseteq\Msg$, $\known(K,\cdot):\Act^*\to\mathcal{P}(\Msg)$ is defined by
 \end{align*}
 \end{definition}
 
-\begin{definition}[Facts, secrecy, correspondence]
-A \emph{fact} is $\event(e)$ or $\knows(m)$ with $e,m\in\Msg$; $\Fact$ is the set of facts. A fact \emph{holds} after $l\in\Act^*$, written $l\models f$, if
-\[
-l\models\event(e)\iff\aev(e)\in l,\qquad
-l\models\knows(m)\iff m\in\known(\langle\emptyset\rangle,l).
-\]
-For $\Hyp\subseteq\Fact$ and $H\subseteq\Fact\times\mathcal{P}(\Fact)$,
-\[
-\Corr(P,\Hyp,H)\iff
-\forall t\in\Attacks(P).\ \forall l\le t.\ \forall f\in\Hyp.\ l\models f
-\Rightarrow H\big(f,\{g\mid l\models g\}\big).
-\]
-For $s\in\Msg$, $\Secret(P,s)\iff\Corr(P,\{\knows(s)\},\emptyset)$, that is, $s\notin\known(\langle\emptyset\rangle,l)$ for every prefix $l$ of a trace in $\Attacks(P)$.
-\end{definition}
-
-\begin{proposition}[Prefix-closure]
+\begin{proposition}[Prefix-closure]\label{prop:prefix}
 $\mathbf{0}$ and $\Enemy(K)$ are prefix-closed. If $P$, every $F(m)$ and every $P(i)$ are prefix-closed, so are $a\cdot P$, $\ain(c).F$, $\anew.F$ and $\mrg_I(P)$. If $P$ is prefix-closed, so is $\Attacks(P)$.
 \end{proposition}
 
+\begin{definition}[Facts, secrecy, correspondence]
+A \emph{fact} is $\event(e)$ or $\knows(m)$ with $e,m\in\Msg$; $\Fact$ is the set of facts. A fact \emph{holds} after $t\in\Act^*$, written $t\models f$, if
+\[
+t\models\event(e)\iff\aev(e)\in t,\qquad
+t\models\knows(m)\iff m\in\known(\langle\emptyset\rangle,t).
+\]
+For $F,H\in\Fact$ and $s\in\Msg$,
+\[
+\Corr(P,F,H)\iff\forall t\in\Attacks(P).\ t\models F\Rightarrow t\models H,\qquad
+\Secret(P,s)\iff\forall t\in\Attacks(P).\ t\not\models\knows(s).
+\]
+By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of every prefix of every attack: $\Corr(P,F,H)$ says that $H$ holds by the time $F$ does.
+\end{definition}
+
 \begin{definition}[Queries]\label{def:queries}
 A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants, and let the \emph{instance} of a query fact under $\sigma$ be $\sigma\,\event(M)=\event(\sigma M)$ and $\sigma\,\attacker(M)=\knows(\sigma M)$.
-The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H_1\vee\dots\vee H_m$, with $F$ a query fact over $X$ and each $H_j$ a conjunction $H_{j1}\wedge\dots\wedge H_{jl_j}$ of query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\Hyp,H)$ with $\Hyp=\{\sigma F\mid\sigma:X\to\Msg\}$ and $H(f,G)\iff\exists j\le m.\ \exists\sigma:X\to\Msg.\ \sigma F=f\wedge\forall k\le l_j.\ \sigma H_{jk}\in G$.
+The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$ such that every variable of $H$ occurs in $F$, denotes $\forall\sigma:X\to\Msg.\ \Corr(\sem{P_0}\rho_0,\sigma F,\sigma H)$.
 \end{definition}
 
 \begin{definition}[Bounded traces]
@@ -301,7 +300,7 @@ Let $S\subseteq\Msg$ be $\Ops$-closed, $K\subseteq S$, and $m\in S$ for every $\
 \end{lemma}
 
 \begin{theorem}[Closed-set method]\label{thm:closed}
-Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,l)\subseteq S$ for every prefix $l$ of a trace in $\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
+Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,t)\subseteq S$ for every $t\in\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
 \end{theorem}
 
 \section{Relation to the operational semantics of ProVerif}
@@ -364,20 +363,21 @@ For every closed expression $D$ over free and created names, some $U$ satisfies 
 \end{lemma}
 
 \begin{definition}[Labelled semantics]
-A \emph{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finite and $\mathcal{P}$ a finite multiset of closed processes whose names are free names and symbols $\nu_k$. The $\tau$-steps $(U,\mathcal{P})\xrightarrow{\tau}(U,\mathcal{P}')$ are the steps \red{Nil}, \red{Par}, \red{Repl}, \red{Eval 1}, \red{Eval 2}, \red{Cond 1$'$}, \red{Cond 2$'$} and \red{I/O$'$} between two members of $\mathcal{P}$, with $=_E$ read on $\Msg$. The visible steps are
+A \emph{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finite and $\mathcal{P}$ a finite multiset of closed processes whose names are free names and symbols $\nu_k$. The $\tau$-steps $(U,\mathcal{P})\xrightarrow{\tau}(U,\mathcal{P}')$ are the steps \red{Nil}, \red{Par}, \red{Repl}, \red{Eval 1}, \red{Eval 2}, \red{Cond 1$'$} and \red{Cond 2$'$}, with $=_E$ read on $\Msg$. The visible steps are
 \begin{align*}
 (U,\mathcal{P}\cup\{\pv{out}(N,M);P\})&\xrightarrow{\aout([N],[M])}(U,\mathcal{P}\cup\{P\}),\\
 (U,\mathcal{P}\cup\{\pv{in}(N,x);P\})&\xrightarrow{\ain([N],[M])}(U,\mathcal{P}\cup\{P\{M/x\}\})\quad\text{for every closed term }M,\\
+(U,\mathcal{P}\cup\{\pv{out}(N,M);Q,\ \pv{in}(N',x);P\})&\xrightarrow{\acomm([N],[M])}(U,\mathcal{P}\cup\{Q,\ P\{M/x\}\})\quad\text{if }N=_E N',\\
 (U,\mathcal{P}\cup\{\pv{new}\ a;P\})&\xrightarrow{\anew(k)}(U\cup\{k\},\mathcal{P}\cup\{P\{\nu_k/a\}\})\quad\text{for every }k\notin U,\\
 (U,\mathcal{P}\cup\{\pv{event}(M);P\})&\xrightarrow{\aev([M])}(U,\mathcal{P}\cup\{P\}).
 \end{align*}
-With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \emph{weak traces} is
+The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \emph{weak traces} is
 \[
 \Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Act^*\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\}.
 \]
 \end{definition}
 
-\begin{theorem}[Honest processes]\label{thm:T}
+\begin{theorem}[Adequacy]\label{thm:T}
 For every closed process $P$ whose names are free names, $\sem{P}\rho_0=\Tr(\emptyset,\{P\})$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
@@ -404,11 +404,11 @@ The hypothesis $\Npub\ne\emptyset$ cannot be dropped: when $\Npub=\emptyset$ no 
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$ such that every $H_{jk}$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\Hyp,H)$ holds for the $\Hyp$ and $H$ of Definition~\ref{def:queries}.
+Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact and $\sigma F=\sigma'F$ implies $\sigma H=\sigma'H$ for all valuations $\sigma,\sigma'$, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow H$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\sigma F,\sigma H)$ holds for every $\sigma:X\to\Msg$.
 \end{theorem}
 
 \begin{remark}
-Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H_{jk}=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
+The hypotheses on $H$ and on $\Npub$ cannot be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
 \end{remark}
 
 \end{document}

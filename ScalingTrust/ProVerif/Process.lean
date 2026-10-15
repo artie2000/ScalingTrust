@@ -6,6 +6,7 @@ import Mathlib.Data.Fin.VecNotation
 import Mathlib.Data.Fintype.Basic
 import Mathlib.Data.Set.Lattice
 import Mathlib.Logic.Embedding.Basic
+import Mathlib.SetTheory.Descriptive.Tree
 import Mathlib.Tactic.FinCases
 
 /-!
@@ -24,8 +25,8 @@ A ProVerif process is translated to a `do` block in the continuation monad
 `Proc.emit` for its actions, `Proc.fork` and `Proc.repl` for `|` and `!`, and Lean's
 `match` and `if` for `let` and `if`.
 
-Trace sets are prefix-closed by construction, so a trace is a run so far, and a
-process that blocks simply has no longer traces.  `out` and `in` are *unfinished*
+Trace sets are prefix-closed by construction (`Descriptive.tree`), so a trace is a run
+so far, and a process that blocks simply has no longer traces.  `out` and `in` are *unfinished*
 actions; a trace with none represents a run in which every communication was
 completed.
 
@@ -34,7 +35,18 @@ process creates again, and a merge keeps the names created by different
 components apart, so the names created in a trace are pairwise distinct.
 -/
 
+namespace Descriptive
+
+/-- The converse of `Tree.mem_of_prefix`: a set of lists closed under prefixes is a tree. -/
+theorem mem_tree_of_prefix {A : Type*} {T : Set (List A)}
+    (h : ∀ ⦃x y : List A⦄, x <+: y → y ∈ T → x ∈ T) : T ∈ tree A :=
+  fun x a hx => h (List.prefix_append x [a]) hx
+
+end Descriptive
+
 namespace ProVerif
+
+open Descriptive
 
 variable {M ι : Type}
 
@@ -105,6 +117,9 @@ def proj (s : TaggedTrace ι M) (i : ι) : Trace M := (s.filter (·.1 = i)).map 
     proj ((j, a) :: s) i = if j = i then a :: s.proj i else s.proj i := by
   by_cases h : j = i <;> simp [proj, h]
 
+theorem proj_prefix {s' s : TaggedTrace ι M} (h : s' <+: s) (i : ι) : s'.proj i <+: s.proj i :=
+  (h.filter _).map _
+
 /-- `s` interleaves the traces `f i`, each action tagged with its component:
 every component reads its own trace back off `s`. -/
 def Interleaves (s : TaggedTrace ι M) (f : ι → Trace M) : Prop := ∀ i, s.proj i = f i
@@ -134,6 +149,29 @@ theorem Comms.nonces {s : TaggedTrace ι M} {t : Trace M} (h : s.Comms t) :
   | nil => rfl
   | cons i a _ ih => cases a <;> simp [Trace.nonces, ih]
   | pair _ c m _ ih => simpa [Trace.nonces] using ih
+
+/-- A prefix of `t` is obtained from a prefix of `s`. -/
+theorem Comms.prefix {s : TaggedTrace ι M} {t l : Trace M} (h : s.Comms t) (hl : l <+: t) :
+    ∃ s' : TaggedTrace ι M, s' <+: s ∧ s'.Comms l := by
+  induction h generalizing l with
+  | nil =>
+    obtain rfl := List.prefix_nil.1 hl
+    exact ⟨[], List.nil_prefix, .nil⟩
+  | cons i a _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact ⟨[], List.nil_prefix, .nil⟩
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      obtain ⟨s', hs', h'⟩ := ih hl
+      exact ⟨(i, b) :: s', List.cons_prefix_cons.2 ⟨rfl, hs'⟩, h'.cons i b⟩
+  | @pair _ _ i j hij c m _ ih =>
+    rcases l with _ | ⟨b, l⟩
+    · exact ⟨[], List.nil_prefix, .nil⟩
+    · rw [List.cons_prefix_cons] at hl
+      obtain ⟨rfl, hl⟩ := hl
+      obtain ⟨s', hs', h'⟩ := ih hl
+      exact ⟨(i, .out c m) :: (j, .inp c m) :: s',
+        List.cons_prefix_cons.2 ⟨rfl, List.cons_prefix_cons.2 ⟨rfl, hs'⟩⟩, h'.pair hij c m⟩
 
 end TaggedTrace
 
@@ -171,13 +209,57 @@ abbrev par (P Q : Proc M) : Proc M := merge ![P, Q]
 /-- `!P`: an unbounded number of copies of `P` in parallel. -/
 abbrev bang (P : Proc M) : Proc M := merge fun _ : ℕ => P
 
-example (c : M) :
-    inp c (fun x => out c x nil) =
-    {[]} ∪ {[.inp c x] | x} ∪ {[.inp c x, .out c x] | x} := by
-  have : Nonempty M := ⟨c⟩
-  ext
-  simp [inp, out, act, nil]
-  grind
+/-! ### Prefix-closure
+
+Every constructor preserves it, as `aesop` rules, so `aesop` proves it of a translated
+process, splitting the `match` of a `let`. -/
+
+@[aesop unsafe] theorem nil_mem_tree : (nil : Proc M) ∈ tree (Act M) :=
+  fun _ _ h => by simp at h
+
+@[aesop unsafe] theorem act_mem_tree (a : Act M) {P : Proc M}
+    (h : P ∈ tree (Act M)) : act a P ∈ tree (Act M) := by
+  intro x b hx
+  simp only [act, Set.mem_insert_iff, Set.mem_image] at hx ⊢
+  rcases hx with hx | ⟨t, ht, hx⟩
+  · simp at hx
+  · rcases x with _ | ⟨_, x⟩
+    · exact Or.inl rfl
+    · obtain ⟨rfl, rfl⟩ := List.cons.inj hx
+      exact Or.inr ⟨x, Tree.mem_of_append (T := ⟨P, h⟩) ht, rfl⟩
+
+@[aesop unsafe] theorem inp_mem_tree (c : M) {P : M → Proc M}
+    (h : ∀ m, P m ∈ tree (Act M)) : inp c P ∈ tree (Act M) := by
+  refine CompleteSublattice.sSupClosed (L := tree (Act M)) ?_
+  rintro _ ⟨m, rfl⟩
+  exact act_mem_tree _ (h m)
+
+@[aesop unsafe] theorem new_mem_tree [Names M] {P : M → Proc M}
+    (h : ∀ n, P (Names.nonce n) ∈ tree (Act M)) :
+    new P ∈ tree (Act M) := by
+  refine CompleteSublattice.sSupClosed (L := tree (Act M)) ?_
+  rintro _ ⟨n, rfl⟩
+  refine act_mem_tree _ (Sublattice.inf_mem (L := (tree (Act M)).toSublattice)
+    (a := P (Names.nonce n)) (b := {t : Trace M | n ∉ t.nonces}) (h n) ?_)
+  exact mem_tree_of_prefix fun _ _ hl hn h' => hn ((Trace.nonces_sublist hl.sublist).subset h')
+
+@[aesop unsafe] theorem merge_mem_tree [DecidableEq ι] {P : ι → Proc M}
+    (hP : ∀ i, P i ∈ tree (Act M)) : merge P ∈ tree (Act M) := by
+  refine mem_tree_of_prefix ?_
+  rintro l t hl ⟨⟨f, s, hf, hs, hst⟩, hn⟩
+  obtain ⟨s', hs', h'⟩ := hst.prefix hl
+  refine ⟨⟨TaggedTrace.proj s', s', fun i => Tree.mem_of_prefix (T := ⟨P i, hP i⟩)
+    (hs i ▸ TaggedTrace.proj_prefix hs' i) (hf i), fun _ => rfl, h'⟩, ?_⟩
+  rw [h'.nonces]
+  rw [hst.nonces] at hn
+  exact hn.sublist (Trace.nonces_sublist (hs'.map Prod.snd).sublist)
+
+/-- `merge_mem_tree` alone would leave `∀ i : Fin 2, ![P, Q] i ∈ tree (Act M)`, whose
+`∀` `aesop` introduces before its `simp` pass could apply `Fin.forall_fin_two`; `bang`
+needs no rule of its own. -/
+@[aesop unsafe] theorem par_mem_tree {P Q : Proc M} (hP : P ∈ tree (Act M))
+    (hQ : Q ∈ tree (Act M)) : par P Q ∈ tree (Act M) :=
+  merge_mem_tree (Fin.forall_fin_two.2 ⟨hP, hQ⟩)
 
 end Proc
 
@@ -335,28 +417,28 @@ theorem bang_eq (P : Proc M) : P.bang = P.par P.bang := by
 /-! ## Process monad constructors -/
 
 /-- `out(c, m)` -/
-abbrev send (c m : M) : Cont (Proc M) Unit := fun k => out c m (k ())
+abbrev send (c m : M) : Cont (Proc M) Unit := .mk fun k => out c m (k ())
 
 /-- `in(c, x)`, returning `x`. -/
-abbrev recv (c : M) : Cont (Proc M) M := fun k => inp c k
+abbrev recv (c : M) : Cont (Proc M) M := .mk fun k => inp c k
 
 /-- `new a`, returning `a`. -/
-abbrev fresh [Names M] : Cont (Proc M) M := fun k => new k
+abbrev fresh [Names M] : Cont (Proc M) M := .mk fun k => new k
 
 /-- `event e` -/
-abbrev emit (e : M) : Cont (Proc M) Unit := fun k => event e (k ())
+abbrev emit (e : M) : Cont (Proc M) Unit := .mk fun k => event e (k ())
 
 /-- Fork: the rest of the body runs twice in parallel, with `true` and `false`. -/
-abbrev fork : Cont (Proc M) Bool := fun k => par (k true) (k false)
+abbrev fork : Cont (Proc M) Bool := .mk fun k => par (k true) (k false)
 
 /-- Replicate the rest of the body. -/
-abbrev repl : Cont (Proc M) Unit := fun k => bang (k ())
+abbrev repl : Cont (Proc M) Unit := .mk fun k => bang (k ())
 
 /-- Stop here. -/
-abbrev stop {α : Type} : Cont (Proc M) α := fun _ => nil
+abbrev stop {α : Type} : Cont (Proc M) α := .mk fun _ => nil
 
 /-- The traces of a body. -/
-abbrev run (b : Cont (Proc M) Unit) : Proc M := b fun _ => nil
+abbrev run (b : Cont (Proc M) Unit) : Proc M := b.run fun _ => nil
 
 end Proc
 
