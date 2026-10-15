@@ -1,0 +1,61 @@
+(* The rest of the fragment, on a one-message protocol: destructors with several
+   rules and with may-fail arguments (the manual's eq, test and catchfail,
+   §4.2.1), a type converter, a private channel and private constructors, a
+   conditional, a destructor in an output, else branches, events, and queries
+   with variables. *)
+
+type key.
+type nonce.
+
+channel c.
+free d : channel [private].
+
+const empty : bitstring [data].
+const yes, no : bool.
+
+fun senc(bitstring, key) : bitstring.
+reduc forall x : bitstring, k : key; sdec(senc(x, k), k) = x.
+
+fun eq(bitstring, bitstring) : bool
+  reduc forall x : bitstring; eq(x, x) = yes
+  otherwise forall x : bitstring, y : bitstring; eq(x, y) = no.
+
+fun test(bool, bitstring, bitstring) : bitstring
+  reduc forall x : bitstring, y : bitstring; test(yes, x, y) = x
+  otherwise forall b : bool or fail, x : bitstring, y : bitstring; test(b, x, y) = y.
+
+fun catchfail(bitstring) : bitstring
+  reduc forall x : bitstring; catchfail(x) = x
+  otherwise catchfail(fail) = empty.
+
+fun n2b(nonce) : bitstring [typeConverter].
+fun tag(nonce) : bitstring [private].
+
+event Sent(nonce).
+event Received(nonce).
+
+query n : nonce; event(Received(n)) ==> event(Sent(n)).
+query n : nonce; attacker(tag(n)) ==> event(Sent(n)).
+query attacker(empty).
+
+let sender(k : key) =
+  new n : nonce;
+  event Sent(n);
+  let m = senc(n2b(n), k) in
+  out(c, m);
+  out(d, tag(n)).
+
+let receiver(k : key) =
+  in(c, x : bitstring);
+  let n = sdec(x, k) in
+    event Received(n)
+  else
+    out(c, empty).
+
+process
+  new k : key;
+  ( (!sender(k))
+  | (!receiver(k))
+  | (in(d, y : bitstring);
+     if catchfail(test(eq(y, empty), y, empty)) <> empty then out(c, y) else 0)
+  | (in(c, z : bitstring); out(c, sdec(z, k))) )

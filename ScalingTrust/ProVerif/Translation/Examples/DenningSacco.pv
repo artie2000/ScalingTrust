@@ -1,0 +1,48 @@
+(* The survey's running example (§2.2, its first model, p. 21): the simplified
+   Denning-Sacco protocol in which A talks only to B, over the primitives of §2.1
+   with Diffie-Hellman.  ProVerif.TraceSemantics.DH and .Examples translate it by
+   hand; this file is the same model as ProVerif input. *)
+
+type key.
+type skey.
+type pkey.
+type G.
+type exponent.
+
+free c : channel.
+free s : bitstring [private].
+
+const g : G.
+fun pk(skey) : pkey.
+fun hash(bitstring) : bitstring.
+fun senc(bitstring, key) : bitstring.
+fun aenc(bitstring, pkey) : bitstring.
+fun sign(bitstring, skey) : bitstring.
+fun exp(G, exponent) : G.
+
+equation forall x : exponent, y : exponent; exp(exp(g, x), y) = exp(exp(g, y), x).
+
+reduc forall x : bitstring, y : key; sdec(senc(x, y), y) = x.
+reduc forall x : bitstring, y : skey; adec(aenc(x, pk(y)), y) = x.
+reduc forall x : bitstring, y : skey; check(sign(x, y), pk(y)) = x.
+
+query attacker(s).
+
+let initiator(sskA : skey, pkB : pkey) =
+  ! new k : key;
+    out(c, aenc(sign(k, sskA), pkB));
+    in(c, x : bitstring);
+    let z = sdec(x, k) in 0.
+
+let responder(skB : skey, spkA : pkey) =
+  ! in(c, y : bitstring);
+    let y' = adec(y, skB) in
+    let xk = check(y', spkA) in
+    out(c, senc(s, xk)).
+
+process
+  new sskA : skey;
+  new skB : skey;
+  out(c, pk(sskA));
+  out(c, pk(skB));
+  (initiator(sskA, pk(skB)) | responder(skB, pk(sskA)))

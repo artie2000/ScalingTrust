@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb,amsthm,mathtools}
 \usepackage{stmaryrd}
 \usepackage[margin=1.1in]{geometry}
+\usepackage[hidelinks]{hyperref}
 
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}[section]
@@ -67,7 +68,7 @@
 \begin{document}
 \maketitle
 
-ProVerif is a tool for reasoning about cryptographic security in a symbolic model with a Dolev-Yao adversary. Although it uses resolution of Horn clauses to find attacks, it is backed theoretically by a process calculus, which is a variant of the applied pi calculus.
+ProVerif is a tool for reasoning about cryptographic security in a symbolic model with a Dolev-Yao adversary. Although it uses resolution of Horn clauses to find attacks, it is backed theoretically by a process calculus, which is a variant of the applied pi calculus. We use the specification of ProVerif's semantics given in Blanchet 16~\cite{BlanchetFnTPS16}.
 
 We formalise the ProVerif process calculus in Lean. Rather than copying the specification, we use a shallow translation in order to make security proofs simpler down the line. This means that we make use of existing Lean syntax and constructs where possible. In particular, some invariants are enforced only by what terms can arise from translating a valid ProVerif program. We also deviate from the calculus when sticking exactly to the specification would complicate the design.
 
@@ -401,5 +402,14 @@ Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact, and let 
 \begin{remark}
 Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
 \end{remark}
+
+\begin{thebibliography}{1}
+\bibitem{BlanchetFnTPS16}
+Bruno Blanchet.
+\newblock Modeling and verifying security protocols with the applied pi calculus and {ProVerif}.
+\newblock \emph{Foundations and Trends in Privacy and Security}, 1(1--2):1--135, October 2016.
+\newblock \href{file:../Reference/BlanchetFnTPS16.pdf}{\texttt{../Reference/BlanchetFnTPS16.pdf}},
+doi:\href{https://doi.org/10.1561/3300000004}{10.1561/3300000004}.
+\end{thebibliography}
 
 \end{document}

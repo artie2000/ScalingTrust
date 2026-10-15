@@ -6,6 +6,16 @@ import ScalingTrust.ProVerif.TraceSemantics.Term
 import ScalingTrust.ProVerif.TraceSemantics.Security
 import ScalingTrust.ProVerif.TraceSemantics.DH
 import ScalingTrust.ProVerif.TraceSemantics.Examples
+import ScalingTrust.ProVerif.Translation.Syntax
+import ScalingTrust.ProVerif.Translation.Model
+import ScalingTrust.ProVerif.Translation.Emit
+import ScalingTrust.ProVerif.Translation.Main
+import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
+import ScalingTrust.ProVerif.Translation.Examples.Features
+import ScalingTrust.ProVerif.Specification.Syntax
+import ScalingTrust.ProVerif.Specification.Semantics
+import ScalingTrust.ProVerif.Specification.Denotation
+import ScalingTrust.ProVerif.Specification.Correspondence
 
 /-!
 # ProVerif in Lean
