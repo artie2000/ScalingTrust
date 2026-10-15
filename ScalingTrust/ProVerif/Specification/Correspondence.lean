@@ -9,15 +9,21 @@ import ScalingTrust.ProVerif.Specification.Attacks
 The theorems of the write-up's §2.2 about attacks and queries, for a model `A` and a
 closed process `P₀`; Adequacy is `ProVerif.Specification.Adequacy`.
 
-* **Attacks** (`attacks_sound`, `attacks_complete`, `attacks_known`): a trace of the
-  survey against an adversary is an attack of the trace semantics in which the attacker
-  knows whatever the trace outputs publicly; an attack is a trace of the survey against
-  some adversary; and whatever the attacker knows after an attack, some adversary outputs
-  publicly at the last step of a trace of the survey with the same created names and
-  events.  All three are stronger than the write-up's, which asks only for the same
+* **Attacks, as constructed** (`attacks_sound`, `attacks_complete`, `attacks_known`):
+  a trace of the survey against an adversary is an attack of the trace semantics in
+  which the attacker knows whatever the trace outputs publicly; an attack is a trace of
+  the survey against some adversary; and whatever the attacker knows after an attack,
+  some adversary outputs publicly at the last step of a trace of the survey with the
+  same created names and events.
+* **Attacks, as stated** (`events_sound`, `events_complete`, `known_sound`,
+  `known_complete`): the write-up's Theorem "Attacks", weakened from the above to what
+  the query theorems need.  (E): a trace of the survey against an adversary and an
+  attack have the same events, and conversely.  (K): a message a trace of the survey
+  outputs publicly is known after some attack with the same events, and a message
+  known after an attack is output publicly by some trace of the survey with the same
   events.
 * **Secrecy** (`secret_iff`) and **Correspondences** (`corr_iff`): the properties of the
-  trace semantics are the survey's.
+  trace semantics are the survey's, proved from (E) and (K) alone.
 
 The write-up's hypothesis that `P₀` and the secret mention no created name is not
 needed: a created name is a nonce index that (Red Res) and `Proc.new` may both create.
@@ -39,8 +45,8 @@ abbrev Model.attacks (P₀ : Process F G 0) : Proc A.Msg :=
 abbrev Model.known (t : Trace A.Msg) : Set A.Msg :=
   t.attackerKnowledge A.alg.derive (A.alg.derive ∅)
 
-/-- (S): a trace of the survey against an adversary is an attack in which the attacker
-knows whatever the trace outputs publicly. -/
+/-- A trace of the survey against an adversary is an attack in which the attacker knows
+whatever the trace outputs publicly. -/
 theorem attacks_sound (P₀ Q : Process F G 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
     (ht : A.SurveyTrace (.against P₀ Q) t) :
     t ∈ A.attacks P₀ ∧ ∀ m, A.OutputsPublicly t m → m ∈ A.known t := by
@@ -60,7 +66,7 @@ theorem attacks_sound (P₀ Q : Process F G 0) (hQ : A.Adversary Q) {t : Trace A
     exact mem_attackerKnowledge_of_comm
       (MsgAlgebra.app_mem_derive (A := A.alg) (ms := ![]) ha fun i => i.elim0) hm
 
-/-- (C): an attack is a trace of the survey against some adversary. -/
+/-- An attack is a trace of the survey against some adversary. -/
 theorem attacks_complete (P₀ : Process F G 0) {t : Trace A.Msg} (ht : t ∈ A.attacks P₀) :
     ∃ Q, A.Adversary Q ∧ A.SurveyTrace (.against P₀ Q) t := by
   obtain ⟨⟨⟨f, s, hf, hs, hc⟩, hn⟩, hcl⟩ := ht
@@ -79,8 +85,8 @@ theorem attacks_complete (P₀ : Process F G 0) {t : Trace A.Msg} (ht : t ∈ A.
   rw [Finset.union_empty, Multiset.singleton_add, ← Multiset.insert_eq_cons] at this
   exact this
 
-/-- (C): whatever the attacker knows after an attack, some adversary outputs publicly at
-the last step of a trace of the survey with the same created names and events. -/
+/-- Whatever the attacker knows after an attack, some adversary outputs publicly at the
+last step of a trace of the survey with the same created names and events. -/
 theorem attacks_known (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) {t : Trace A.Msg}
     (ht : t ∈ A.attacks P₀) {m : A.Msg} (hm : m ∈ A.known t) :
     ∃ Q, A.Adversary Q ∧ ∃ t', A.SurveyTrace (.against P₀ Q) t' ∧ obs t' = obs t ∧
@@ -125,6 +131,54 @@ theorem attacks_known (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) {t : Trace
   exact ⟨Q, hQ, _, hsur, by rw [obs_append, hobs, obs_comm]; exact List.append_nil _, a, ha, t',
     rfl⟩
 
+/-! ## The write-up's Theorem "Attacks"
+
+The write-up asks only for what the query theorems need: the same events, and an
+inclusion each way between what a trace of the survey outputs publicly and what the
+attacker knows after an attack, over the traces and attacks with the same events.
+-/
+
+/-- `t` and `t'` have the same events. -/
+def SameEvents {M : Type} (t t' : Trace M) : Prop := ∀ e, Act.event e ∈ t ↔ Act.event e ∈ t'
+
+theorem SameEvents.refl {M : Type} (t : Trace M) : SameEvents t t := fun _ => Iff.rfl
+
+theorem sameEvents_of_obs {M : Type} {t t' : Trace M} (h : obs t' = obs t) :
+    SameEvents t t' := fun e => by
+  rw [← event_mem_obs (t := t), ← event_mem_obs (t := t'), h]
+
+/-- (E): a trace of the survey against an adversary has an attack with the same
+events. -/
+theorem events_sound (P₀ Q : Process F G 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
+    (ht : A.SurveyTrace (.against P₀ Q) t) : ∃ t' ∈ A.attacks P₀, SameEvents t t' :=
+  ⟨t, (attacks_sound A P₀ Q hQ ht).1, SameEvents.refl t⟩
+
+/-- (E): an attack has a trace of the survey against some adversary with the same
+events. -/
+theorem events_complete (P₀ : Process F G 0) {t : Trace A.Msg} (ht : t ∈ A.attacks P₀) :
+    ∃ Q, A.Adversary Q ∧ ∃ t', A.SurveyTrace (.against P₀ Q) t' ∧ SameEvents t t' :=
+  let ⟨Q, hQ, h⟩ := attacks_complete A P₀ ht
+  ⟨Q, hQ, t, h, SameEvents.refl t⟩
+
+/-- (K): a message a trace of the survey outputs publicly is known after some attack
+with the same events.  The write-up assumes `N_pub` nonempty here too; it is not
+needed. -/
+theorem known_sound (P₀ Q : Process F G 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
+    (ht : A.SurveyTrace (.against P₀ Q) t) {m : A.Msg} (hm : A.OutputsPublicly t m) :
+    ∃ t' ∈ A.attacks P₀, SameEvents t t' ∧ m ∈ A.known t' :=
+  let ⟨h, hk⟩ := attacks_sound A P₀ Q hQ ht
+  ⟨t, h, SameEvents.refl t, hk m hm⟩
+
+/-- (K): a message known after an attack is output publicly by some trace of the survey
+against some adversary with the same events. -/
+theorem known_complete (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) {t : Trace A.Msg}
+    (ht : t ∈ A.attacks P₀) {m : A.Msg} (hm : m ∈ A.known t) :
+    ∃ Q, A.Adversary Q ∧ ∃ t', A.SurveyTrace (.against P₀ Q) t' ∧ SameEvents t t' ∧
+      A.OutputsPublicly t' m := by
+  obtain ⟨Q, hQ, t', ht', hobs, a, ha, t'', rfl⟩ := attacks_known A hpub P₀ ht hm
+  exact ⟨Q, hQ, _, ht', sameEvents_of_obs hobs, a, ha,
+    List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
+
 /-! ## Secrecy and correspondences -/
 
 /-- Secrecy: `query attacker(M)` holds of the denotation exactly when `P₀` preserves
@@ -133,11 +187,11 @@ theorem secret_iff (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) (M : Tm F 0) 
     (P₀.denote finZeroElim).Secret A.alg.derive (Tm.msg A M) ↔ A.Preserves P₀ M := by
   constructor
   · intro h Q hQ t ht hout
-    obtain ⟨ht', hk⟩ := attacks_sound A P₀ Q hQ ht
-    exact h t ht' (hk _ hout)
+    obtain ⟨t', ht', -, hk⟩ := known_sound A P₀ Q hQ ht hout
+    exact h t' ht' hk
   · intro h t ht hk
-    obtain ⟨Q, hQ, t', ht', -, a, ha, t'', rfl⟩ := attacks_known A hpub P₀ ht hk
-    exact h Q hQ _ ht' ⟨a, ha, List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
+    obtain ⟨Q, hQ, t', ht', -, hout⟩ := known_complete A hpub P₀ ht hk
+    exact h Q hQ t' ht' hout
 
 /-- Correspondences: `query F ==> event(H)` holds of the denotation exactly when `P₀`
 satisfies `F ⇝ event(H)` against `N_pub`-adversaries, `N_pub` being nonempty if `F`
@@ -149,25 +203,28 @@ theorem corr_iff (P₀ : Process F G 0) {X : Type} (Fq : QueryFact F X) (H : F.l
         fun σ => (QueryFact.event H).inst σ := by
   constructor
   · intro h σ t ht hF
-    obtain ⟨Q, hQ, t', ht', hobs, hsat⟩ : ∃ Q, A.Adversary Q ∧ ∃ t',
-        A.SurveyTrace (.against P₀ Q) t' ∧ obs t' = obs t ∧ Fq.Satisfied A t' σ := by
+    obtain ⟨Q, hQ, t', ht', hev, hsat⟩ : ∃ Q, A.Adversary Q ∧ ∃ t',
+        A.SurveyTrace (.against P₀ Q) t' ∧ SameEvents t t' ∧ Fq.Satisfied A t' σ := by
       cases Fq with
       | event M =>
-        obtain ⟨Q, hQ, ht'⟩ := attacks_complete A P₀ ht
-        exact ⟨Q, hQ, t, ht', rfl, hF⟩
+        obtain ⟨Q, hQ, t', ht', hev⟩ := events_complete A P₀ ht
+        exact ⟨Q, hQ, t', ht', hev, (hev _).1 hF⟩
       | attacker M =>
-        obtain ⟨Q, hQ, t', ht', hobs, a, ha, t'', rfl⟩ :=
-          attacks_known A (hpub ⟨M, rfl⟩) P₀ ht hF
-        exact ⟨Q, hQ, _, ht', hobs, a, ha, List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
+        obtain ⟨Q, hQ, t', ht', hev, hout⟩ := known_complete A (hpub ⟨M, rfl⟩) P₀ ht hF
+        exact ⟨Q, hQ, t', ht', hev, hout⟩
     obtain ⟨σ', hσ', hH⟩ := h Q hQ t' ht' σ hsat
-    exact ⟨σ', hσ', event_mem_obs.1 (by rw [← hobs]; exact event_mem_obs.2 hH)⟩
+    exact ⟨σ', hσ', (hev _).2 hH⟩
   · intro h Q hQ t ht σ hF
-    obtain ⟨ht', hk⟩ := attacks_sound A P₀ Q hQ ht
-    have hF' : (Fq.inst σ).Holds A.alg.derive t := by
+    obtain ⟨t', ht', hev, hF'⟩ : ∃ t' ∈ A.attacks P₀, SameEvents t t' ∧
+        (Fq.inst σ).Holds A.alg.derive t' := by
       cases Fq with
-      | event M => exact hF
-      | attacker M => exact hk _ hF
-    obtain ⟨σ', hσ', hH⟩ := h σ t ht' hF'
-    exact ⟨σ', hσ', hH⟩
+      | event M =>
+        obtain ⟨t', ht', hev⟩ := events_sound A P₀ Q hQ ht
+        exact ⟨t', ht', hev, (hev _).1 hF⟩
+      | attacker M =>
+        obtain ⟨t', ht', hev, hk⟩ := known_sound A P₀ Q hQ ht hF
+        exact ⟨t', ht', hev, hk⟩
+    obtain ⟨σ', hσ', hH⟩ := h σ t' ht' hF'
+    exact ⟨σ', hσ', (hev _).2 hH⟩
 
 end ProVerif.Specification

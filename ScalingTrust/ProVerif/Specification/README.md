@@ -64,13 +64,16 @@ Everything is proved; nothing is admitted.
 * **Queries with single facts.** `Model.Satisfies` is the write-up's
   Definition "Correspondences between facts" for one fact on each side, which
   is what `Proc.Corr` of the trace semantics checks.
-* **The Attacks theorem.** Its first two parts are stronger than the
-  write-up's: a trace of the survey against an adversary is itself an attack
-  of the trace semantics, and an attack is itself a trace of the survey
-  against some adversary, where the write-up asks only for the same created
-  names and events. Its third part is the write-up's: for a message the
-  attacker knows after an attack, there are an adversary and a trace of the
-  survey with the same created names and events as the attack whose last step
-  outputs the message publicly. That trace is in general not the attack
-  itself. The write-up's hypothesis that `P₀` and the secret mention no
-  created name is not needed.
+* **The Attacks theorem.** The write-up states it as lightly as the query
+  theorems need, as two correspondences between the traces of the survey
+  against adversaries and the attacks: of their events, and, when `N_pub` is
+  nonempty, of what a trace outputs publicly and what the attacker knows
+  after an attack, each taken over the traces with the same events. The Lean
+  proves more, which the constructions give for free: in `attacks_sound` and
+  `attacks_complete` the trace of the survey is the attack itself, and in
+  `attacks_known` the trace has the same created names and events as the
+  attack and outputs the message at its last step. The write-up's form is
+  derived from these (`events_sound`, `events_complete`, `known_sound`,
+  `known_complete`), and Secrecy and Correspondences are proved from it
+  alone, so that they survive a change of the constructions. The write-up's
+  hypothesis that `P₀` and the secret mention no created name is not needed.

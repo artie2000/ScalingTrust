@@ -58,8 +58,6 @@
 \newcommand{\event}{\pv{event}}
 \newcommand{\interleaves}{\operatorname{Interleaves}}
 \newcommand{\red}[1]{\text{(Red #1)}}
-\newcommand{\CQ}{\mathcal{C}_Q}
-\newcommand{\Azero}{\mathcal{A}_0}
 
 \title{A trace semantics for the process calculus of ProVerif}
 \author{Artie Khovanov with lots of assistance from Claude Fable}
@@ -327,14 +325,14 @@ Let $P_0$ be a closed process.
 \end{enumerate}
 \end{definition}
 
-Fix $\Npriv$ as in Definition~\ref{def:survey}, and for an $\Npub$-adversary $Q$ write $\CQ$ for the configuration $(\Npub,\Npriv),\{P_0,Q\}$.
+Fix $\Npriv$ as in Definition~\ref{def:survey}, and for an $\Npub$-adversary $Q$ write $\mathcal{C}_Q$ for the configuration $(\Npub,\Npriv),\{P_0,Q\}$.
 
 \begin{definition}[Satisfaction]\label{def:satisfies}
 A trace \emph{satisfies} $\attacker(M)$ if it outputs $M$ publicly, and \emph{satisfies} $\event(M)$ if it executes $\pv{event}(M)$.
 \end{definition}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=_E\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
+Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=_E\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
 \end{definition}
 
 \subsection{The correspondence}
@@ -348,7 +346,7 @@ Throughout, fix a model (Definition~\ref{def:model}) satisfying
 \end{enumerate}
 These conditions exclude some ProVerif models: an equation with a variable as one side, such as the survey's (2.8), violates (H), and a destructor whose rules match on a symbol at the root of an equation has no counterpart under (R2).
 
-Names of the reduction semantics are the free names together with the created names; terms are interpreted in $\Msg$ through a bijection $\iota$ between the names outside $\Npub\cup\Npriv$, those that \red{Res} may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\fail=\bot$; $\iota M$ depends only on the class of $M$ modulo $E$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
+Names of the reduction semantics are the free names together with the created names; terms are interpreted in $\Msg$ through a bijection $\iota$ between the names outside $\Npub\cup\Npriv$, those that \red{Res} may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\fail=\bot$; $\iota M=\iota M'$ exactly when $M=_E M'$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
 
 \begin{lemma}[Evaluation]\label{lem:eval}
 For every closed expression $D$ over free and created names, some $U$ satisfies $D\ev U$, and $D\ev U$ implies $\iota U=\sem{D}\rho_\iota$.
@@ -373,13 +371,21 @@ The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visib
 For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
-Let $\Azero=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\CQ$ let $\outputs(\mathrm{Tr})\subseteq\Msg$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \emph{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\aev(\iota M)$ occurs in $t$.
+Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\Msg$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \emph{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\aev(\iota M)$ occurs in $t$.
 
 \begin{theorem}[Attacks]\label{thm:A}
-The following hold.
+Fix an $\Npub$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$, as well as a trace $t\in\mathcal{A}_0$.
 \begin{enumerate}
-\item[(E)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with the same events as $\mathrm{Tr}$, and for every $t\in\Azero$ there are an $\Npub$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\CQ$ with the same events as $t$.
-\item[(K)] Let $\Npub\ne\emptyset$. For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$, $\outputs(\mathrm{Tr})\subseteq\bigcup\known(\langle\emptyset\rangle,t)$, the union over the $t\in\Azero$ with the same events as $\mathrm{Tr}$; and for every $t\in\Azero$, $\known(\langle\emptyset\rangle,t)\subseteq\bigcup\outputs(\mathrm{Tr})$, the union over the $\Npub$-adversaries $Q$ and the traces $\mathrm{Tr}$ from $\CQ$ with the same events as $t$.
+\item[(E)]
+\begin{enumerate}
+\item[(i)] There is $t'\in\mathcal{A}_0$ with the same events as $\mathrm{Tr}$.
+\item[(ii)] There are an $\Npub$-adversary $Q'$ and a trace $\mathrm{Tr}'$ from $\mathcal{C}_{Q'}$ with the same events as $t$.
+\end{enumerate}
+\item[(K)] Suppose further $\Npub\ne\emptyset$.
+\begin{enumerate}
+\item[(i)] For every $m\in\outputs(\mathrm{Tr})$ there is $t'$ as in (E)(i) such that $m\in\known(\langle\emptyset\rangle,t')$.
+\item[(ii)] For every $m\in\known(\langle\emptyset\rangle,t)$ there are $Q'$ and $\mathrm{Tr}'$ as in (E)(ii) such that $m\in\outputs(\mathrm{Tr}')$.
+\end{enumerate}
 \end{enumerate}
 \end{theorem}
 
