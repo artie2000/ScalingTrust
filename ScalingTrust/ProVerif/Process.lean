@@ -5,6 +5,7 @@ import Mathlib.Control.Monad.Cont
 import Mathlib.Data.Fin.VecNotation
 import Mathlib.Data.Fintype.Basic
 import Mathlib.Data.Set.Lattice
+import Mathlib.Data.Stream.Defs
 import Mathlib.Logic.Embedding.Basic
 import Mathlib.SetTheory.Descriptive.Tree
 import Mathlib.Tactic.FinCases
@@ -25,8 +26,8 @@ A ProVerif process is translated to a `do` block in the continuation monad
 `Proc.emit` for its actions, `Proc.fork` and `Proc.repl` for `|` and `!`, and Lean's
 `match` and `if` for `let` and `if`.
 
-Trace sets are prefix-closed by construction (`Descriptive.tree`), so a trace is a run
-so far, and a process that blocks simply has no longer traces.  `out` and `in` are *unfinished*
+Every constructor preserves prefix-closure (`Descriptive.tree`), so a trace is a run
+so far and a process that blocks has no longer traces.  `out` and `in` are *unfinished*
 actions; a trace with none represents a run in which every communication was
 completed.
 
@@ -263,8 +264,6 @@ namespace TaggedTrace
 def dec : TaggedTrace ℕ M → TaggedTrace ℕ M :=
   List.filterMap fun | (0, _) => none | (n + 1, a) => some (n, a)
 
-@[simp] theorem dec_nil : dec ([] : TaggedTrace ℕ M) = [] := rfl
-
 @[simp] theorem dec_cons_zero (a : Act M) (s : TaggedTrace ℕ M) : dec ((0, a) :: s) = s.dec := rfl
 
 @[simp] theorem dec_cons_succ (n : ℕ) (a : Act M) (s : TaggedTrace ℕ M) :
@@ -288,8 +287,6 @@ theorem proj_dec (s : TaggedTrace ℕ M) (n : ℕ) : s.dec.proj n = s.proj (n + 
 
 /-- Shift all tags up. -/
 def inc : TaggedTrace ℕ M → TaggedTrace ℕ M := List.map (Prod.map Nat.succ id)
-
-@[simp] theorem inc_nil : inc ([] : TaggedTrace ℕ M) = [] := rfl
 
 @[simp] theorem inc_cons (i : ℕ) (a : Act M) (s : TaggedTrace ℕ M) :
     inc ((i, a) :: s) = (i + 1, a) :: s.inc := rfl
@@ -377,11 +374,6 @@ end TaggedTrace
 
 namespace Proc
 
-/-- `x` as component `0`, then the components of `h`. -/
-def cons {α : Type} (x : α) (h : ℕ → α) : ℕ → α
-  | 0 => x
-  | n + 1 => h n
-
 /-- `!P = P | !P` -/
 theorem bang_eq (P : Proc M) : P.bang = P.par P.bang := by
   ext t
@@ -398,7 +390,7 @@ theorem bang_eq (P : Proc M) : P.bang = P.par P.bang := by
   · rintro ⟨⟨g, s₂, hg, hi, ht⟩, hn⟩
     obtain ⟨⟨h, s', hh, hi', ht'⟩, -⟩ := hg 1
     obtain ⟨s, hs1, hs2, hs3⟩ := ht.join (hi 1 ▸ ht')
-    exact ⟨⟨cons (g 0) h, s, fun n => (match n with | 0 => hg 0 | n + 1 => hh n),
+    exact ⟨⟨Stream'.cons (g 0) h, s, fun n => (match n with | 0 => hg 0 | n + 1 => hh n),
       fun n => (match n with | 0 => hs2.trans (hi 0) | n + 1 => (hs3 n).trans (hi' n)), hs1⟩, hn⟩
 
 /-! ## Process monad constructors -/

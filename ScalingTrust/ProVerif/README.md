@@ -82,8 +82,8 @@ closure operator `derive` on `Set M` besides; a translated model with algebra
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed (Mathlib's `Descriptive.tree`; `aesop` proves it of a translated
 `do` block, as `Examples.system_mem_tree` shows, and `Proc.merge_mem_tree` of a
-merge), so a trace is an execution so far and a process that blocks simply has
-no longer traces. `Proc.out`, `Proc.inp`, `Proc.new` and
+merge), so a trace is an execution so far and a process that blocks has no
+longer traces. `Proc.out`, `Proc.inp`, `Proc.new` and
 `Proc.event` prepend an action and `Proc.nil` is `0`; `Proc.new` creates a
 name that the rest of the process does not create again. The `do`-notation of
 step 6 is built from these in the continuation monad.
@@ -119,7 +119,7 @@ intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
 derive, to the protocol or to itself, and create names. `t.attackerKnowledge K` reads its knowledge off a
 trace: a message communicated on a channel it knew at the time becomes known,
-whoever received it, since the attacker could have received it instead.
+whoever received it.
 
 **Attacks and security properties.** `P.Attacks` is the process of traces of
 `P | Enemy ∅` in which no action is unfinished: ProVerif's `P | Q` for every
@@ -150,8 +150,8 @@ bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
   public.
 * **The attacker learns by listening.** `Trace.attackerKnowledge` counts a message as known once
   it is communicated on a channel the attacker knows at the time, whoever
-  received it. The attack does not record the receiver, and need not: the
-  attacker could have received the message instead, and the survey's Def. 3.2
+  received it. The attack does not record the receiver: the attacker could
+  have received the message instead, and the survey's Def. 3.2
   and ProVerif's clauses count it the same way. The attacker's own names count
   only once it sends them, to the protocol or to itself, since the trace does
   not say who created a name.
@@ -183,8 +183,7 @@ bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;
 ## Not modelled
 
 Tables (`insert` and `get`; the ProVerif manual, §6.7.3, encodes them with
-private channels), phases (attacks are ordered, so ordering constraints can be
-stated directly), queries with more than one fact on a side of `==>`
+private channels), phases, queries with more than one fact on a side of `==>`
 (conjunctions, disjunctions, nested and injective correspondences) and the
 secrecy of bound names (`query secret x`). The Noise Explorer models in `Reference/` use tables and
 phases, so they mark what remains.

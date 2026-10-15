@@ -108,10 +108,8 @@ def Fact.Holds (t : Trace M) : Fact M → Prop
 /-- The correspondence that `query F ==> H` checks, for query facts `F` and `H` over the
 variables `X`, written as functions of a valuation `σ : X → M`: in every attack in which an
 instance `F σ` holds, `H σ'` holds for some `σ'` with `F σ' = F σ`, the survey's Def. 3.5
-with `=` read as `=_E`.  The conclusion's valuation may differ from `σ`: an equation may
-identify instances of `F` that differ on the variables of `H`, and `H` may have variables
-of its own.  For a prefix-closed `P` the attacks are prefix-closed, so `H σ'` holds by the
-time `F σ` does. -/
+with `=` read as `=_E`.  For a prefix-closed `P` the attacks are prefix-closed, so `H σ'`
+holds by the time `F σ` does. -/
 def Proc.Corr (P : Proc M) {X : Type} (F H : (X → M) → Fact M) : Prop :=
   ∀ (σ : X → M), ∀ t ∈ P.Attacks derive, (F σ).Holds derive t →
     ∃ σ', F σ' = F σ ∧ (H σ').Holds derive t

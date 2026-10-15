@@ -14,16 +14,9 @@ blocks.  Only its prefix-closure is proved.  The attack and the secrecy proof th
 are on the one-action processes `out(c, s)` and `out(c, hash(s))`, which exercise
 `Proc.Secret` and the closed-set method but not the protocol.
 
-A property of the protocol is further work.  The survey's attack (Example 3.2) is
-on its strengthened model, in which `A` first receives its interlocutor's key; it
-is a closed trace of that system with the enemy, as in `leak_attack`.  Secrecy of
-the model below is beyond `Proc.secret_of_closed`, whose closed set must contain
-every nonce, so `A`'s session key `k`, then `senc(s, k)` since it is output, then
-`s` by `sdec`.  The method must first be generalised to a closed set that depends
-on the nonces the protocol created; and the set for this protocol must look at the
-arguments of a symbol, not only at whether they are safe (`aenc(sign(k, sskA),
-pk(skB))` is safe and `sign(k, sskA)` is not), which the structure on `Prop` used
-below cannot express.
+The protocol itself has no proved property: the closed set of `Proc.secret_of_closed`
+must contain every nonce, so `A`'s session key `k`, then `senc(s, k)`, which is
+output, then `s`.
 -/
 
 namespace ProVerif.Examples
@@ -92,8 +85,6 @@ noncomputable def system : Proc M := .run do
   .send c (DH.pk sskA)
   .send c (DH.pk skB)
   if ← .fork then initiator sskA (DH.pk skB) else responder skB (DH.pk sskA)
-
-example : Proc.out c (DH.hash s) Proc.nil ∈ tree (Act M) := by aesop
 
 /-- The protocol is prefix-closed: `aesop` runs the `do` blocks down to the constructors
 and splits the `match` of each `let`. -/

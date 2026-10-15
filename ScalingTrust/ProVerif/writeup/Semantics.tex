@@ -281,7 +281,7 @@ By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of 
 
 \begin{definition}[Queries]\label{def:queries}
 A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants, and let the \emph{instance} of a query fact under $\sigma$ be $\sigma\,\event(M)=\event(\sigma M)$ and $\sigma\,\attacker(M)=\knows(\sigma M)$.
-The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$. The valuation of the conclusion may differ from that of the hypothesis: an equation may identify instances of $F$ that differ on the variables of $H$, and $H$ may have variables of its own.
+The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$.
 \end{definition}
 
 \begin{definition}[Bounded traces]
@@ -308,7 +308,7 @@ Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for 
 
 \subsection{The reduction semantics}
 
-This section restates the semantics of Blanchet's survey (\S2.4, \S2.5.1, \S3.1--3.3) for the syntax of Definition~\ref{def:syntax}. Names are atoms; substitutions map variables to terms and never substitute $\fail$ or a may-fail variable for an ordinary variable. An equational theory $E$ is a finite set of equations between terms without names; $=_E$ is the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution. Each constructor $f$ carries the rule $f(\vec x)\to f(\vec x)$, each destructor $g$ a finite ordered list of rules $g(\vec U)\to U$ between may-fail terms without names, and every $\mathrm{def}(h)$ ends with $h(\vec u)\to\fail$ for may-fail variables $\vec u$.
+This section restates the semantics of Blanchet's survey (\S2.4, \S2.5.1, \S3.1--3.3) for the syntax of Definition~\ref{def:syntax}. Names are atoms; substitutions map variables to terms and never substitute $\fail$ or a may-fail variable for an ordinary variable. An equational theory $E$ is a finite set of equations between terms without names; $=_E$ is the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution. Each constructor $f$ carries the rule $f(\vec x)\to f(\vec x)$, each destructor $g$ a finite ordered list of rules $g(\vec U)\to U$ between may-fail terms without names, and every $\mathrm{def}(h)$ ends with $h(\vec u)\to\fail$ for may-fail variables $\vec u$. The survey states \S3 for the core calculus; here its definitions are taken modulo $=_E$: a step on a term $M'=_E M$ counts as a step on $M$, and substitutions are compared modulo $=_E$.
 
 Evaluation $D\ev U$ of closed expressions to closed may-fail terms is the least relation with $M\ev M$, $\fail\ev\fail$, and $h(D_1,\dots,D_n)\ev\sigma U'_j$ whenever $D_i\ev U_i$ for all $i$, $\mathrm{def}(h)=(h(U'_{i,1},\dots,U'_{i,n})\to U'_i)_{i\le k}$, $\sigma U'_{j,i}=_E U_i$ for all $i$, and for all $i<j$ and all $\sigma'$ there is some $l$ with $\sigma'U'_{i,l}\ne_E U_l$.
 
@@ -332,9 +332,9 @@ A \emph{trace} is a finite reduction sequence $\mathcal{E}_0,\mathcal{P}_0\to\do
 Let $P_0$ be a closed process.
 \begin{enumerate}
 \item A closed process $Q$ is an \emph{$\Npub$-adversary} if $\fn(Q)\subseteq\Npub$, every function symbol of $Q$ is public, and $Q$ contains no $\pv{event}$.
-\item A trace \emph{outputs $M$ publicly} if it contains a step \red{I/O$'$} whose output is $\pv{out}(N,M);Q$ with $N\in\Npub$. It \emph{executes $\pv{event}(M)$} if it contains a step \red{Event} on $\pv{event}(M);P$.
+\item A trace \emph{outputs $M$ publicly} if it contains a step \red{I/O$'$} whose output is $\pv{out}(N,M');Q$ with $N\in\Npub$ and $M'=_E M$. It \emph{executes $\pv{event}(M)$} if it contains a step \red{Event} on $\pv{event}(M');P$ with $M'=_E M$.
 \item $P_0$ \emph{preserves the secrecy of} the closed term $M$ \emph{from} $\Npub$ if, for some $\Npriv$ disjoint from $\Npub$ with $\fn(M)\cup\fn(P_0)\subseteq\Npub\cup\Npriv$, no trace $(\Npub,\Npriv),\{P_0,Q\}\to^*\mathcal{E}',\mathcal{P}'$ with $Q$ an $\Npub$-adversary outputs $M$ publicly.
-\item $P_0$ \emph{satisfies} $\event(M)\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}\event(M_{jk})$ \emph{against $\Npub$-adversaries} if, for some $\Npriv$ as above, for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $(\Npub,\Npriv),\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\pv{event}(\sigma M)$ then there are $\sigma'$ and $j$ with $\sigma'M=\sigma M$ such that $\mathrm{Tr}$ executes $\pv{event}(\sigma'M_{jk})$ for every $k\le l_j$.
+\item $P_0$ \emph{satisfies} $\event(M)\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}\event(M_{jk})$ \emph{against $\Npub$-adversaries} if, for some $\Npriv$ as above, for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $(\Npub,\Npriv),\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\pv{event}(\sigma M)$ then there are $\sigma'$ and $j$ with $\sigma'M=_E\sigma M$ such that $\mathrm{Tr}$ executes $\pv{event}(\sigma'M_{jk})$ for every $k\le l_j$.
 \end{enumerate}
 \end{definition}
 
@@ -345,7 +345,7 @@ A trace \emph{satisfies} $\attacker(M)$ if it outputs $M$ publicly, and \emph{sa
 \end{definition}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
+Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \emph{against $\Npub$-adversaries} if for every $\Npub$-adversary $Q$, every trace $\mathrm{Tr}$ from $\CQ$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=_E\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
 \end{definition}
 
 \subsection{The correspondence}
