@@ -292,26 +292,6 @@ A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constr
 The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$.
 \end{definition}
 
-\begin{definition}[Bounded traces]
-For $S\subseteq\Msg$, \emph{$S$-boundedness} of a trace is defined by recursion: $\varepsilon$ is $S$-bounded; $\ain(c,m)\,u$ is $S$-bounded if $u$ is whenever $m\in S$; $\aout(c,m)\,u$ and $\acomm(c,m)\,u$ are $S$-bounded if $m\in S$ and $u$ is; and $a\,u$ is $S$-bounded if $u$ is, for every other action $a$.
-\end{definition}
-
-\begin{lemma}\label{lem:enemy}
-Let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and $K\subseteq S$. Every $e\in\Enemy(K)$ is $S$-bounded.
-\end{lemma}
-
-\begin{lemma}\label{lem:network}
-Let $\comms(s,t)$ with $\Closed(t)$, and let $s{\restriction}i$ be $S$-bounded for every $i$. Then $m\in S$ for every $\acomm(c,m)$ in $t$.
-\end{lemma}
-
-\begin{lemma}\label{lem:known}
-Let $S\subseteq\Msg$ be $\Ops$-closed, $K\subseteq S$, and $m\in S$ for every $\acomm(c,m)$ in $t$. Then $\known(K,t)\subseteq S$.
-\end{lemma}
-
-\begin{theorem}[Closed-set method]\label{thm:closed}
-Let $P\in\Proc$ and let $S\subseteq\Msg$ be $\Ops$-closed with $\nu_k\in S$ for all $k$ and such that every trace of $P$ is $S$-bounded. Then $\known(\langle\emptyset\rangle,t)\subseteq S$ for every $t\in\Attacks(P)$; in particular $s\notin S$ implies $\Secret(P,s)$.
-\end{theorem}
-
 \section{Relation to the operational semantics of ProVerif}
 
 \subsection{The reduction semantics}
