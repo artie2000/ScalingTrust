@@ -65,8 +65,9 @@ example.
    never uses `Theory.Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
    is `Proc.Secret`, for `M` without nonces; `query F ==> H`, for single facts
-   `F` and `H` whose variables all occur in `F`, is `Proc.Corr (σF) (σH)` for
-   every valuation `σ` of the query's variables; `attacker(M)` is `Fact.knows`.
+   `F` and `H`, is `Proc.Corr F H` with `F` and `H` written as functions of a
+   valuation of the query's variables, the survey's Def. 3.5; `attacker(M)` is
+   `Fact.knows`.
 
 ## The semantics
 
@@ -127,8 +128,8 @@ adversary `Q` at once. A prefix of an attack is an attack
 every point of every attack. The facts of a query, `Fact`, are events and
 `knows m`, and `Fact.Holds` says whether one holds after an attack.
 `P.Secret derive s` says that in no attack does the attacker come to know `s`.
-`P.Corr derive F H` says that `H` holds in every attack in which `F` does, so
-by the time `F` does. `Proc.secret_of_closed` is the closed-set method for
+`P.Corr derive F H` says that in every attack in which an instance `F σ` holds,
+`H σ'` holds for some `σ'` with `F σ' = F σ`, so by the time `F σ` does. `Proc.secret_of_closed` is the closed-set method for
 secrecy: a `derive`-closed set that contains every nonce, and that the protocol
 never leaves as long as it receives only messages in it (`Trace.Bounded`),
 bounds everything the attacker can ever know. `Examples.hashed_secret` uses it;

@@ -55,45 +55,40 @@ inductive Enemy : Set M → Proc M
 
 /-- The enemy is prefix-closed: it can stop at any point. -/
 theorem Enemy.mem_tree (K : Set M) : Enemy derive K ∈ tree (Act M) := by
-  refine mem_tree_of_prefix fun l e hl he => ?_
-  induction he generalizing l with
-  | nil =>
-    obtain rfl := List.prefix_nil.1 hl
-    exact .nil
+  intro x a hx
+  generalize ht : x ++ [a] = t at hx
+  induction hx generalizing x with
+  | nil => simp at ht
   | inp c m hc _ ih =>
-    rcases l with _ | ⟨b, l⟩
+    rcases x with _ | ⟨b, x⟩
     · exact .nil
-    · rw [List.cons_prefix_cons] at hl
-      obtain ⟨rfl, hl⟩ := hl
-      exact .inp c m hc (ih _ hl)
+    · obtain ⟨rfl, rfl⟩ := List.cons.inj ht
+      exact .inp c m hc (ih rfl)
   | out c m hc hm _ ih =>
-    rcases l with _ | ⟨b, l⟩
+    rcases x with _ | ⟨b, x⟩
     · exact .nil
-    · rw [List.cons_prefix_cons] at hl
-      obtain ⟨rfl, hl⟩ := hl
-      exact Enemy.out c m hc hm (ih _ hl)
+    · obtain ⟨rfl, rfl⟩ := List.cons.inj ht
+      exact Enemy.out c m hc hm (ih rfl)
   | comm c m hc hm _ ih =>
-    rcases l with _ | ⟨b, l⟩
+    rcases x with _ | ⟨b, x⟩
     · exact .nil
-    · rw [List.cons_prefix_cons] at hl
-      obtain ⟨rfl, hl⟩ := hl
-      exact Enemy.comm c m hc hm (ih _ hl)
+    · obtain ⟨rfl, rfl⟩ := List.cons.inj ht
+      exact Enemy.comm c m hc hm (ih rfl)
   | new n hn _ ih =>
-    rcases l with _ | ⟨b, l⟩
+    rcases x with _ | ⟨b, x⟩
     · exact .nil
-    · rw [List.cons_prefix_cons] at hl
-      obtain ⟨rfl, hl⟩ := hl
-      exact .new n (fun h => hn ((Trace.nonces_sublist hl.sublist).subset h)) (ih _ hl)
+    · obtain ⟨rfl, rfl⟩ := List.cons.inj ht
+      exact .new n (fun h => hn ((Trace.nonces_sublist (List.sublist_append_left _ _)).subset h))
+        (ih rfl)
 
 /-- The attacks of `P`: the closed traces of `P | Enemy ∅`. -/
 def Proc.Attacks (P : Proc M) : Proc M := {t ∈ P.par (Enemy derive ∅) | t.Closed}
 
 /-- A prefix of an attack on a prefix-closed process is an attack. -/
 theorem Proc.attacks_mem_tree {P : Proc M} (hP : P ∈ tree (Act M)) :
-    P.Attacks derive ∈ tree (Act M) :=
-  mem_tree_of_prefix fun _ _ hl ⟨ht, hc⟩ =>
-    ⟨Tree.mem_of_prefix (T := ⟨_, Proc.par_mem_tree hP (Enemy.mem_tree derive ∅)⟩) hl ht,
-      fun a ha => hc a (hl.subset ha)⟩
+    P.Attacks derive ∈ tree (Act M) := fun _ _ ⟨ht, hc⟩ =>
+  ⟨Tree.mem_of_append (T := ⟨_, Proc.par_mem_tree hP (Enemy.mem_tree derive ∅)⟩) ht,
+    fun b hb => hc b (List.mem_append_left _ hb)⟩
 
 /-- The attacker's knowledge after `t`, starting from `K`: a message communicated on a
 channel the attacker knows at the time becomes known. -/
@@ -110,12 +105,16 @@ def Fact.Holds (t : Trace M) : Fact M → Prop
   | .event e => Act.event e ∈ t
   | .knows m => m ∈ t.attackerKnowledge derive (derive ∅)
 
-/-- The correspondence that `query F ==> H` checks for single facts `F` and `H`: `H` holds
-in every attack in which `F` holds.  Attacks are prefix-closed, so `H` holds by the time
-`F` does, as in the survey's Def. 3.5 (with `=` read as `=_E`).  A query with variables
-is the conjunction of its instances. -/
-def Proc.Corr (P : Proc M) (F H : Fact M) : Prop :=
-  ∀ t ∈ P.Attacks derive, F.Holds derive t → H.Holds derive t
+/-- The correspondence that `query F ==> H` checks, for query facts `F` and `H` over the
+variables `X`, written as functions of a valuation `σ : X → M`: in every attack in which an
+instance `F σ` holds, `H σ'` holds for some `σ'` with `F σ' = F σ`, the survey's Def. 3.5
+with `=` read as `=_E`.  The conclusion's valuation may differ from `σ`: an equation may
+identify instances of `F` that differ on the variables of `H`, and `H` may have variables
+of its own.  For a prefix-closed `P` the attacks are prefix-closed, so `H σ'` holds by the
+time `F σ` does. -/
+def Proc.Corr (P : Proc M) {X : Type} (F H : (X → M) → Fact M) : Prop :=
+  ∀ (σ : X → M), ∀ t ∈ P.Attacks derive, (F σ).Holds derive t →
+    ∃ σ', F σ' = F σ ∧ (H σ').Holds derive t
 
 /-- Secrecy of `s`, the property that `query attacker(s)` checks: in no attack does the
 attacker come to know `s`.

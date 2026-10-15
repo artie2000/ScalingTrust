@@ -35,15 +35,6 @@ process creates again, and a merge keeps the names created by different
 components apart, so the names created in a trace are pairwise distinct.
 -/
 
-namespace Descriptive
-
-/-- The converse of `Tree.mem_of_prefix`: a set of lists closed under prefixes is a tree. -/
-theorem mem_tree_of_prefix {A : Type*} {T : Set (List A)}
-    (h : ∀ ⦃x y : List A⦄, x <+: y → y ∈ T → x ∈ T) : T ∈ tree A :=
-  fun x a hx => h (List.prefix_append x [a]) hx
-
-end Descriptive
-
 namespace ProVerif
 
 open Descriptive
@@ -241,22 +232,18 @@ process, splitting the `match` of a `let`. -/
   rintro _ ⟨n, rfl⟩
   refine act_mem_tree _ (Sublattice.inf_mem (L := (tree (Act M)).toSublattice)
     (a := P (Names.nonce n)) (b := {t : Trace M | n ∉ t.nonces}) (h n) ?_)
-  exact mem_tree_of_prefix fun _ _ hl hn h' => hn ((Trace.nonces_sublist hl.sublist).subset h')
+  exact fun _ _ hn h' => hn ((Trace.nonces_sublist (List.sublist_append_left _ _)).subset h')
 
 @[aesop unsafe] theorem merge_mem_tree [DecidableEq ι] {P : ι → Proc M}
     (hP : ∀ i, P i ∈ tree (Act M)) : merge P ∈ tree (Act M) := by
-  refine mem_tree_of_prefix ?_
-  rintro l t hl ⟨⟨f, s, hf, hs, hst⟩, hn⟩
-  obtain ⟨s', hs', h'⟩ := hst.prefix hl
+  rintro x a ⟨⟨f, s, hf, hs, hst⟩, hn⟩
+  obtain ⟨s', hs', h'⟩ := hst.prefix (List.prefix_append x [a])
   refine ⟨⟨TaggedTrace.proj s', s', fun i => Tree.mem_of_prefix (T := ⟨P i, hP i⟩)
     (hs i ▸ TaggedTrace.proj_prefix hs' i) (hf i), fun _ => rfl, h'⟩, ?_⟩
   rw [h'.nonces]
   rw [hst.nonces] at hn
   exact hn.sublist (Trace.nonces_sublist (hs'.map Prod.snd).sublist)
 
-/-- `merge_mem_tree` alone would leave `∀ i : Fin 2, ![P, Q] i ∈ tree (Act M)`, whose
-`∀` `aesop` introduces before its `simp` pass could apply `Fin.forall_fin_two`; `bang`
-needs no rule of its own. -/
 @[aesop unsafe] theorem par_mem_tree {P Q : Proc M} (hP : P ∈ tree (Act M))
     (hQ : Q ∈ tree (Act M)) : par P Q ∈ tree (Act M) :=
   merge_mem_tree (Fin.forall_fin_two.2 ⟨hP, hQ⟩)

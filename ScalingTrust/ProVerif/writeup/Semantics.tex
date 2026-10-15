@@ -270,17 +270,18 @@ A \emph{fact} is $\event(e)$ or $\knows(m)$ with $e,m\in\Msg$; $\Fact$ is the se
 t\models\event(e)\iff\aev(e)\in t,\qquad
 t\models\knows(m)\iff m\in\known(\langle\emptyset\rangle,t).
 \]
-For $F,H\in\Fact$ and $s\in\Msg$,
-\[
-\Corr(P,F,H)\iff\forall t\in\Attacks(P).\ t\models F\Rightarrow t\models H,\qquad
-\Secret(P,s)\iff\forall t\in\Attacks(P).\ t\not\models\knows(s).
-\]
-By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of every prefix of every attack: $\Corr(P,F,H)$ says that $H$ holds by the time $F$ does.
+For a set $X$, $F,H:(X\to\Msg)\to\Fact$ and $s\in\Msg$,
+\begin{align*}
+\Corr(P,F,H)&\iff\forall\sigma:X\to\Msg.\ \forall t\in\Attacks(P).\\
+&\qquad\qquad t\models F(\sigma)\Rightarrow\exists\sigma':X\to\Msg.\ F(\sigma')=F(\sigma)\wedge t\models H(\sigma'),\\
+\Secret(P,s)&\iff\forall t\in\Attacks(P).\ t\not\models\knows(s).
+\end{align*}
+By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of every prefix of every attack: $\Corr(P,F,H)$ says that some $H(\sigma')$ holds by the time $F(\sigma)$ does.
 \end{definition}
 
 \begin{definition}[Queries]\label{def:queries}
 A \emph{query fact} is $\event(M)$ or $\attacker(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \emph{event fact} or an \emph{attacker fact} accordingly. For a valuation $\sigma:X\to\Msg$ write $\sigma M\in\Msg$ for the evaluation of $M$ with free names as constants, and let the \emph{instance} of a query fact under $\sigma$ be $\sigma\,\event(M)=\event(\sigma M)$ and $\sigma\,\attacker(M)=\knows(\sigma M)$.
-The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$ such that every variable of $H$ occurs in $F$, denotes $\forall\sigma:X\to\Msg.\ \Corr(\sem{P_0}\rho_0,\sigma F,\sigma H)$.
+The query $\pv{query}\ \attacker(M)$, for $M$ without variables, denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$. The query $\pv{query}\ F\Longrightarrow H$, with $F$ and $H$ query facts over $X$, denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$. The valuation of the conclusion may differ from that of the hypothesis: an equation may identify instances of $F$ that differ on the variables of $H$, and $H$ may have variables of its own.
 \end{definition}
 
 \begin{definition}[Bounded traces]
@@ -404,11 +405,11 @@ The hypothesis $\Npub\ne\emptyset$ cannot be dropped: when $\Npub=\emptyset$ no 
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact and $\sigma F=\sigma'F$ implies $\sigma H=\sigma'H$ for all valuations $\sigma,\sigma'$, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow H$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\sigma F,\sigma H)$ holds for every $\sigma:X\to\Msg$.
+Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact, and let $\Npub\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow H$ against $\Npub$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$.
 \end{theorem}
 
 \begin{remark}
-The hypotheses on $H$ and on $\Npub$ cannot be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
+Neither hypothesis can be dropped. When $\Npub=\emptyset$ and $F=\attacker(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\attacker(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\knows(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\Npub=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\event(e)\rightsquigarrow\attacker(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
 \end{remark}
 
 \end{document}
