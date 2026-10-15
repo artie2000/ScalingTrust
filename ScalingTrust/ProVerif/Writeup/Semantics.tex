@@ -34,6 +34,7 @@
 \newcommand{\aev}{\mathsf{ev}}
 \newcommand{\acomm}{\mathsf{comm}}
 \newcommand{\known}{\operatorname{known}}
+\newcommand{\outputs}{\operatorname{outputs}}
 \newcommand{\knows}{\pv{knows}}
 \newcommand{\Fact}{\mathrm{Fact}}
 \newcommand{\Closed}{\mathrm{Closed}}
@@ -52,7 +53,6 @@
 \newcommand{\Npub}{\mathcal{N}_{\mathrm{pub}}}
 \newcommand{\Npriv}{\mathcal{N}_{\mathrm{priv}}}
 \newcommand{\fn}{\operatorname{fn}}
-\newcommand{\obs}{\operatorname{obs}}
 \newcommand{\Tr}{\operatorname{Tr}}
 \newcommand{\attacker}{\pv{attacker}}
 \newcommand{\event}{\pv{event}}
@@ -74,7 +74,7 @@ We formalise the ProVerif process calculus in Lean. Rather than copying the spec
 
 We use a trace-based semantics to encode the possible outcomes of parallel processes communicating on a network. The attacker is modelled as a set of traces satisfying informational constraints. Our trace semantics are good enough to express secrecy and simple ProVerif queries relating events. However, it is strictly less expressive than the formal operational semantics of ProVerif; in particular, we cannot express observational equivalence. 
 
-We give a mathematical account of the material formalised in Lean, and of the formal translation from terms in ProVerif's process calculus to our traces. We have not proved the claimed properties of the translation, such as adequacy.
+We give a mathematical account of the Lean development, and of the formal translation from terms in ProVerif's process calculus to our traces. Everything has been formalised in Lean.
 
 \section{The trace semantics}
 
@@ -370,20 +370,16 @@ The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visib
 \end{definition}
 
 \begin{theorem}[Adequacy]\label{thm:T}
-For every closed process $P$ whose names are free names, $\sem{P}\rho_0=\Tr(\emptyset,\{P\})$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
+For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
-\begin{definition}[Observation]
-For a trace $\mathrm{Tr}$ from $\CQ$, $\obs(\mathrm{Tr})\in\Act^*$ is the word that records $\anew(\iota a')$ for each step \red{Res} creating $a'$ and $\aev(\iota M)$ for each step \red{Event} on $\pv{event}(M)$, in the order of the steps, and nothing for the other steps. For $t\in\Act^*$, $t{\restriction}_{\anew,\aev}$ is the subword of $\anew$ and $\aev$ actions.
-\end{definition}
-
-Let $\Azero=\Attacks(\sem{P_0}\rho_0)$.
+Let $\Azero=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\CQ$ let $\outputs(\mathrm{Tr})\subseteq\Msg$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \emph{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\aev(\iota M)$ occurs in $t$.
 
 \begin{theorem}[Attacks]\label{thm:A}
 The following hold.
 \begin{enumerate}
-\item[(S)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with $t{\restriction}_{\anew,\aev}=\obs(\mathrm{Tr})$ such that $\iota M\in\known(\langle\emptyset\rangle,t)$ whenever $\mathrm{Tr}$ outputs $M$ publicly.
-\item[(C)] For every $t\in\Azero$ there are an $\Npub$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\CQ$ with $\obs(\mathrm{Tr})=t{\restriction}_{\anew,\aev}$. If moreover $m\in\known(\langle\emptyset\rangle,t)$ and $\Npub\ne\emptyset$, they can be chosen so that the last step of $\mathrm{Tr}$ outputs publicly a term $M$ with $\iota M=m$.
+\item[(E)] For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$ there is $t\in\Azero$ with the same events as $\mathrm{Tr}$, and for every $t\in\Azero$ there are an $\Npub$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\CQ$ with the same events as $t$.
+\item[(K)] Let $\Npub\ne\emptyset$. For every $\Npub$-adversary $Q$ and every trace $\mathrm{Tr}$ from $\CQ$, $\outputs(\mathrm{Tr})\subseteq\bigcup\known(\langle\emptyset\rangle,t)$, the union over the $t\in\Azero$ with the same events as $\mathrm{Tr}$; and for every $t\in\Azero$, $\known(\langle\emptyset\rangle,t)\subseteq\bigcup\outputs(\mathrm{Tr})$, the union over the $\Npub$-adversaries $Q$ and the traces $\mathrm{Tr}$ from $\CQ$ with the same events as $t$.
 \end{enumerate}
 \end{theorem}
 

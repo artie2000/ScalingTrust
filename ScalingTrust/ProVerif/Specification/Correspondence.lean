@@ -14,8 +14,8 @@ closed process `P₀`; Adequacy is `ProVerif.Specification.Adequacy`.
   knows whatever the trace outputs publicly; an attack is a trace of the survey against
   some adversary; and whatever the attacker knows after an attack, some adversary outputs
   publicly at the last step of a trace of the survey with the same created names and
-  events.  The first two are stronger than the write-up's, whose traces agree only on
-  their created names and events.
+  events.  All three are stronger than the write-up's, which asks only for the same
+  events.
 * **Secrecy** (`secret_iff`) and **Correspondences** (`corr_iff`): the properties of the
   trace semantics are the survey's.
 
@@ -87,6 +87,12 @@ theorem attacks_known (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) {t : Trace
       ∃ a ∈ A.Npub, ∃ t'', t' = t'' ++ [Act.comm (Theory.Msg.app a ![]) m] := by
   obtain ⟨a, ha⟩ := hpub
   obtain ⟨⟨⟨f, s, hf, hs, hc⟩, hn⟩, hcl⟩ := ht
+  -- The attack itself will not do, unlike in the two parts above: the trace semantics
+  -- counts a message communicated between two components of the protocol, on a channel
+  -- the attacker knows, as known, though no adversary received it.  So the attack is
+  -- first turned into one in which the attacker intercepts and relays every such
+  -- communication, which changes the protocol's trace only by splitting those
+  -- communications into their two offers; then the attacker outputs `m` to itself.
   obtain ⟨s', t', hc', hcl', hsp, hen, -, hobs, hnonces, hknow⟩ := intercept hc (f 0) (f 1) (hs 0)
     (hs 1) hcl (show Enemy A.alg.derive ∅ (f 1) from hf 1) subset_rfl
   have h₀ : Runs A ⟨∅, {P₀}⟩ (s'.proj 0) := by

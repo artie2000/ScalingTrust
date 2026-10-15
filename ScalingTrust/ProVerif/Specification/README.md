@@ -64,11 +64,13 @@ Everything is proved; nothing is admitted.
 * **Queries with single facts.** `Model.Satisfies` is the write-up's
   Definition "Correspondences between facts" for one fact on each side, which
   is what `Proc.Corr` of the trace semantics checks.
-* **Stronger Attacks theorem.** A trace of the survey against an adversary is
-  itself an attack of the trace semantics, and an attack is itself a trace of
-  the survey against some adversary, where the write-up asks only for the same
-  created names and events. The adversary replays the attacker's trace, and
-  for whatever the attacker knows to be output publicly it intercepts and
-  relays the protocol's communications on channels it knows, since the trace
-  semantics counts those as known whoever received them. The write-up's
-  hypothesis that `P₀` and the secret mention no created name is not needed.
+* **The Attacks theorem.** Its first two parts are stronger than the
+  write-up's: a trace of the survey against an adversary is itself an attack
+  of the trace semantics, and an attack is itself a trace of the survey
+  against some adversary, where the write-up asks only for the same created
+  names and events. Its third part is the write-up's: for a message the
+  attacker knows after an attack, there are an adversary and a trace of the
+  survey with the same created names and events as the attack whose last step
+  outputs the message publicly. That trace is in general not the attack
+  itself. The write-up's hypothesis that `P₀` and the secret mention no
+  created name is not needed.
