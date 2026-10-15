@@ -82,6 +82,20 @@ def sign (x₀ x₁ : T.Msg) : T.Msg :=
 def exp (x₀ x₁ : T.Msg) : T.Msg :=
   .app .exp ![x₀, x₁]
 
+/-! ## The equations, on messages -/
+
+/-- `exp(exp(g, x), y) = exp(exp(g, y), x)` -/
+theorem equation₁ (x y : T.Msg) : exp (exp g x) y = exp (exp g y) x :=
+  by
+  have h₀ :=
+    T.satisfies_msg
+      (.func .exp ![.func .exp ![.func .g ![], .var 0], .var 1],
+        .func .exp ![.func .exp ![.func .g ![], .var 1], .var 0])
+      (by simp [T, E]) fun n₀ => if n₀ = 0 then x else if n₀ = 1 then y else x
+  simp only [Term.realize_func_comp, comp_vecCons, comp_vecEmpty,
+    FirstOrder.Language.Term.realize_var] at h₀
+  simpa [exp, g] using h₀
+
 /-! ## Destructors -/
 
 /-- `sdec(senc(x, y), y) → x` -/
@@ -101,6 +115,60 @@ def check (x₀ x₁ : T.Msg) : Option T.Msg :=
   match x₀.view with
   | .app .sign a₀ => if x₁ = pk (a₀ 1) then some (a₀ 0) else none
   | _ => none
+
+/-! ### The destructors' graphs are their rules -/
+
+theorem sdec_eq_some {x₀ x₁ m₀ : T.Msg} : sdec x₀ x₁ = some m₀ ↔ x₀ = senc m₀ x₁ :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [sdec, hv₀] at h₀
+    cases f₀ <;> try simp at h₀
+    rcases h₀ with ⟨h₁, h₂⟩
+    subst h₂
+    have e₀ : x₀ = senc (a₀ 0) x₁ :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact h₁)
+    exact e₀, fun h₀ => by
+    rcases h₀ with rfl
+    simp [sdec, senc, free]⟩
+
+theorem adec_eq_some {x₀ x₁ m₀ : T.Msg} : adec x₀ x₁ = some m₀ ↔ x₀ = aenc m₀ (pk x₁) :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [adec, hv₀] at h₀
+    cases f₀ <;> try simp at h₀
+    rcases h₀ with ⟨h₁, h₂⟩
+    subst h₂
+    have e₀ : x₀ = aenc (a₀ 0) (pk x₁) :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact h₁)
+    exact e₀, fun h₀ => by
+    rcases h₀ with rfl
+    simp [adec, aenc, pk, free]⟩
+
+theorem check_eq_some {x₀ x₁ m₀ : T.Msg} :
+    check x₀ x₁ = some m₀ ↔ ∃ y, x₀ = sign m₀ y ∧ x₁ = pk y :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [check, hv₀] at h₀
+    cases f₀ <;> try simp at h₀
+    rcases h₀ with ⟨h₁, h₂⟩
+    subst h₂
+    have e₀ : x₀ = sign (a₀ 0) (a₀ 1) :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact rfl)
+    exact ⟨a₀ 1, e₀, h₁⟩, fun h₀ => by
+    rcases h₀ with ⟨y, rfl, rfl⟩
+    simp [check, sign, pk, free]⟩
 
 /-! ## The message algebra -/
 
@@ -154,6 +222,10 @@ def system : Proc T.Msg :=
       initiator sskA (pk skB)
     else
       responder skB (pk sskA)
+
+/-- The main process is prefix-closed. -/
+theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [initiator, responder, system])
 
 /-! ## Queries -/
 

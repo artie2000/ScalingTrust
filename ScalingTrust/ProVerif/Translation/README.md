@@ -11,9 +11,9 @@ ordinary Lean theorems; the translator does not go through the syntax of
 The translator uses Lean's own machinery at both ends. It parses with Lean's
 parser, the fragment being declared as syntax categories, and it produces source
 by building Lean syntax with quotations and printing it with Lean's pretty
-printer. `ProVerif.TraceSemantics.DH` and `ProVerif.TraceSemantics.Examples` are
-the survey's running example translated by hand along the recipe;
-`Examples/DenningSacco.lean` is the same model translated by the program.
+printer. `Examples/DenningSacco.lean` is the survey's running example translated
+by the program; `ProVerif.TraceSemantics.Examples` imports it and proves its
+query.
 
 ## Modules
 
@@ -21,7 +21,7 @@ the survey's running example translated by hand along the recipe;
 | --- | --- |
 | `ProVerif.Translation.Syntax` | The fragment as syntax categories (`pv_term`, `pv_proc`, `pv_fact`, `pv_decl`, `pv_model`), the lexical adaptation `adapt` and `parse` |
 | `ProVerif.Translation.Model` | The abstract model, types erased, and `Model.ofSyntax`, which reads it off the parsed text |
-| `ProVerif.Translation.Emit` | The recipe: Lean commands for a model, assembled by `emitFile`; `translate` runs the whole translation |
+| `ProVerif.Translation.Emit` | The recipe: Lean commands for a model, the definitions and the theorems about them, assembled by `emitFile`; `translate` runs the whole translation |
 | `ProVerif.Translation.Main` | The entry point |
 | `Examples/` | `DenningSacco.pv` and `Features.pv`, and their translations, which `ScalingTrust.ProVerif` imports so that the build checks them |
 
@@ -98,7 +98,7 @@ A model is translated piece by piece, types erased as in the survey's semantics.
    `Theory.Msg.view` of its scrutinee, nested patterns nested matches, or an
    equality test once all its variables are bound, and a repeated variable an
    equality test, the tests conjoined in one `if`. A single rule is one such
-   term with a final `none`, as in `ProVerif.TraceSemantics.DH`. With several
+   term with a final `none`. With several
    rules, each becomes a term of type `Option (Option T.Msg)`, `none` when its
    patterns do not match and `some r` when they do, and the destructor is the
    rules in order chained with `<|>` and flattened by `Option.join`, so that the
@@ -133,7 +133,29 @@ A model is translated piece by piece, types erased as in the survey's semantics.
    with `F` and `H` functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
    variables, the inductive type `Varsᵢ`, the survey's Def. 3.5; `attacker(M)`
    is `Fact.knows M` and `event(e(M))` is `Fact.event (e M)`.
+8. **Theorems**, with generated proofs:
+   * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
+     instantiating `Theory.satisfies_msg` at the raw equation and evaluating
+     both sides with `Term.realize_func_comp`, `comp_vecCons` and
+     `comp_vecEmpty`, the lemmas of `TraceSemantics/Term.lean` for this;
+   * the graph of each destructor, `g_eq_some : g x₀ … = some m₀ ↔ D₁ ∨ D₂ ∨ …`,
+     a disjunct per rule whose result is not `fail`: no earlier rule matches,
+     and this one does with that result, `∃ v…, x₀ = p₀ ∧ … ∧ m₀ = r`. A
+     variable that is a whole argument, and the result when it is a variable,
+     are named by them instead, so that a single rule reads
+     `sdec c k = some m ↔ c = senc m k`. On may-fail arguments the conjuncts
+     read `u₀ = some p₀`, `u₀ = none` for the pattern `fail`, and a may-fail
+     variable is a whole argument. Forwards the proof reads the chain of rules
+     with `orElse_eq_some` and `join_eq_some`, then the rule that applies as
+     the destructor evaluates it, matching each may-fail argument and the view
+     of each matched scrutinee in order, reading the tests and the result off
+     the hypothesis and recovering each matched argument from its view with
+     `Theory.Msg.eq_app_of_view'`, and refutes each earlier rule by computing;
+     backwards it substitutes and computes, with a lemma per earlier rule that
+     it matches only as its disjunct says;
+   * `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)`, by `aesop`
+     unfolding the macros and `system`.
 
 Every binder the translation introduces carries a subscript, `x₀`, `a₀`, `t₀`,
-`u₀`, `σ`, which no ProVerif identifier has, so it never captures a name of the
-model.
+`u₀`, `σ`, and in proofs `h₀`, `hv₀`, `e₀`, `f₀`, `i₀`, `n₀`, which no ProVerif
+identifier has, so it never captures a name of the model.

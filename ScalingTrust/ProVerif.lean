@@ -4,7 +4,6 @@ Copyright (c) 2026. Released under the Apache 2.0 license.
 import ScalingTrust.ProVerif.TraceSemantics.Process
 import ScalingTrust.ProVerif.TraceSemantics.Term
 import ScalingTrust.ProVerif.TraceSemantics.Security
-import ScalingTrust.ProVerif.TraceSemantics.DH
 import ScalingTrust.ProVerif.TraceSemantics.Examples
 import ScalingTrust.ProVerif.Translation.Syntax
 import ScalingTrust.ProVerif.Translation.Model

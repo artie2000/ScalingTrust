@@ -1,7 +1,6 @@
 (* The survey's running example (§2.2, its first model, p. 21): the simplified
    Denning-Sacco protocol in which A talks only to B, over the primitives of §2.1
-   with Diffie-Hellman.  ProVerif.TraceSemantics.DH and .Examples translate it by
-   hand; this file is the same model as ProVerif input. *)
+   with Diffie-Hellman.  ProVerif.TraceSemantics.Examples proves its query. *)
 
 type key.
 type skey.

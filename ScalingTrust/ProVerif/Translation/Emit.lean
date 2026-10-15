@@ -4,6 +4,7 @@ Copyright (c) 2026. Released under the Apache 2.0 license.
 import Mathlib.Data.Fin.VecNotation
 import Mathlib.Data.Nat.Notation
 import Mathlib.Data.Set.Defs
+import Mathlib.Tactic.FinCases
 import ScalingTrust.ProVerif.Translation.Model
 
 /-!
@@ -41,15 +42,32 @@ structure Ctx where
   /-- The symbols at the root of an equation, which no destructor may match on. -/
   equated : Std.HashSet String
 
-/-- Emission: the context, a counter for fresh binders, and `CoreM` for quotations
-and the pretty printer. -/
-abbrev EmitM := ReaderT Ctx (StateT Nat CoreM)
+/-- A `match` on a view in a compiled rule: the scrutinee, the pattern matched against it,
+the pattern's symbol and the binder of the arguments. -/
+structure Match where
+  scrutinee : Lean.Term
+  pattern : Term
+  symbol : String
+  binder : Ident
+
+/-- The state of emission: a counter for fresh binders, and the record of the rule last
+compiled, from which its graph theorem is proved: its matches, outermost first, its
+equality tests, and the term each of its variables is bound to. -/
+structure St where
+  counter : Nat := 0
+  views : Array Match := #[]
+  tests : Array (Lean.Term × Lean.Term) := #[]
+  env : Std.HashMap String Lean.Term := {}
+  deriving Inhabited
+
+/-- Emission: the context, the state, and `CoreM` for quotations and the pretty printer. -/
+abbrev EmitM := ReaderT Ctx (StateT St CoreM)
 
 /-- The names the translation uses unqualified, which a model's symbols must avoid. -/
 def reserved : List String :=
-  ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "alg", "system", "Option", "some", "none", "Set",
-   "Term", "Theory", "MsgAlgebra", "liftFail", "Cont", "Proc", "Unit", "Prop", "Type", "Bool",
-   "Fact", "True", "False", "Classical", "Fin"]
+  ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "alg", "system", "system_mem_tree", "Option",
+   "some", "none", "Set", "Term", "Theory", "MsgAlgebra", "liftFail", "Cont", "Proc", "Unit", "Prop",
+   "Type", "Bool", "Fact", "True", "False", "Classical", "Fin", "Descriptive", "Act"]
 
 /-- Whether a destructor's rules match `fail`, by a may-fail variable or the constant. -/
 def Dtor.mayFail (d : Dtor) : Bool :=
@@ -98,7 +116,12 @@ def sub (base : String) (n : Nat) : Ident := ident (base ++ subscript n)
 def dot (s : String) : Lean.Term := ⟨mkNode ``Parser.Term.dotIdent #[mkAtom ".", ident s]⟩
 
 /-- A fresh binder `base₀`, `base₁`, … -/
-def fresh (base : String) : EmitM Ident := modifyGet fun n => (sub base n, n + 1)
+def fresh (base : String) : EmitM Ident :=
+  modifyGet fun st => (sub base st.counter, { st with counter := st.counter + 1 })
+
+/-- Record that the rule being compiled binds `x` to `e`. -/
+def bindVar (x : String) (e : Lean.Term) : EmitM Unit :=
+  modify fun st => { st with env := st.env.insert x e }
 
 def num (n : Nat) : NumLit := Syntax.mkNumLit (toString n)
 
@@ -297,6 +320,7 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
     (k : Std.HashMap String Lean.Term → EmitM Lean.Term) : EmitM Lean.Term :=
   match pending with
   | [] => do
+    modify fun st => { st with tests := st.tests ++ tests }
     let res ← k env
     if tests.isEmpty then return res
     let mut conj ← `($(tests[0]!.1) = $(tests[0]!.2))
@@ -309,8 +333,10 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
     | .ident x =>
       if rv.isVar x then
         if let some e := env[x]? then matchPats rv rest env (tests.push (s, e)) k
-        else if rv.used x then matchPats rv rest (env.insert x s) tests k
-        else matchPats rv rest env tests k
+        else
+          bindVar x s
+          if rv.used x then matchPats rv rest (env.insert x s) tests k
+          else matchPats rv rest env tests k
       else matchPats rv ((.app x #[], s) :: rest) env tests k
     | .app f ps =>
       let arity ← match ← sym? f with
@@ -328,6 +354,7 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
         matchPats rv rest env (tests.push (s, ← emitPure env p)) k
       else
         let a ← fresh "a"
+        modify fun st => { st with views := st.views.push ⟨s, p, f, a⟩ }
         let items ← ps.toList.zipIdx.mapM fun (q, i) => do return (q, ← `($a $(num i)))
         let inner ← matchPats rv (items ++ rest) env tests k
         let binder : Lean.Term ← if ps.any rv.needs then pure a else `(_)
@@ -376,9 +403,12 @@ partial def compileRule (mayFail : Bool) (args : Array Ident) (r : Rule) (wrap :
         | .ident v =>
           if mayVars.contains v then
             if let some e := env[v]? then
+              modify fun st => { st with tests := st.tests.push (u, e) }
               let inner ← unwrap (i + 1) pending env
               `(if $u = $e then $inner else none)
-            else unwrap (i + 1) pending (env.insert v u)
+            else
+              bindVar v u
+              unwrap (i + 1) pending (env.insert v u)
           else if rv.needs p then
             let x := sub "x" i
             let inner ← unwrap (i + 1) (pending ++ [(p, (x : Lean.Term))]) env
@@ -386,6 +416,7 @@ partial def compileRule (mayFail : Bool) (args : Array Ident) (r : Rule) (wrap :
               | some $x:ident => $inner
               | none => none)
           else
+            bindVar v (sub "x" i)
             let inner ← unwrap (i + 1) pending env
             `(match $u:ident with
               | some _ => $inner
@@ -403,27 +434,399 @@ partial def compileRule (mayFail : Bool) (args : Array Ident) (r : Rule) (wrap :
       for (p, s) in pending do
         match p with
         | .ident x =>
-          if isVar x && !env.contains x then env := env.insert x s else rest := rest ++ [(p, s)]
+          if isVar x && !env.contains x then
+            bindVar x s
+            env := env.insert x s
+          else rest := rest ++ [(p, s)]
         | _ => rest := rest ++ [(p, s)]
       matchPats rv rest env #[] result
   unwrap 0 [] {}
 
-def emitDtor (d : Dtor) : EmitM (String × Command) := do
-  set 0
+abbrev Tactic := TSyntax `tactic
+abbrev SimpLemma := TSyntax ``Parser.Tactic.simpLemma
+abbrev RCasesPat := TSyntax ``Parser.Tactic.rcasesPatLo
+
+def simpLemma (x : String) : EmitM SimpLemma := `(Parser.Tactic.simpLemma| $(ident x):ident)
+
+def mkTacticSeq (ts : Array Tactic) : TSyntax ``Parser.Tactic.tacticSeq :=
+  let items := ts.toList.zipIdx.foldl (init := #[]) fun acc (t, i) =>
+    if i == 0 then #[t.raw] else acc ++ #[mkNullNode, t.raw]
+  ⟨mkNode ``Parser.Tactic.tacticSeq
+    #[mkNode ``Parser.Tactic.tacticSeq1Indented #[mkNullNode items]]⟩
+
+/-- The constructor functions a term applies, for unfolding. -/
+partial def Term.symbols (vars : Array String) : Term → EmitM (Array String)
+  | .ident x => return if vars.contains x then #[] else #[x]
+  | .app f args => do
+    let inner ← args.flatMapM (Term.symbols vars)
+    match ← sym? f with
+    | some (.ctor c) => return if c.converter then inner else #[f] ++ inner
+    | _ => return #[f] ++ inner
+  | .fail => return #[]
+
+/-! ### Graph theorems
+
+The graph of a destructor `g` is `g x₀ … = some m₀ ↔ D₁ ∨ D₂ ∨ …`, a disjunct per rule
+whose result is not `fail`: no earlier rule matches, and this one does with that
+result, `∃ v…, x₀ = p₀ ∧ … ∧ m₀ = r`.  A variable that is a whole argument, and the
+result when it is a variable, are named by them instead, as in
+`sdec c k = some m ↔ c = senc m k`.  On may-fail arguments the conjuncts read
+`u₀ = some p₀`, `u₀ = none` for the pattern `fail`, and a may-fail variable is a whole
+argument.  Forwards the proof reads the chain of rules with `orElse_eq_some`, then the
+rule that applies as the destructor evaluates it, and refutes each earlier rule by
+computing; backwards it substitutes and computes, with a lemma per earlier rule, that
+it matches only as its disjunct says.
+-/
+
+/-- A rule with the record of its compilation and what its graph says about it. -/
+structure RuleInfo where
+  r : Rule
+  st : St
+  alt : Lean.Term
+  mayVars : Array String
+  /-- The first position of each variable that is a whole argument. -/
+  firstPos : Std.HashMap String Nat
+  /-- Those variables, as the arguments. -/
+  posθ : Std.HashMap String Lean.Term
+  /-- The result, when a variable not among them, which `m₀` names. -/
+  resultVar : Option String
+  /-- The constructor functions of the patterns, and `free` when a view is matched. -/
+  syms : Array SimpLemma
+  deriving Inhabited
+
+def mkRuleInfo (mayFail : Bool) (xs : Array Ident) (r : Rule) (st : St) (alt : Lean.Term) :
+    EmitM RuleInfo := do
+  let vars := r.vars.map (·.1)
+  let mayVars := (r.vars.filter (·.2)).map (·.1)
+  let mut firstPos : Std.HashMap String Nat := {}
+  for (p, j) in r.lhs.toList.zipIdx do
+    if let .ident v := p then
+      if vars.contains v && !firstPos.contains v && (!mayFail || mayVars.contains v) then
+        firstPos := firstPos.insert v j
+  let posθ := firstPos.fold (init := ({} : Std.HashMap String Lean.Term)) fun acc v j =>
+    acc.insert v (xs[j]! : Lean.Term)
+  let resultVar := match r.rhs with
+    | .ident v =>
+      if vars.contains v && !mayVars.contains v && !firstPos.contains v then some v else none
+    | _ => none
+  let names := (← r.lhs.flatMapM (Term.symbols vars)).toList.eraseDups.toArray
+  let syms ← (if st.views.isEmpty then names else names.push "free").mapM simpLemma
+  return { r, st, alt, mayVars, firstPos, posθ, resultVar, syms }
+
+/-- How a conjunct of a rule's graph is proved once the rule is read off: by `rfl`, by what
+proves its scrutinee, or by that under `some`. -/
+inductive ConjProof where
+  | rfl
+  | ofScrutinee (s : Lean.Term)
+  | someOf (s : Lean.Term)
+
+/-- The conjuncts of a rule's graph, each with its proof, and the variables it quantifies:
+one per argument that is not a whole-argument variable, and the result's `withResult`. -/
+def ruleConj (info : RuleInfo) (xs : Array Ident) (m : Ident) (mayFail withResult : Bool) :
+    EmitM (Array (Lean.Term × ConjProof) × Array String) := do
+  let r := info.r
+  let vars := r.vars.map (·.1)
+  let resultVar := if withResult then info.resultVar else none
+  let exVars := vars.filter fun v => !info.firstPos.contains v && resultVar != some v
+  let mut θ := info.posθ
+  if let some v := resultVar then θ := θ.insert v m
+  for v in exVars do θ := θ.insert v (ident v)
+  let mut conj : Array (Lean.Term × ConjProof) := #[]
+  for (p, j) in r.lhs.toList.zipIdx do
+    let u : Lean.Term := xs[j]!
+    let whole := match p with | .ident v => info.firstPos[v]? == some j | _ => false
+    if whole then continue
+    match p with
+    | .fail => conj := conj.push (← `($u = none), .rfl)
+    | .ident v =>
+      if let some e := info.posθ[v]? then conj := conj.push (← `($u = $e), .ofScrutinee u)
+      else if mayFail then
+        conj := conj.push (← `($u = some $(← emitPure θ p)), .someOf (sub "x" j))
+      else conj := conj.push (← `($u = $(← emitPure θ p)), .ofScrutinee u)
+    | _ =>
+      if mayFail then conj := conj.push (← `($u = some $(← emitPure θ p)), .someOf (sub "x" j))
+      else conj := conj.push (← `($u = $(← emitPure θ p)), .ofScrutinee u)
+  if withResult && resultVar.isNone then
+    match r.rhs with
+    | .ident v =>
+      if let some e := (if info.mayVars.contains v then info.posθ[v]? else none) then
+        conj := conj.push (← `($e = some $m), .rfl)
+      else conj := conj.push (← `($m = $(← emitPure θ r.rhs)), .rfl)
+    | rhs => conj := conj.push (← `($m = $(← emitPure θ rhs)), .rfl)
+  return (conj, exVars)
+
+/-- `∃ vars, c₁ ∧ …`, or `True`. -/
+def ruleProp (conj : Array (Lean.Term × ConjProof)) (exVars : Array String) :
+    EmitM Lean.Term := do
+  if conj.isEmpty then return ← `(True)
+  let cs := conj.map (·.1)
+  let body ← cs.pop.foldrM (init := cs.back!) fun c acc => `($c ∧ $acc)
+  exVars.foldrM (init := body) fun v acc => `(∃ $(ident v):ident, $acc)
+
+/-- The pattern destructuring `∃ vars, c₁ ∧ …`: the variables, then `rfl` per conjunct. -/
+def destructPats (conj : Array (Lean.Term × ConjProof)) (exVars : Array String) :
+    EmitM (Array RCasesPat) := do
+  return (← exVars.mapM fun v => `(Parser.Tactic.rcasesPatLo| $(ident v):ident))
+    ++ (← conj.mapM fun _ => `(Parser.Tactic.rcasesPatLo| rfl))
+
+def rcasesWith (h : Ident) (pats : Array RCasesPat) : EmitM Tactic :=
+  if pats.size == 1 then `(tactic| rcases $h:ident with $(pats[0]!):rcasesPatLo)
+  else `(tactic| rcases $h:ident with ⟨$pats,*⟩)
+
+def simpAt (lemmas : Array SimpLemma) (h : Ident) : EmitM Tactic :=
+  if lemmas.isEmpty then `(tactic| simp at $h:ident) else `(tactic| simp [$lemmas,*] at $h:ident)
+
+def simpGoal (lemmas : Array SimpLemma) : EmitM Tactic :=
+  if lemmas.isEmpty then `(tactic| simp) else `(tactic| simp [$lemmas,*])
+
+def bullet (ts : Array Tactic) : EmitM Tactic := `(tactic| · $(mkTacticSeq ts):tacticSeq)
+
+/-- What proves `s = …` for a scrutinee `s` once a rule is read off: the `eₖ` of its view or
+the `hₜ` of its test; `none` when it is `rfl`. -/
+def proofOf (st : St) (s : Lean.Term) : Option Lean.Term :=
+  match st.views.findIdx? (·.scrutinee.raw.structEq s.raw) with
+  | some k => some (sub "e" k)
+  | none => (st.tests.findIdx? (·.1.raw.structEq s.raw)).map fun t => sub "h" (t + 1)
+
+/-- Read the hypothesis `hX : alt = some o` of a rule as the destructor evaluates it: match
+each may-fail argument in order, split the view of each matched scrutinee, then read off
+the tests `h₁, …` and the result, which in the `main` case `o = some m₀` determines `m₀`;
+`first` are lemmas for the first `simp`.  Then recover each matched argument from its view,
+as `e₀, …`.  In the `main` case a rule whose result is `fail` is refuted on the way. -/
+def forwardChain (info : RuleInfo) (xs : Array Ident) (mayFail main : Bool) (hX : Ident)
+    (first : Array SimpLemma) : EmitM (Array Tactic) := do
+  let r := info.r
+  let st := info.st
+  let mut tacs : Array Tactic := #[]
+  let mut pending := first
+  let mut touched := false
+  if mayFail then
+    for (p, j) in r.lhs.toList.zipIdx do
+      let u := xs[j]!
+      let x := sub "x" j
+      let step? : Option Tactic ← match p with
+        | .fail => some <$> `(tactic| rcases $u:ident with _ | _ <;> $(← simpAt pending hX):tactic)
+        | .ident v =>
+          if info.mayVars.contains v then pure none
+          else some <$> `(tactic| rcases $u:ident with _ | $x:ident <;> $(← simpAt pending hX):tactic)
+        | _ => some <$> `(tactic| rcases $u:ident with _ | $x:ident <;> $(← simpAt pending hX):tactic)
+      if let some step := step? then
+        tacs := tacs.push step
+        pending := #[]
+        touched := true
+  for (v, k) in st.views.toList.zipIdx do
+    let hv := sub "hv" k
+    let f := sub "f" k
+    let sv ← `($(v.scrutinee).view)
+    let lemmas := pending.push (← `(Parser.Tactic.simpLemma| $hv:ident))
+    tacs := tacs.push (← `(tactic|
+      rcases $hv:ident : $sv:term with _ | ⟨$f:ident, $(v.binder):ident⟩ | _ <;>
+        simp [$lemmas,*] at $hX:ident))
+    tacs := tacs.push (← `(tactic| cases $f:ident <;> try simp at $hX:ident))
+    if (← sym? v.symbol) matches some (.free _) then
+      tacs := tacs.push (← `(tactic| cases ‹Free› <;> try simp at $hX:ident))
+    pending := #[]
+    touched := true
+  unless touched do tacs := tacs.push (← simpAt pending hX)
+  if main && r.rhs matches .fail then return tacs
+  let t := st.tests.size
+  let hr := sub "h" (t + 1)
+  if t == 0 then
+    if main then tacs := tacs.push (← `(tactic| subst $hX:ident))
+  else
+    let hs ← (Array.range t).mapM fun k => `(Parser.Tactic.rcasesPatLo| $(sub "h" (k + 1)):ident)
+    let last ← if main then `(Parser.Tactic.rcasesPatLo| $hr:ident)
+      else `(Parser.Tactic.rcasesPatLo| -)
+    tacs := tacs.push (← `(tactic| rcases $hX:ident with ⟨$(hs.push last),*⟩))
+    if main then tacs := tacs.push (← `(tactic| subst $hr:ident))
+  for (v, k) in st.views.toList.zipIdx.reverse do
+    let e := sub "e" k
+    let hv := sub "hv" k
+    let rhsTerm ← emitPure st.env v.pattern
+    let n := match v.pattern with | .app _ ps => ps.size | _ => 0
+    let components ← (Array.range n).mapM fun i => do
+      let p := (proofOf st (← `($(v.binder) $(num i)))).getD (ident "rfl")
+      `(tactic| · exact $p)
+    let byCases := mkTacticSeq (#[← `(tactic| intro i₀), ← `(tactic| fin_cases i₀)] ++ components)
+    tacs := tacs.push (← `(tactic| have $e:ident : $(v.scrutinee) = $rhsTerm :=
+      $(v.scrutinee).eq_app_of_view' $hv (by $byCases:tacticSeq)))
+  return tacs
+
+/-- `exact ⟨witnesses, proofs⟩` for a rule's graph once the rule is read off. -/
+def exactFor (info : RuleInfo) (conj : Array (Lean.Term × ConjProof)) (exVars : Array String)
+    (dname : String) : EmitM Tactic := do
+  let ws ← exVars.mapM fun v => do
+    let some w := info.st.env[v]? | throwError "the variable `{v}` of `{dname}` is bound nowhere"
+    pure w
+  let proofs ← conj.mapM fun (_, pf) => do
+    match pf with
+    | .rfl => pure (ident "rfl" : Lean.Term)
+    | .ofScrutinee s => pure ((proofOf info.st s).getD (ident "rfl"))
+    | .someOf s =>
+      match proofOf info.st s with
+      | some p => `(congrArg some $p)
+      | none => pure (ident "rfl")
+  let items := ws ++ proofs
+  if items.isEmpty then `(tactic| trivial)
+  else if items.size == 1 then `(tactic| exact $(items[0]!))
+  else `(tactic| exact ⟨$items,*⟩)
+
+/-- The `q`-th of `n` disjuncts, `hole` inside. -/
+def selectDisj (q n : Nat) (hole : Lean.Term) : EmitM Lean.Term := do
+  let mut t ← if q + 1 < n then `(Or.inl $hole) else pure hole
+  for _ in [0:q] do t ← `(Or.inr $t)
+  return t
+
+/-- Rule `i` of `n` in `a₀ = some o ∨ (a₀ = none ∧ (a₁ = some o ∨ …))`: a hole for each
+earlier rule's `= none`, then `hole`. -/
+def selectRule (i n : Nat) (hole : Lean.Term) : EmitM Lean.Term := do
+  let mut t ← if i + 1 < n then `(Or.inl $hole) else pure hole
+  for _ in [0:i] do t ← `(Or.inr ⟨?_, $t⟩)
+  return t
+
+def emitDtorTheorem (d : Dtor) (alts : Array Lean.Term) (recs : Array St) : EmitM Command := do
+  let mayFail := d.mayFail
+  let k := d.rules.size
+  let xs := Array.range d.arity |>.map (sub (if mayFail then "u" else "x"))
+  let m := ident "m₀"
+  let h := ident "h₀"
+  let infos ← (d.rules.zip (recs.zip alts)).mapM fun (r, st, alt) => mkRuleInfo mayFail xs r st alt
+  let live := (infos.toList.zipIdx.filter fun (info, _) => !(info.r.rhs matches .fail)).toArray
+  let g ← simpLemma d.name
+  -- the statement
+  let mut disj : Array Lean.Term := #[]
+  for (info, i) in live do
+    let mut parts : Array Lean.Term := #[]
+    for j in [0:i] do
+      let (c, ex) ← ruleConj infos[j]! xs m mayFail false
+      parts := parts.push (← `(¬ $(← ruleProp c ex)))
+    let (c, ex) ← ruleConj info xs m mayFail true
+    parts := parts.push (← ruleProp c ex)
+    disj := disj.push (← parts.pop.foldrM (init := parts.back!) fun a acc => `($a ∧ $acc))
+  let rhs ← if disj.isEmpty then `(False)
+    else disj.pop.foldrM (init := disj.back!) fun a acc => `($a ∨ $acc)
+  let call ← app (ident d.name) (xs.map (·))
+  let unfoldG := mkIdent (Name.mkStr (.mkSimple d.name) "eq_def")
+  let rwRules : Array (TSyntax ``Parser.Tactic.rwRule) :=
+    #[← `(Parser.Tactic.rwRule| $unfoldG:ident), ← `(Parser.Tactic.rwRule| join_eq_some)]
+      ++ (← (Array.range (k - 1)).mapM fun _ => `(Parser.Tactic.rwRule| orElse_eq_some))
+  -- forwards
+  let mut fwd : Array Tactic := #[]
+  if k == 1 then
+    let info := infos[0]!
+    fwd := fwd ++ (← forwardChain info xs mayFail true h #[g])
+    unless info.r.rhs matches .fail do
+      let (c, ex) ← ruleConj info xs m mayFail true
+      fwd := fwd.push (← exactFor info c ex d.name)
+  else
+    fwd := fwd.push (← `(tactic| rw [$rwRules,*] at $h:ident))
+    let mut pat ← `(Parser.Tactic.rcasesPatLo| $h:ident)
+    for i in (List.range (k - 1)).reverse do
+      let n := sub "n" i
+      pat ← `(Parser.Tactic.rcasesPatLo| $h:ident | ⟨$n:ident, $pat⟩)
+    fwd := fwd.push (← `(tactic| rcases $h:ident with $pat:rcasesPatLo))
+    for (info, i) in infos.toList.zipIdx do
+      let mut b : Array Tactic := #[]
+      if info.r.rhs matches .fail then
+        b := b ++ (← forwardChain info xs mayFail true h #[])
+      else
+        let q := (live.findIdx? (·.2 == i)).get!
+        let (c, ex) ← ruleConj info xs m mayFail true
+        let sTacs := (← forwardChain info xs mayFail true h #[]).push (← exactFor info c ex d.name)
+        if i == 0 then
+          unless live.size == 1 do
+            b := b.push (← `(tactic| refine $(← selectDisj q live.size (← `(?_)))))
+          b := b ++ sTacs
+        else
+          let holes ← (Array.range (i + 1)).mapM fun _ => `(?_)
+          b := b.push (← `(tactic| refine $(← selectDisj q live.size (← `(⟨$holes,*⟩)))))
+          for j in [0:i] do
+            let (cj, exj) ← ruleConj infos[j]! xs m mayFail false
+            let mut nb : Array Tactic := #[]
+            if cj.isEmpty then nb := nb.push (← `(tactic| intro _))
+            else
+              nb := nb.push (← `(tactic| intro hm₀))
+              nb := nb.push (← rcasesWith (ident "hm₀") (← destructPats cj exj))
+            nb := nb.push (← simpAt infos[j]!.syms (sub "n" j))
+            b := b.push (← bullet nb)
+          b := b.push (← bullet sTacs)
+      fwd := fwd.push (← bullet b)
+  -- backwards
+  let mut bwd : Array Tactic := #[]
+  if live.isEmpty then bwd := bwd.push (← `(tactic| exact $(h).elim))
+  else if k == 1 then
+    let info := infos[0]!
+    let (c, ex) ← ruleConj info xs m mayFail true
+    let pats ← destructPats c ex
+    unless pats.isEmpty do bwd := bwd.push (← rcasesWith h pats)
+    bwd := bwd.push (← simpGoal (#[g] ++ info.syms))
+  else
+    let lastLive := live.back!.2
+    for j in [0:lastLive] do
+      let infoJ := infos[j]!
+      let (cj, exj) ← ruleConj infoJ xs m mayFail false
+      let prop ← ruleProp cj exj
+      let pf ← if cj.isEmpty then `(fun _ _ => trivial) else do
+        let chain := (← forwardChain infoJ xs mayFail false (ident "ho₀") #[]).push
+          (← exactFor infoJ cj exj d.name)
+        `(fun o₀ ho₀ => by $(mkTacticSeq chain):tacticSeq)
+      bwd := bwd.push (← `(tactic| have $(sub "r" j):ident : ∀ o, $(infoJ.alt) = some o → $prop := $pf))
+    let mut dpat ← `(Parser.Tactic.rcasesPatLo| $(sub "d" (live.size - 1)):ident)
+    for q in (List.range (live.size - 1)).reverse do
+      dpat ← `(Parser.Tactic.rcasesPatLo| $(sub "d" q):ident | ($dpat))
+    if live.size > 1 then bwd := bwd.push (← `(tactic| rcases $h:ident with $dpat:rcasesPatLo))
+    for ((info, i), q) in live.toList.zipIdx do
+      let dq := if live.size > 1 then sub "d" q else h
+      let (c, ex) ← ruleConj info xs m mayFail true
+      let negs ← (Array.range i).mapM fun j => `(Parser.Tactic.rcasesPatLo| $(sub "n" j):ident)
+      let pats := negs ++ (← destructPats c ex)
+      let mut b : Array Tactic := #[]
+      unless pats.isEmpty do b := b.push (← rcasesWith dq pats)
+      b := b.push (← `(tactic| rw [$rwRules,*]))
+      if i == 0 then
+        b := b.push (← `(tactic| refine Or.inl ?_))
+        b := b.push (← simpGoal info.syms)
+      else
+        b := b.push (← `(tactic| refine $(← selectRule i k (← `(?_)))))
+        for j in [0:i] do
+          b := b.push (← bullet #[← `(tactic| by_contra hne₀),
+            ← `(tactic| obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀),
+            ← `(tactic| exact $(sub "n" j) ($(sub "r" j) o₀ ho₀))])
+        b := b.push (← bullet #[← simpGoal info.syms])
+      if live.size > 1 then bwd := bwd.push (← bullet b) else bwd := bwd ++ b
+  let name := d.name ++ "_eq_some"
+  if (← read).syms.contains name then throwError "`{name}` is a name the translation uses; rename it"
+  let fwdTerm ← `(fun $h:ident => by $(mkTacticSeq fwd):tacticSeq)
+  let bwdTerm ← `(fun $h:ident => by $(mkTacticSeq bwd):tacticSeq)
+  let stmt ← `($call = some $m ↔ $rhs)
+  if !mayFail then
+    `(theorem $(ident name):ident {$xs* $m:ident : T.Msg} : $stmt := ⟨$fwdTerm, $bwdTerm⟩)
+  else if xs.isEmpty then
+    `(theorem $(ident name):ident {$m:ident : T.Msg} : $stmt := ⟨$fwdTerm, $bwdTerm⟩)
+  else
+    `(theorem $(ident name):ident {$xs* : Option T.Msg} {$m:ident : T.Msg} : $stmt :=
+      ⟨$fwdTerm, $bwdTerm⟩)
+
+/-- A destructor: its docstring, its definition and its graph theorem. -/
+def emitDtor (d : Dtor) : EmitM (String × Command × Command) := do
+  set ({} : St)
   let mayFail := d.mayFail
   let args := Array.range d.arity |>.map (sub (if mayFail then "u" else "x"))
   let argTy ← if mayFail then `(Option T.Msg) else `(T.Msg)
-  let body ←
-    if d.rules.size == 1 then compileRule mayFail args d.rules[0]! false
-    else do
-      let alts ← d.rules.mapM (compileRule mayFail args · true)
-      let mut chain := alts[0]!
-      for a in alts[1:] do
-        chain ← `($chain <|> $a)
-      `(Option.join ($chain))
+  let single := d.rules.size == 1
+  let mut alts : Array Lean.Term := #[]
+  let mut recs : Array St := #[]
+  for r in d.rules do
+    modify fun st => { counter := st.counter }
+    alts := alts.push (← compileRule mayFail args r (!single))
+    recs := recs.push (← get)
+  let body ← if single then pure alts[0]! else do
+    let chain ← alts.pop.foldrM (init := alts.back!) fun a acc => `($a <|> $acc)
+    `(Option.join ($chain))
   let cmd ← if args.isEmpty then `(def $(ident d.name):ident : Option T.Msg := $body)
     else `(def $(ident d.name):ident ($args* : $argTy) : Option T.Msg := $body)
-  return (s!"`{"; ".intercalate (d.rules.map (·.print d.name)).toList}`", cmd)
+  let thm ← emitDtorTheorem d alts recs
+  return (s!"`{"; ".intercalate (d.rules.map (·.print d.name)).toList}`", cmd, thm)
 
 /-! ## The algebra -/
 
@@ -548,7 +951,7 @@ where
     | P => emitProc env P
 
 def emitMacro (m : Macro) : EmitM Command := do
-  set 0
+  set ({} : St)
   let mut env : Std.HashMap String Lean.Term := {}
   for x in m.params do
     if (← read).syms.contains x then
@@ -560,9 +963,47 @@ def emitMacro (m : Macro) : EmitM Command := do
   else `(def $(ident m.name):ident ($ps* : T.Msg) : Cont (Proc T.Msg) Unit := do $body:doSeq)
 
 def emitMain : EmitM Command := do
-  set 0
+  set ({} : St)
   let body := mkDoSeq (← emitProc {} (← read).model.main)
   `(def system : Proc T.Msg := .run do $body:doSeq)
+
+/-! ## Theorems -/
+
+/-- The `i`-th equation on messages, in the variables it declares; its proof instantiates
+`Theory.satisfies_msg` and evaluates the raw terms. -/
+def emitEquationTheorem (i : Nat) (e : Equation) : EmitM Command := do
+  let mut env : Std.HashMap String Lean.Term := {}
+  for x in e.vars do
+    if (← read).syms.contains x then
+      throwError "the variable `{x}` of an equation has the name of a declared symbol"
+    env := env.insert x (ident x)
+  let l ← emitPure env e.lhs
+  let r ← emitPure env e.rhs
+  let lraw ← emitRaw e.vars e.lhs
+  let rraw ← emitRaw e.vars e.rhs
+  let n := ident "n₀"
+  let mut val : Lean.Term ← if e.vars.isEmpty then `(Theory.Msg.name 0) else pure (ident e.vars[0]!)
+  for (x, k) in e.vars.toList.zipIdx.reverse do
+    val ← `(if $n = $(num k) then $(ident x) else $val)
+  let unfold ← ((← e.lhs.symbols e.vars) ++ (← e.rhs.symbols e.vars)).toList.eraseDups.toArray.mapM
+    simpLemma
+  let proof ← `(by
+    have h₀ := T.satisfies_msg ($lraw, $rraw) (by simp [T, E]) fun $n:ident => $val
+    simp only [Term.realize_func_comp, comp_vecCons, comp_vecEmpty,
+      FirstOrder.Language.Term.realize_var] at h₀
+    simpa [$unfold,*] using h₀)
+  let name := sub "equation" i
+  if e.vars.isEmpty then `(theorem $name:ident : $l = $r := $proof)
+  else
+    let xs := e.vars.map ident
+    `(theorem $name:ident ($xs* : T.Msg) : $l = $r := $proof)
+
+/-- The main process is prefix-closed, by `aesop` as in `ProVerif.TraceSemantics.Examples`. -/
+def emitTree : EmitM Command := do
+  let names := (← read).model.macros.map (·.name) |>.push "system"
+  let rules ← names.mapM fun n => `(Aesop.rule_expr| $(ident n):ident)
+  `(theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
+      aesop (add norm simp [$rules,*]))
 
 /-! ## Queries -/
 
@@ -649,11 +1090,19 @@ def emitFile (ns src : String) : EmitM String := do
   unless m.events.isEmpty do
     out := out ++ "\n/-! ## Events -/\n"
     for (e, n) in m.events do out ← push out none (← emitCtorFun e n)
+  unless m.equations.isEmpty do
+    out := out ++ "\n/-! ## The equations, on messages -/\n"
+    for (e, i) in m.equations.toList.zipIdx do
+      out ← push out s!"`{e.lhs.print} = {e.rhs.print}`" (← emitEquationTheorem (i + 1) e)
   unless m.dtors.isEmpty do
     out := out ++ "\n/-! ## Destructors -/\n"
+    let mut thms : Array Command := #[]
     for d in m.dtors do
-      let (doc, c) ← emitDtor d
+      let (doc, c, thm) ← emitDtor d
       out ← push out doc c
+      thms := thms.push thm
+    out := out ++ "\n/-! ### The destructors' graphs are their rules -/\n"
+    for t in thms do out ← push out none t
   out := out ++ "\n/-! ## The message algebra -/\n"
   if let some c ← emitPub then
     out ← push out "The public symbols: all but the private free names and constructors, and the events." c
@@ -663,6 +1112,7 @@ def emitFile (ns src : String) : EmitM String := do
   out := out ++ "\n/-! ## The process -/\n"
   for p in m.macros do out ← push out none (← emitMacro p)
   out ← push out "The main process." (← emitMain)
+  out ← push out "The main process is prefix-closed." (← emitTree)
   unless m.queries.isEmpty do
     out := out ++ "\n/-! ## Queries -/\n"
     for (q, i) in m.queries.toList.zipIdx do
@@ -683,7 +1133,7 @@ def translate (env : Environment) (src text ns : String) : IO (Except String Str
       | .error e => return .error s!"{src}: {e}"
       | .ok ctx =>
         try
-          let (s, _) ← (((emitFile ns src).run ctx).run' 0).toIO
+          let (s, _) ← (((emitFile ns src).run ctx).run' {}).toIO
             { fileName := src, fileMap := default } { env }
           return .ok s
         catch e => return .error s!"{src}: {e}"

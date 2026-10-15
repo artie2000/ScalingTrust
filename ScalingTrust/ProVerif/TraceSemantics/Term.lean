@@ -98,6 +98,30 @@ theorem Term.realize_func₀ (v : ℕ → M) (f : F 0) :
   rw [Term.realize_func]
   exact congrArg _ (funext fun i => i.elim0)
 
+/-- Constructors of any arity, as a composition, so that `comp_vecCons` and `comp_vecEmpty`
+evaluate the arguments of a vector `![…]` one by one; the translated equation theorems
+use the three. -/
+theorem Term.realize_func_comp (v : ℕ → M) {n : ℕ} (f : F n) (ts : Fin n → Term F) :
+    (Term.func f ts).realize v = Structure.funMap (L := F.lang) f (Term.realize v ∘ ts) :=
+  Term.realize_func _ _ _
+
+theorem comp_vecCons {α β : Type} {n : ℕ} (g : α → β) (a : α) (f : Fin n → α) :
+    g ∘ Matrix.vecCons a f = Matrix.vecCons (g a) (g ∘ f) :=
+  Fin.comp_cons g a f
+
+theorem comp_vecEmpty {α β : Type} (g : α → β) : g ∘ (![] : Fin 0 → α) = ![] :=
+  funext fun i => i.elim0
+
+/-- `<|>` on `Option`, as a translated destructor with several rules chains them: the
+first rule that applies decides. -/
+theorem orElse_eq_some {α : Type} (a b : Option α) (c : α) :
+    (a <|> b) = some c ↔ a = some c ∨ (a = none ∧ b = some c) := by
+  cases a <;> simp
+
+theorem join_eq_some {α : Type} (o : Option (Option α)) (c : α) :
+    o.join = some c ↔ o = some (some c) := by
+  cases o <;> simp
+
 /-- The root of `t` is a symbol that `free` does not declare free. -/
 def Term.Rigid (free : ∀ n, F n → Bool) : Term F → Prop
   | .var _ => False
@@ -249,6 +273,12 @@ theorem eq_app_of_view (m : T.Msg) {n : ℕ} {f : F n} {a : Fin n → T.Msg}
       split_ifs at h
       cases h
       exact (app_mk _ ts).symm
+
+/-- `eq_app_of_view` with the arguments given one by one: how the graph theorem of a
+translated destructor recovers an argument from its view. -/
+theorem eq_app_of_view' (m : T.Msg) {n : ℕ} {f : F n} {a b : Fin n → T.Msg}
+    (h : m.view = .app f a) (hb : ∀ i, a i = b i) : m = app f b :=
+  (m.eq_app_of_view h).trans (congrArg _ (funext hb))
 
 end Theory.Msg
 

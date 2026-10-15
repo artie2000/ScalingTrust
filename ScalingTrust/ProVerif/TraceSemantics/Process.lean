@@ -112,6 +112,33 @@ def proj (s : TaggedTrace ι M) (i : ι) : Trace M := (s.filter (·.1 = i)).map 
 theorem proj_prefix {s' s : TaggedTrace ι M} (h : s' <+: s) (i : ι) : s'.proj i <+: s.proj i :=
   (h.filter _).map _
 
+theorem proj_sublist (s : TaggedTrace ι M) (i : ι) : (s.proj i).Sublist (s.map Prod.snd) :=
+  List.filter_sublist.map _
+
+/-- When the names created in a tagged trace are distinct, different components create
+different names. -/
+theorem proj_nonces_disjoint {s : TaggedTrace ι M} (h : (Trace.nonces (s.map Prod.snd)).Nodup)
+    {i j : ι} (hij : i ≠ j) : (s.proj i).nonces.Disjoint (s.proj j).nonces := by
+  induction s with
+  | nil => exact List.disjoint_nil_left _
+  | cons x s ih =>
+    obtain ⟨k, a⟩ := x
+    have hsub (l : ι) : Trace.nonces (proj s l) ⊆ Trace.nonces (s.map Prod.snd) :=
+      (Trace.nonces_sublist (proj_sublist s l)).subset
+    cases a
+    case new n =>
+      simp only [List.map_cons, Trace.nonces, List.nodup_cons] at h
+      rcases eq_or_ne k i with rfl | hki
+      · simp only [proj_cons, if_true, hij, if_false, Trace.nonces]
+        exact List.disjoint_cons_left.2 ⟨fun h' => h.1 (hsub j h'), ih h.2⟩
+      rcases eq_or_ne k j with rfl | hkj
+      · simp only [proj_cons, if_true, hki, if_false, Trace.nonces]
+        exact List.disjoint_cons_right.2 ⟨fun h' => h.1 (hsub i h'), ih h.2⟩
+      · simpa only [proj_cons, hki, hkj, if_false] using ih h.2
+    all_goals
+      by_cases hki : k = i <;> by_cases hkj : k = j <;>
+        simpa [proj_cons, hki, hkj, hij, hij.symm, Trace.nonces] using ih (by simpa [Trace.nonces] using h)
+
 /-- `s` interleaves the traces `f i`, each action tagged with its component:
 every component reads its own trace back off `s`. -/
 def Interleaves (s : TaggedTrace ι M) (f : ι → Trace M) : Prop := ∀ i, s.proj i = f i

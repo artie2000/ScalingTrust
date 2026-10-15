@@ -123,6 +123,156 @@ def catchfail (u₀ : Option T.Msg) : Option T.Msg :=
       | none => some (some empty)
       | some _ => none)
 
+/-! ### The destructors' graphs are their rules -/
+
+theorem sdec_eq_some {x₀ x₁ m₀ : T.Msg} : sdec x₀ x₁ = some m₀ ↔ x₀ = senc m₀ x₁ :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [sdec, hv₀] at h₀
+    cases f₀ <;> try simp at h₀
+    rcases h₀ with ⟨h₁, h₂⟩
+    subst h₂
+    have e₀ : x₀ = senc (a₀ 0) x₁ :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact h₁)
+    exact e₀, fun h₀ => by
+    rcases h₀ with rfl
+    simp [sdec, senc, free]⟩
+
+theorem eq_eq_some {x₀ x₁ m₀ : T.Msg} :
+    eq x₀ x₁ = some m₀ ↔ x₁ = x₀ ∧ m₀ = yes ∨ ¬x₁ = x₀ ∧ m₀ = no :=
+  ⟨fun h₀ => by
+    rw [eq.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨h₁, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with rfl
+        simp at n₀
+      · simp at h₀
+        subst h₀
+        exact rfl, fun h₀ =>
+    by
+    have r₀ : ∀ o, (if x₁ = x₀ then some (some yes) else none) = some o → x₁ = x₀ := fun o₀ ho₀ =>
+      by
+      simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact h₁
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨rfl, rfl⟩
+      rw [eq.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, rfl⟩
+      rw [eq.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+theorem test_eq_some {u₀ u₁ u₂ : Option T.Msg} {m₀ : T.Msg} :
+    test u₀ u₁ u₂ = some m₀ ↔
+      (∃ y, u₀ = some yes ∧ u₁ = some m₀ ∧ u₂ = some y) ∨
+        (¬∃ x, ∃ y, u₀ = some yes ∧ u₁ = some x ∧ u₂ = some y) ∧ ∃ x, u₁ = some x ∧ u₂ = some m₀ :=
+  ⟨fun h₀ => by
+    rw [test.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      rcases u₀ with _ | x₀ <;> simp at h₀
+      rcases u₁ with _ | x₁ <;> simp at h₀
+      rcases u₂ with _ | x₂ <;> simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨x₂, congrArg some h₁, rfl, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with ⟨x, y, rfl, rfl, rfl⟩
+        simp [yes] at n₀
+      · rcases u₁ with _ | x₁ <;> simp at h₀
+        rcases u₂ with _ | x₂ <;> simp at h₀
+        subst h₀
+        exact ⟨x₁, rfl, rfl⟩, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (match u₀ with
+            | some x₀ =>
+              match u₁ with
+              | some x₁ =>
+                match u₂ with
+                | some _ => if x₀ = yes then some (some x₁) else none
+                | none => none
+              | none => none
+            | none => none) =
+            some o →
+          ∃ x, ∃ y, u₀ = some yes ∧ u₁ = some x ∧ u₂ = some y :=
+      fun o₀ ho₀ => by
+      rcases u₀ with _ | x₀ <;> simp at ho₀
+      rcases u₁ with _ | x₁ <;> simp at ho₀
+      rcases u₂ with _ | x₂ <;> simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact ⟨x₁, x₂, congrArg some h₁, rfl, rfl⟩
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨y, rfl, rfl, rfl⟩
+      rw [test.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp [yes]
+    · rcases d₁ with ⟨n₀, x, rfl, rfl⟩
+      rw [test.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+theorem catchfail_eq_some {u₀ : Option T.Msg} {m₀ : T.Msg} :
+    catchfail u₀ = some m₀ ↔ u₀ = some m₀ ∨ (¬∃ x, u₀ = some x) ∧ u₀ = none ∧ m₀ = empty :=
+  ⟨fun h₀ => by
+    rw [catchfail.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      rcases u₀ with _ | x₀ <;> simp at h₀
+      subst h₀
+      exact rfl
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with ⟨x, rfl⟩
+        simp at n₀
+      · rcases u₀ with _ | _ <;> simp at h₀
+        subst h₀
+        exact ⟨rfl, rfl⟩, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (match u₀ with
+            | some x₀ => some (some x₀)
+            | none => none) =
+            some o →
+          ∃ x, u₀ = some x :=
+      fun o₀ ho₀ => by
+      rcases u₀ with _ | x₀ <;> simp at ho₀
+      exact ⟨x₀, rfl⟩
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with rfl
+      rw [catchfail.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, rfl, rfl⟩
+      rw [catchfail.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
 /-! ## The message algebra -/
 
 /-- The public symbols: all but the private free names and constructors, and the events. -/
@@ -188,6 +338,10 @@ def system : Proc T.Msg :=
           .send c t₁
         | none =>
           .stop)
+
+/-- The main process is prefix-closed. -/
+theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [sender, receiver, system])
 
 /-! ## Queries -/
 
