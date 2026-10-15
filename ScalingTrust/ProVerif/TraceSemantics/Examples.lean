@@ -1,25 +1,26 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.DH
-import ScalingTrust.ProVerif.Security
+import ScalingTrust.ProVerif.TraceSemantics.DH
+import ScalingTrust.ProVerif.TraceSemantics.Security
 
 /-!
 # Examples
 
 The translation of the survey's running example (§2.2), the simplified
-Denning-Sacco protocol, over the algebra of `ProVerif.DH`: its free names are a
-public channel `c` and a private secret `s`, and its roles and system are `do`
-blocks.  Only its prefix-closure is proved.  The attack and the secrecy proof that follow
-are on the one-action processes `out(c, s)` and `out(c, hash(s))`, which exercise
-`Proc.Secret` and the closed-set method but not the protocol.
+Denning-Sacco protocol, over the algebra of `ProVerif.TraceSemantics.DH`: its
+free names are a public channel `c` and a private secret `s`, and its roles and
+system are `do` blocks.  Only its prefix-closure is proved.  The attack and the
+secrecy proof that follow are on the one-action processes `out(c, s)` and
+`out(c, hash(s))`, which exercise `Proc.Secret` and the closed-set method but
+not the protocol.
 
 The protocol itself has no proved property: the closed set of `Proc.secret_of_closed`
 must contain every nonce, so `A`'s session key `k`, then `senc(s, k)`, which is
 output, then `s`.
 -/
 
-namespace ProVerif.Examples
+namespace ProVerif.TraceSemantics.Examples
 
 open FirstOrder.Language Descriptive
 
@@ -183,4 +184,4 @@ theorem hashed_secret : (Proc.out c (DH.hash s) Proc.nil).Secret alg.derive s :=
   · trivial
   · exact ⟨hid_hash s, trivial⟩
 
-end ProVerif.Examples
+end ProVerif.TraceSemantics.Examples

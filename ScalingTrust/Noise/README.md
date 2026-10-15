@@ -214,7 +214,8 @@ From the repository root:
 lake build
 ```
 
-`ScalingTrust` is the default target and its root module imports exactly the
-modules of this folder. To explore, open `ScalingTrust/Noise/Examples.lean` and uncomment the `#eval`
+`ScalingTrust` is the default target; its root module imports the modules of
+this folder and, as `ScalingTrust.ProVerif`, the ProVerif folder next to it.
+To explore, open `ScalingTrust/Noise/Examples.lean` and uncomment the `#eval`
 lines at the bottom: they print patterns in the specification's own notation,
 run handshakes in the symbolic model, and show the resulting Dolev–Yao terms.

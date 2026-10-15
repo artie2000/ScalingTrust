@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.Term
+import ScalingTrust.ProVerif.TraceSemantics.Term
 
 /-!
 # Example: the standard primitives with Diffie-Hellman
@@ -17,7 +17,7 @@ Each destructor comes with the theorem that its graph is exactly the instances o
 its rewrite rule, `sdec c k = some m ↔ c = senc m k` and so on.
 -/
 
-namespace ProVerif.DH
+namespace ProVerif.TraceSemantics.DH
 
 open FirstOrder.Language
 
@@ -143,4 +143,4 @@ noncomputable abbrev alg (P : Set A) : MsgAlgebra (Fun A) where
     {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => adec (a 0) (a 1)⟩,
      ⟨2, liftFail fun a => check (a 0) (a 1)⟩}
 
-end ProVerif.DH
+end ProVerif.TraceSemantics.DH

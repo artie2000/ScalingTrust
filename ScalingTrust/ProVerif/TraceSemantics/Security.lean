@@ -2,8 +2,8 @@
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
 import Mathlib.Order.Closure
-import ScalingTrust.ProVerif.Process
-import ScalingTrust.ProVerif.Term
+import ScalingTrust.ProVerif.TraceSemantics.Process
+import ScalingTrust.ProVerif.TraceSemantics.Term
 
 /-!
 # The attacker and the security properties
@@ -33,7 +33,7 @@ a term the attacker cannot derive, on which it therefore makes no offers and
 from which it learns nothing.
 -/
 
-namespace ProVerif
+namespace ProVerif.TraceSemantics
 
 open Descriptive
 
@@ -268,4 +268,4 @@ theorem MsgAlgebra.app_mem_derive {A : MsgAlgebra F} {n : ℕ} {f : F n} (hf : f
 
 end algebra
 
-end ProVerif
+end ProVerif.TraceSemantics

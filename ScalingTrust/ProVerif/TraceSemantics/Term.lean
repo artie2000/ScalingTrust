@@ -53,7 +53,7 @@ function, and the two semantics agree.  A destructor whose pattern mentions an
 equated symbol cannot be written.
 -/
 
-namespace ProVerif
+namespace ProVerif.TraceSemantics
 
 open FirstOrder FirstOrder.Language
 
@@ -290,4 +290,4 @@ def MsgAlgebra.ops (A : MsgAlgebra F) : Set (Σ n, (Fin n → Option A.Msg) → 
   (⋃ n, (fun f : F n => (⟨n, liftFail fun as => some (.app f as)⟩ :
     Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubFun n) ∪ A.pubDtors
 
-end ProVerif
+end ProVerif.TraceSemantics

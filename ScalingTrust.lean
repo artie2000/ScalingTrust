@@ -18,16 +18,24 @@ import ScalingTrust.Noise.Correctness
 import ScalingTrust.Noise.Session
 import ScalingTrust.Noise.Transport
 import ScalingTrust.Noise.Examples
+import ScalingTrust.ProVerif
 
 /-!
-# A formalisation of the Noise Protocol Framework
+# ScalingTrust
 
-This library formalises Revision 34 of *The Noise Protocol Framework*
+Formal models of secure-channel protocols and of process calculi.
+`ScalingTrust.ProVerif` imports the ProVerif folder, a trace semantics of the
+process calculus behind ProVerif, documented in
+`ScalingTrust/ProVerif/README.md`. The Noise modules are listed here.
+
+## The Noise Protocol Framework
+
+The Noise modules formalise Revision 34 of *The Noise Protocol Framework*
 (Trevor Perrin, 2018-07-11) in Lean 4, together with the formal treatment given
 by Kobeissi, Nicolas and Bhargavan in *Noise Explorer: Fully Automated Modeling
 and Verification for Arbitrary Noise Protocols* (IEEE EuroS&P 2019).
 
-## The syntax and its rules
+### The syntax and its rules
 
 * `ScalingTrust.Noise.Token` — key kinds, roles and tokens (spec §2.2, §7.1).
 * `ScalingTrust.Noise.Pattern` — message, pre-message and handshake patterns.
@@ -51,7 +59,7 @@ and Verification for Arbitrary Noise Protocols* (IEEE EuroS&P 2019).
   The §18.2 rows for `NX1` and `X1N` are corrected there; Revision 34 prints
   them wrongly, as that file's module documentation explains.
 
-## The protocol itself
+### The protocol itself
 
 * `ScalingTrust.Noise.Crypto` — the DH, cipher and hash functions of §4, as an
   interface with two laws.

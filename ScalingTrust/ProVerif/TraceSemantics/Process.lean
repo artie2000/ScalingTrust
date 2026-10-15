@@ -36,7 +36,7 @@ process creates again, and a merge keeps the names created by different
 components apart, so the names created in a trace are pairwise distinct.
 -/
 
-namespace ProVerif
+namespace ProVerif.TraceSemantics
 
 open Descriptive
 
@@ -421,4 +421,4 @@ abbrev run (b : Cont (Proc M) Unit) : Proc M := b.run fun _ => nil
 
 end Proc
 
-end ProVerif
+end ProVerif.TraceSemantics

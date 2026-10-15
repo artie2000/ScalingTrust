@@ -1,7 +1,7 @@
 /.lake
-ScalingTrust/ProVerif/writeup/*.aux
-ScalingTrust/ProVerif/writeup/*.log
-ScalingTrust/ProVerif/writeup/*.out
-ScalingTrust/ProVerif/writeup/*.fls
-ScalingTrust/ProVerif/writeup/*.fdb_latexmk
-ScalingTrust/ProVerif/writeup/*.synctex.gz
+ScalingTrust/ProVerif/Writeup/*.aux
+ScalingTrust/ProVerif/Writeup/*.log
+ScalingTrust/ProVerif/Writeup/*.out
+ScalingTrust/ProVerif/Writeup/*.fls
+ScalingTrust/ProVerif/Writeup/*.fdb_latexmk
+ScalingTrust/ProVerif/Writeup/*.synctex.gz

@@ -19,7 +19,7 @@ documentation of the other folders only when a task genuinely spans them.
 | Folder | What it is | Language | Documentation |
 | --- | --- | --- | --- |
 | `ScalingTrust/Noise/` | The Noise Protocol Framework (Revision 34), its validity rules and a correctness proof | Lean 4 core only | `ScalingTrust/Noise/README.md` |
-| `ScalingTrust/ProVerif/` | A trace-based semantics of the process calculus behind ProVerif, with the attacker and the security properties | Lean 4 with Mathlib | `ScalingTrust/ProVerif/README.md`; `Reference/` there holds the papers, the manual and two Noise Explorer models, with its own README |
+| `ScalingTrust/ProVerif/` | ProVerif in Lean, in three subfolders: a trace semantics of its process calculus (`TraceSemantics/`), its syntax and operational semantics with the correspondence proofs (`Specification/`), and a translator from ProVerif models to Lean (`Translation/`) | Lean 4 with Mathlib | `ScalingTrust/ProVerif/README.md`, and a README in each subfolder; `Reference/` there holds the papers, the manual and two Noise Explorer models, with its own README; `Writeup/` the mathematical write-up |
 | `ScalingTrust/PsiCalculi/Isabelle/` | The AFP entry `Psi_Calculi` (Bengtson), kept for reference | Isabelle/HOL-Nominal | `document/root.tex` in that folder |
 
 ## Building
@@ -28,10 +28,10 @@ documentation of the other folders only when a task genuinely spans them.
   Mathlib is pinned to the matching tag in `lakefile.toml`; fetch its prebuilt
   artifacts with `lake exe cache get` rather than compiling it.
 * `lake build` builds the default target `ScalingTrust`, whose root module
-  `ScalingTrust.lean` currently imports only the Noise modules. That is what
-  CI (`.github/workflows/lean_action_ci.yml`) checks.
-* The ProVerif modules are built explicitly:
-  `lake build ScalingTrust.ProVerif.Examples`.
+  `ScalingTrust.lean` imports the Noise modules and `ScalingTrust.ProVerif`,
+  the one module that imports the whole ProVerif folder. That is what CI
+  (`.github/workflows/lean_action_ci.yml`) checks.
+* `lake build ScalingTrust.ProVerif` builds the ProVerif folder alone.
 * The Isabelle theories are not built by Lake.
 
 ## Reference material
