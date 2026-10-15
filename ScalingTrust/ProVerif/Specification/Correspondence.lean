@@ -1,28 +1,26 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.Specification.Denotation
+import ScalingTrust.ProVerif.Specification.Attacks
 
 /-!
 # The correspondence with the operational semantics
 
-The theorems of the write-up's §2.2, for a model `A` and a closed process `P₀`.
+The theorems of the write-up's §2.2 about attacks and queries, for a model `A` and a
+closed process `P₀`; Adequacy is `ProVerif.Specification.Adequacy`.
 
-* **Adequacy** (`denote_eq_traces`, `traces_add`): a closed process denotes its weak
-  traces, and the weak traces of a union of multisets are the parallel composition of
-  those of the parts.
 * **Attacks** (`attacks_sound`, `attacks_complete`, `attacks_known`): a trace of the
-  survey against an adversary has an attack of the trace semantics with the same
-  created names and events in which the attacker knows whatever the trace outputs
-  publicly; an attack has the same created names and events as a trace of the survey
-  against some adversary; and whatever the attacker knows after an attack, some
-  adversary outputs publicly at the end of such a trace.
+  survey against an adversary is an attack of the trace semantics in which the attacker
+  knows whatever the trace outputs publicly; an attack is a trace of the survey against
+  some adversary; and whatever the attacker knows after an attack, some adversary outputs
+  publicly at the last step of a trace of the survey with the same created names and
+  events.  The first two are stronger than the write-up's, whose traces agree only on
+  their created names and events.
 * **Secrecy** (`secret_iff`) and **Correspondences** (`corr_iff`): the properties of the
-  trace semantics are the survey's.  Both follow from the Attacks theorem.
+  trace semantics are the survey's.
 
-The first part of Adequacy and the Attacks theorem are stated and not yet proved.  The
-write-up's hypothesis that `P₀` and the secret mention no created name is not needed: a
-created name is a nonce index that (Red Res) and `Proc.new` may both create.
+The write-up's hypothesis that `P₀` and the secret mention no created name is not
+needed: a created name is a nonce index that (Red Res) and `Proc.new` may both create.
 -/
 
 namespace ProVerif.Specification
@@ -30,29 +28,6 @@ namespace ProVerif.Specification
 open FirstOrder FirstOrder.Language ProVerif.TraceSemantics
 
 variable {F G : Sig} (A : Model F G)
-
-/-! ## Adequacy -/
-
-/-- A closed process denotes its weak traces. -/
-theorem denote_eq_traces (P : Process F G 0) :
-    P.denote finZeroElim = Config.traces A ⟨∅, {P}⟩ := by
-  sorry
-
-/-- The weak traces of a union of multisets are the parallel composition of those of
-its parts. -/
-theorem traces_add (Ps Qs : Multiset (Process F G 0)) :
-    Config.traces A ⟨∅, Ps + Qs⟩ =
-      Proc.par (Config.traces A ⟨∅, Ps⟩) (Config.traces A ⟨∅, Qs⟩) := by
-  ext t
-  constructor
-  · intro (h : Runs A ⟨∅, Ps + Qs⟩ t)
-    obtain ⟨t₀, t₁, s, h₀, h₁, hs₀, hs₁, hc⟩ := h.split rfl
-    exact ⟨⟨![t₀, t₁], s, Fin.forall_fin_two.2 ⟨h₀, h₁⟩, Fin.forall_fin_two.2 ⟨hs₀, hs₁⟩, hc⟩,
-      h.nonces.1⟩
-  · rintro ⟨⟨f, s, hf, hs, hc⟩, hn⟩
-    have := runs_add hc (hf 0) (hf 1) (hs 0) (hs 1) hn (fun _ _ => Finset.notMem_empty _)
-      fun _ _ => Finset.notMem_empty _
-    rwa [Finset.union_empty] at this
 
 /-! ## Attacks -/
 
@@ -64,33 +39,85 @@ abbrev Model.attacks (P₀ : Process F G 0) : Proc A.Msg :=
 abbrev Model.known (t : Trace A.Msg) : Set A.Msg :=
   t.attackerKnowledge A.alg.derive (A.alg.derive ∅)
 
-/-- The `new` and `event` actions of a trace: what a trace of the survey observes. -/
-def obs {M : Type} (t : Trace M) : Trace M :=
-  t.filter fun a => match a with | .new _ => true | .event _ => true | _ => false
-
-theorem event_mem_obs {M : Type} {t : Trace M} {e : M} :
-    Act.event e ∈ obs t ↔ Act.event e ∈ t := by
-  simp [obs, List.mem_filter]
-
-/-- (S): a trace of the survey against an adversary observes an attack in which the
-attacker knows whatever the trace outputs publicly. -/
+/-- (S): a trace of the survey against an adversary is an attack in which the attacker
+knows whatever the trace outputs publicly. -/
 theorem attacks_sound (P₀ Q : Process F G 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
     (ht : A.SurveyTrace (.against P₀ Q) t) :
-    ∃ t' ∈ A.attacks P₀, obs t' = obs t ∧ ∀ m, A.OutputsPublicly t m → m ∈ A.known t' := by
-  sorry
+    t ∈ A.attacks P₀ ∧ ∀ m, A.OutputsPublicly t m → m ∈ A.known t := by
+  obtain ⟨hr, hcl⟩ := ht
+  have hr' : Runs A ⟨∅, {P₀} + {Q}⟩ t := by
+    rw [Multiset.singleton_add, ← Multiset.insert_eq_cons]
+    exact hr
+  obtain ⟨t₀, t₁, s, h₀, h₁, hs₀, hs₁, hc⟩ := Runs.split hr' rfl
+  refine ⟨⟨⟨⟨![t₀, t₁], s, Fin.forall_fin_two.2 ⟨?_, ?_⟩, Fin.forall_fin_two.2 ⟨hs₀, hs₁⟩, hc⟩,
+    (Runs.nonces hr').1⟩, hcl⟩, ?_⟩
+  · rw [denote_eq_traces]
+    exact h₀
+  · refine Runs.enemy h₁ fun P hP => ?_
+    rw [Multiset.mem_singleton] at hP
+    exact hP ▸ Model.Adversary.advK ∅ hQ
+  · rintro m ⟨a, ha, hm⟩
+    exact mem_attackerKnowledge_of_comm
+      (MsgAlgebra.app_mem_derive (A := A.alg) (ms := ![]) ha fun i => i.elim0) hm
 
-/-- (C): an attack is observed by a trace of the survey against some adversary. -/
+/-- (C): an attack is a trace of the survey against some adversary. -/
 theorem attacks_complete (P₀ : Process F G 0) {t : Trace A.Msg} (ht : t ∈ A.attacks P₀) :
-    ∃ Q, A.Adversary Q ∧ ∃ t', A.SurveyTrace (.against P₀ Q) t' ∧ obs t' = obs t := by
-  sorry
+    ∃ Q, A.Adversary Q ∧ A.SurveyTrace (.against P₀ Q) t := by
+  obtain ⟨⟨⟨f, s, hf, hs, hc⟩, hn⟩, hcl⟩ := ht
+  have h₀ : Runs A ⟨∅, {P₀}⟩ (f 0) := by
+    have := hf 0
+    rw [denote_eq_traces] at this
+    exact this
+  obtain ⟨Q, hQ, hrun⟩ :=
+    Enemy.process (show Enemy A.alg.derive ∅ (f 1) from hf 1) finZeroElim (Set.empty_subset _)
+  have h₁ : Runs A ⟨∅, {Q}⟩ (f 1) := by
+    have := hrun finZeroElim (funext fun i => i.elim0) ∅ fun _ _ => Finset.notMem_empty _
+    rwa [Process.subst_finZero] at this
+  refine ⟨Q, hQ, ?_, hcl⟩
+  have := runs_add hc h₀ h₁ (hs 0) (hs 1) hn (fun _ _ => Finset.notMem_empty _)
+    fun _ _ => Finset.notMem_empty _
+  rw [Finset.union_empty, Multiset.singleton_add, ← Multiset.insert_eq_cons] at this
+  exact this
 
-/-- (C): whatever the attacker knows after an attack, some adversary outputs publicly
-at the last step of a trace observing the attack. -/
+/-- (C): whatever the attacker knows after an attack, some adversary outputs publicly at
+the last step of a trace of the survey with the same created names and events. -/
 theorem attacks_known (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) {t : Trace A.Msg}
     (ht : t ∈ A.attacks P₀) {m : A.Msg} (hm : m ∈ A.known t) :
     ∃ Q, A.Adversary Q ∧ ∃ t', A.SurveyTrace (.against P₀ Q) t' ∧ obs t' = obs t ∧
       ∃ a ∈ A.Npub, ∃ t'', t' = t'' ++ [Act.comm (Theory.Msg.app a ![]) m] := by
-  sorry
+  obtain ⟨a, ha⟩ := hpub
+  obtain ⟨⟨⟨f, s, hf, hs, hc⟩, hn⟩, hcl⟩ := ht
+  obtain ⟨s', t', hc', hcl', hsp, hen, -, hobs, hnonces, hknow⟩ := intercept hc (f 0) (f 1) (hs 0)
+    (hs 1) hcl (show Enemy A.alg.derive ∅ (f 1) from hf 1) subset_rfl
+  have h₀ : Runs A ⟨∅, {P₀}⟩ (s'.proj 0) := by
+    refine Runs.commSplit hsp ?_
+    have := hf 0
+    rw [denote_eq_traces] at this
+    exact this
+  have hen' := Enemy.append_comm hen
+    (MsgAlgebra.app_mem_derive (A := A.alg) (ms := ![]) ha fun i => i.elim0) (hknow hm)
+  set s'' : TaggedTrace (Fin 2) A.Msg := s' ++ [(1, Act.comm (Theory.Msg.app a ![]) m)] with hs''
+  have hc'' : s''.Comms (t' ++ [Act.comm (Theory.Msg.app a ![]) m]) :=
+    TaggedTrace.Comms.append hc' (.cons 1 _ .nil)
+  have hp0 : s''.proj 0 = s'.proj 0 := by
+    simp [hs'', TaggedTrace.proj_append]
+  have hp1 : s''.proj 1 = s'.proj 1 ++ [Act.comm (Theory.Msg.app a ![]) m] := by
+    simp [hs'', TaggedTrace.proj_append]
+  have ht'' : t' ++ [Act.comm (Theory.Msg.app a ![]) m] ∈ A.attacks P₀ := by
+    refine ⟨⟨⟨![s''.proj 0, s''.proj 1], s'', Fin.forall_fin_two.2 ⟨?_, ?_⟩,
+      Fin.forall_fin_two.2 ⟨rfl, rfl⟩, hc''⟩, ?_⟩,
+      List.forall_mem_append.2 ⟨hcl', List.forall_mem_singleton.2 nofun⟩⟩
+    · show s''.proj 0 ∈ P₀.denote finZeroElim
+      rw [hp0, denote_eq_traces]
+      exact h₀
+    · show s''.proj 1 ∈ Enemy A.alg.derive ∅
+      rw [hp1]
+      exact hen'
+    · rw [Trace.nonces_append, hnonces]
+      simpa [Trace.nonces] using hn
+  obtain ⟨Q, hQ, hsur⟩ := attacks_complete A P₀ ht''
+  exact ⟨Q, hQ, _, hsur, by rw [obs_append, hobs, obs_comm]; exact List.append_nil _, a, ha, t',
+    rfl⟩
 
 /-! ## Secrecy and correspondences -/
 
@@ -100,8 +127,8 @@ theorem secret_iff (hpub : A.Npub.Nonempty) (P₀ : Process F G 0) (M : Tm F 0) 
     (P₀.denote finZeroElim).Secret A.alg.derive (Tm.msg A M) ↔ A.Preserves P₀ M := by
   constructor
   · intro h Q hQ t ht hout
-    obtain ⟨t', ht', -, hk⟩ := attacks_sound A P₀ Q hQ ht
-    exact h t' ht' (hk _ hout)
+    obtain ⟨ht', hk⟩ := attacks_sound A P₀ Q hQ ht
+    exact h t ht' (hk _ hout)
   · intro h t ht hk
     obtain ⟨Q, hQ, t', ht', -, a, ha, t'', rfl⟩ := attacks_known A hpub P₀ ht hk
     exact h Q hQ _ ht' ⟨a, ha, List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
@@ -120,8 +147,8 @@ theorem corr_iff (P₀ : Process F G 0) {X : Type} (Fq : QueryFact F X) (H : F.l
         A.SurveyTrace (.against P₀ Q) t' ∧ obs t' = obs t ∧ Fq.Satisfied A t' σ := by
       cases Fq with
       | event M =>
-        obtain ⟨Q, hQ, t', ht', hobs⟩ := attacks_complete A P₀ ht
-        exact ⟨Q, hQ, t', ht', hobs, event_mem_obs.1 (by rw [hobs]; exact event_mem_obs.2 hF)⟩
+        obtain ⟨Q, hQ, ht'⟩ := attacks_complete A P₀ ht
+        exact ⟨Q, hQ, t, ht', rfl, hF⟩
       | attacker M =>
         obtain ⟨Q, hQ, t', ht', hobs, a, ha, t'', rfl⟩ :=
           attacks_known A (hpub ⟨M, rfl⟩) P₀ ht hF
@@ -129,12 +156,12 @@ theorem corr_iff (P₀ : Process F G 0) {X : Type} (Fq : QueryFact F X) (H : F.l
     obtain ⟨σ', hσ', hH⟩ := h Q hQ t' ht' σ hsat
     exact ⟨σ', hσ', event_mem_obs.1 (by rw [← hobs]; exact event_mem_obs.2 hH)⟩
   · intro h Q hQ t ht σ hF
-    obtain ⟨t', ht', hobs, hk⟩ := attacks_sound A P₀ Q hQ ht
-    have hF' : (Fq.inst σ).Holds A.alg.derive t' := by
+    obtain ⟨ht', hk⟩ := attacks_sound A P₀ Q hQ ht
+    have hF' : (Fq.inst σ).Holds A.alg.derive t := by
       cases Fq with
-      | event M => exact event_mem_obs.1 (by rw [hobs]; exact event_mem_obs.2 hF)
+      | event M => exact hF
       | attacker M => exact hk _ hF
-    obtain ⟨σ', hσ', hH⟩ := h σ t' ht' hF'
-    exact ⟨σ', hσ', event_mem_obs.1 (by rw [← hobs]; exact event_mem_obs.2 hH)⟩
+    obtain ⟨σ', hσ', hH⟩ := h σ t ht' hF'
+    exact ⟨σ', hσ', hH⟩
 
 end ProVerif.Specification

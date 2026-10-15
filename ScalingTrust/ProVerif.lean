@@ -14,7 +14,10 @@ import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
 import ScalingTrust.ProVerif.Translation.Examples.Features
 import ScalingTrust.ProVerif.Specification.Syntax
 import ScalingTrust.ProVerif.Specification.Semantics
+import ScalingTrust.ProVerif.Specification.Invariance
 import ScalingTrust.ProVerif.Specification.Denotation
+import ScalingTrust.ProVerif.Specification.Adequacy
+import ScalingTrust.ProVerif.Specification.Attacks
 import ScalingTrust.ProVerif.Specification.Correspondence
 
 /-!

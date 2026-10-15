@@ -42,8 +42,36 @@ open FirstOrder FirstOrder.Language ProVerif.TraceSemantics
 
 variable {F G : Sig}
 
+/-- The environment of a process under `n` binders: created names are nonces. -/
+abbrev env {A : Model F G} {n : ℕ} (xs : Fin n → A.Msg) : ℕ ⊕ Fin n → A.Msg :=
+  Sum.elim Theory.Msg.name xs
+
 /-- A closed term's message. -/
-def Tm.msg (A : Model F G) (M : Tm F 0) : A.Msg := M.realize (Sum.elim Theory.Msg.name finZeroElim)
+def Tm.msg (A : Model F G) (M : Tm F 0) : A.Msg := M.realize (env finZeroElim)
+
+section subst
+
+variable {A : Model F G} {n m : ℕ}
+
+theorem realize_liftSubst (σ : Fin n → Tm F m) (xs : Fin m → A.Msg) (a : A.Msg)
+    (i : Fin (n + 1)) : (liftSubst σ i).realize (env (Fin.snoc xs a)) =
+      Fin.snoc (α := fun _ => A.Msg) (fun j => (σ j).realize (env xs)) a i := by
+  induction i using Fin.lastCases with
+  | last => simp [liftSubst]
+  | cast j =>
+    simp only [liftSubst, Fin.snoc_castSucc, Term.realize_relabel]
+    congr 1
+    funext x
+    cases x <;> simp
+
+theorem Tm.realize_subst (σ : Fin n → Tm F m) (M : Tm F n) (xs : Fin m → A.Msg) :
+    (Tm.subst σ M).realize (env xs) = M.realize (env fun i => (σ i).realize (env xs)) := by
+  rw [Tm.subst, Term.realize_subst]
+  congr 1
+  funext x
+  cases x <;> simp
+
+end subst
 
 variable {A : Model F G} {n : ℕ}
 

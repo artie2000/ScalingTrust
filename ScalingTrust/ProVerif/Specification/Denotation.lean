@@ -31,9 +31,6 @@ open FirstOrder FirstOrder.Language ProVerif.TraceSemantics
 
 variable {F G : Sig} {A : Model F G} {n m : ℕ}
 
-/-- The environment of a process under `n` binders: created names are nonces. -/
-abbrev env (xs : Fin n → A.Msg) : ℕ ⊕ Fin n → A.Msg := Sum.elim Theory.Msg.name xs
-
 /-! ## Destructors as functions -/
 
 /-- Evaluation depends only on the variables of the term. -/
@@ -198,24 +195,6 @@ noncomputable def Process.denote : {n : ℕ} → Process F G n → (Fin n → A.
   | _, .event M P, xs => Proc.event (M.realize (env xs)) (P.denote xs)
 
 /-! ## Substitution -/
-
-theorem realize_liftSubst (σ : Fin n → Tm F m) (xs : Fin m → A.Msg) (a : A.Msg)
-    (i : Fin (n + 1)) : (liftSubst σ i).realize (env (Fin.snoc xs a)) =
-      Fin.snoc (α := fun _ => A.Msg) (fun j => (σ j).realize (env xs)) a i := by
-  induction i using Fin.lastCases with
-  | last => simp [liftSubst]
-  | cast j =>
-    simp only [liftSubst, Fin.snoc_castSucc, Term.realize_relabel]
-    congr 1
-    funext x
-    cases x <;> simp
-
-theorem Tm.realize_subst (σ : Fin n → Tm F m) (M : Tm F n) (xs : Fin m → A.Msg) :
-    (Tm.subst σ M).realize (env xs) = M.realize (env fun i => (σ i).realize (env xs)) := by
-  rw [Tm.subst, Term.realize_subst]
-  congr 1
-  funext x
-  cases x <;> simp
 
 theorem Expr.denote_subst (σ : Fin n → Tm F m) (xs : Fin m → A.Msg) :
     ∀ D : Expr F G (ℕ ⊕ Fin n),

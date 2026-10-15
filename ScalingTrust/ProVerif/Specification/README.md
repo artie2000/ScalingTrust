@@ -21,21 +21,14 @@ move to it is a question to return to.
 | Module | Contents |
 | --- | --- |
 | `ProVerif.Specification.Syntax` | Terms, expressions and processes of the write-up's Definition "Source syntax"; rewrite rules of destructors; a `Model`; substitution for the bound variables |
-| `ProVerif.Specification.Semantics` | Matching and rewriting by rules, evaluation `D ⇓ U`, configurations and the labelled step relation, weak traces; the survey's Definitions 3.1–3.5 and the write-up's "Satisfaction" and "Correspondences between facts" |
+| `ProVerif.Specification.Semantics` | Matching and rewriting by rules, evaluation `D ⇓ U`, configurations and the labelled step relation, weak traces; steps and runs of processes beside others; the survey's Definitions 3.1–3.5 and the write-up's "Satisfaction" and "Correspondences between facts" |
+| `ProVerif.Specification.Invariance` | Equality modulo `E` of terms, expressions and processes, and the invariance of runs under it: a step on a term `M' =_E M` counts as a step on `M` |
 | `ProVerif.Specification.Denotation` | Destructors as functions and the model's `MsgAlgebra`; the denotation of expressions and processes in `TraceSemantics`; the Evaluation lemma; substitution commutes with denotation |
-| `ProVerif.Specification.Correspondence` | The theorems of the write-up's §2.2: Adequacy, Attacks, Secrecy and Correspondences |
+| `ProVerif.Specification.Adequacy` | The write-up's Theorem "Adequacy": a closed process denotes its weak traces, and the weak traces of a union of multisets are the parallel composition of those of the parts |
+| `ProVerif.Specification.Attacks` | Runs of `N_pub`-adversaries are attacker traces; attacker traces are replayed by adversary processes; an adversary intercepting the protocol's communications |
+| `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences" |
 
-## Status
-
-The syntax, the semantics and the denotation are complete, with the Evaluation
-lemma (`eval_iff`) and the substitution lemma (`Process.denote_inst`) proved.
-The second part of Adequacy, that the weak traces of a union of multisets are
-the parallel composition of those of the parts (`traces_add`), is proved, from
-the composition and decomposition of runs (`runs_add`, `Runs.split`). Secrecy
-(`secret_iff`) and Correspondences (`corr_iff`) are proved from the Attacks
-theorem. The first part of Adequacy (`denote_eq_traces`) and the Attacks
-theorem (`attacks_sound`, `attacks_complete`, `attacks_known`) are stated and
-not yet proved.
+Everything is proved; nothing is admitted.
 
 ## Design decisions
 
@@ -51,8 +44,10 @@ not yet proved.
   term denotes its class, rules match messages, and the survey's `D ⇓ U` is a
   relation on may-fail messages that the Evaluation lemma shows total and
   functional. A process is a term, so (Red I/O') and (Red Eval 1) substitute
-  any term of the message received or of the value. The denotation needs no
-  bijection `ι` between names and indices: a created name is its index.
+  any term of the message received or of the value, and the invariance theorem
+  shows that the runs of a configuration depend only on its processes modulo
+  `E`. The denotation needs no bijection `ι` between names and indices: a
+  created name is its index.
 * **One labelled semantics.** The survey's reduction and the write-up's
   labelled semantics are one step relation labelled by `Option (Act A.Msg)`.
   The survey's reduction is a step whose label is not an offer: (Red I/O') is
@@ -69,3 +64,11 @@ not yet proved.
 * **Queries with single facts.** `Model.Satisfies` is the write-up's
   Definition "Correspondences between facts" for one fact on each side, which
   is what `Proc.Corr` of the trace semantics checks.
+* **Stronger Attacks theorem.** A trace of the survey against an adversary is
+  itself an attack of the trace semantics, and an attack is itself a trace of
+  the survey against some adversary, where the write-up asks only for the same
+  created names and events. The adversary replays the attacker's trace, and
+  for whatever the attacker knows to be output publicly it intercepts and
+  relays the protocol's communications on channels it knows, since the trace
+  semantics counts those as known whoever received them. The write-up's
+  hypothesis that `P₀` and the secret mention no created name is not needed.
