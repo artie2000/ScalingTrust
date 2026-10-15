@@ -23,10 +23,11 @@ a ProVerif model, types erased:
 * A `reduc` declaration gives a destructor: a Lean function to `Option T.Msg`,
   `none` being `fail`, that matches on `Theory.Msg.view` with one branch per rewrite rule in
   order and a final `none`.  A nested pattern over a free symbol is a nested match, a
-  repeated variable an equality test.  A rule may match `fail` with a may-fail
-  variable (p. 14), as `and(x, u) → false` does (p. 17), so destructors take
-  may-fail arguments, `Option T.Msg`; one whose rules have none is written on
-  messages and lifted by `liftFail`.
+  repeated variable an equality test.  A rule may match `fail` (p. 14), with a may-fail
+  variable as `and(x, u) → false` does (p. 17) or with the constant itself as the
+  manual's `catchfail(fail) → c0` does (§4.2.1), so destructors take may-fail
+  arguments, `Option T.Msg`; one whose rules do neither is written on messages and
+  lifted by `liftFail`.
 * The public declarations complete a `MsgAlgebra`: the theory, extended by the
   operations the attacker may apply.
 
@@ -255,7 +256,8 @@ end Theory.Msg
 
 /-- A function of `n` arguments, lifted to may-fail arguments: it fails as soon as one
 of them does.  Constructors evaluate this way (p. 26), and so do destructors whose rules
-have no may-fail variables, since `fail` never instantiates an ordinary variable (p. 20). -/
+have neither a may-fail variable nor the pattern `fail`, since `fail` never instantiates
+an ordinary variable (p. 20). -/
 def liftFail {α β : Type} {n : ℕ} (f : (Fin n → α) → Option β) (a : Fin n → Option α) :
     Option β :=
   if h : ∀ i, (a i).isSome then f fun i => (a i).get (h i) else none

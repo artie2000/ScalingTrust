@@ -82,8 +82,8 @@ theorem exp_exp_g (x y : (T A).Msg) : exp (exp g x) y = exp (exp g y) x := by
 
 Each is a match on the view with one branch for its rule, then failure; the nested
 pattern `pk(y)` of `adec` and `check`, which mentions a variable bound elsewhere, is
-an equality test.  No rule has a may-fail variable, so each destructor is written
-on messages and lifted by `liftFail` in `alg`.
+an equality test.  No rule has a may-fail variable or a `fail` pattern, so each
+destructor is written on messages and lifted by `liftFail` in `alg`.
 -/
 
 open Classical

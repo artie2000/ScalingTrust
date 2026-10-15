@@ -55,9 +55,10 @@ example.
    order, chained with `<|>` and flattened by `Option.join`, so that the first
    rule that matches decides, even when its result is `fail`, and the result is
    `fail` when none does. With a single rule this is a `match` with a final
-   `none`, as in `ProVerif.DH`. A destructor whose rules have no may-fail
-   variable is written on messages and lifted by `liftFail`; one with may-fail
-   variables takes `Option T.Msg` arguments directly.
+   `none`, as in `ProVerif.DH`. A destructor whose rules have neither a may-fail
+   variable nor the pattern `fail` is written on messages and lifted by
+   `liftFail`; one whose rules match `fail`, by a may-fail variable or by the
+   constant itself, takes `Option T.Msg` arguments directly.
 5. **Public and private** declarations complete a `MsgAlgebra F`, the theory
    extended by `pubFun`, the public constructors, including the public free
    names, and `pubDtors`, the public destructors.
@@ -69,8 +70,11 @@ example.
    them runs in both branches, or in every copy, so they end the block, and so
    does a call to a helper that uses them.
    `let x = D in P else Q` is a Lean `match` on the destructor's result, and
-   `if M = N then P else Q` a Lean `if` on the equation of messages. The process
-   never uses `Theory.Msg.name`.
+   `if M = N then P else Q`, for messages `M` and `N`, a Lean `if` on the
+   equation of messages. A condition containing a destructor may fail, and a
+   failing condition takes neither branch (survey §2.5.2), so such an `if` is a
+   `match` on the condition, `Proc.stop` for `none` and the Lean `if` for
+   `some`. The process never uses `Theory.Msg.name`.
 7. **Queries** become the security properties they check: `query attacker(M)`
    is `Proc.Secret`, for `M` without nonces; `query F ==> H`, for single facts
    `F` and `H`, is `Proc.Corr F H` with `F` and `H` written as functions of a
