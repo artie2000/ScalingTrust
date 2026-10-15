@@ -29,8 +29,11 @@ move to it is a question to return to.
 
 The syntax, the semantics and the denotation are complete, with the Evaluation
 lemma (`eval_iff`) and the substitution lemma (`Process.denote_inst`) proved.
-Secrecy (`secret_iff`) and Correspondences (`corr_iff`) are proved from the
-Attacks theorem. Adequacy (`denote_eq_traces`, `traces_add`) and the Attacks
+The second part of Adequacy, that the weak traces of a union of multisets are
+the parallel composition of those of the parts (`traces_add`), is proved, from
+the composition and decomposition of runs (`runs_add`, `Runs.split`). Secrecy
+(`secret_iff`) and Correspondences (`corr_iff`) are proved from the Attacks
+theorem. The first part of Adequacy (`denote_eq_traces`) and the Attacks
 theorem (`attacks_sound`, `attacks_complete`, `attacks_known`) are stated and
 not yet proved.
 
@@ -47,8 +50,9 @@ not yet proved.
   `E`, as the write-up reads the survey's definitions modulo `=_E`: a closed
   term denotes its class, rules match messages, and the survey's `D ⇓ U` is a
   relation on may-fail messages that the Evaluation lemma shows total and
-  functional. So the denotation needs no bijection `ι` between names and
-  indices: a created name is its index.
+  functional. A process is a term, so (Red I/O') and (Red Eval 1) substitute
+  any term of the message received or of the value. The denotation needs no
+  bijection `ι` between names and indices: a created name is its index.
 * **One labelled semantics.** The survey's reduction and the write-up's
   labelled semantics are one step relation labelled by `Option (Act A.Msg)`.
   The survey's reduction is a step whose label is not an offer: (Red I/O') is

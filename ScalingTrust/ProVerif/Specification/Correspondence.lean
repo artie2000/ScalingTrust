@@ -20,9 +20,9 @@ The theorems of the write-up's §2.2, for a model `A` and a closed process `P₀
 * **Secrecy** (`secret_iff`) and **Correspondences** (`corr_iff`): the properties of the
   trace semantics are the survey's.  Both follow from the Attacks theorem.
 
-Adequacy and the Attacks theorem are stated and not yet proved.  The write-up's
-hypothesis that `P₀` and the secret mention no created name is not needed: a created
-name is a nonce index that (Red Res) and `Proc.new` may both create.
+The first part of Adequacy and the Attacks theorem are stated and not yet proved.  The
+write-up's hypothesis that `P₀` and the secret mention no created name is not needed: a
+created name is a nonce index that (Red Res) and `Proc.new` may both create.
 -/
 
 namespace ProVerif.Specification
@@ -43,7 +43,16 @@ its parts. -/
 theorem traces_add (Ps Qs : Multiset (Process F G 0)) :
     Config.traces A ⟨∅, Ps + Qs⟩ =
       Proc.par (Config.traces A ⟨∅, Ps⟩) (Config.traces A ⟨∅, Qs⟩) := by
-  sorry
+  ext t
+  constructor
+  · intro (h : Runs A ⟨∅, Ps + Qs⟩ t)
+    obtain ⟨t₀, t₁, s, h₀, h₁, hs₀, hs₁, hc⟩ := h.split rfl
+    exact ⟨⟨![t₀, t₁], s, Fin.forall_fin_two.2 ⟨h₀, h₁⟩, Fin.forall_fin_two.2 ⟨hs₀, hs₁⟩, hc⟩,
+      h.nonces.1⟩
+  · rintro ⟨⟨f, s, hf, hs, hc⟩, hn⟩
+    have := runs_add hc (hf 0) (hf 1) (hs 0) (hs 1) hn (fun _ _ => Finset.notMem_empty _)
+      fun _ _ => Finset.notMem_empty _
+    rwa [Finset.union_empty] at this
 
 /-! ## Attacks -/
 
