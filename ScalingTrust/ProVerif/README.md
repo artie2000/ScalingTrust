@@ -47,12 +47,17 @@ example.
    equation (`Theory.heads`, proved by `rfl`). `T.Msg`, terms modulo `E`, is the
    message type, and Lean's `=` on it is the survey's `=_E`.
 4. **Destructors** (`reduc`) become Lean functions to `Option T.Msg`, `none`
-   being `fail`: a `match` on `Theory.Msg.view` of the arguments, with one branch per
-   rewrite rule in order and a final `none`. A nested pattern over a free symbol
-   is a nested match; a repeated variable is an equality test. A destructor
-   whose rules have no may-fail variable is written on messages and lifted by
-   `liftFail`; one with may-fail variables takes `Option T.Msg` arguments
-   directly.
+   being `fail`. Each rewrite rule becomes a function to `Option (Option T.Msg)`:
+   `none` when its patterns do not match, `some r` when they do, with `r` the
+   right-hand side and `r = none` for `fail`. A pattern over a free symbol is a
+   `match` on `Theory.Msg.view` of the argument, a nested pattern a nested match,
+   and a repeated variable an equality test. The destructor is the rules in
+   order, chained with `<|>` and flattened by `Option.join`, so that the first
+   rule that matches decides, even when its result is `fail`, and the result is
+   `fail` when none does. With a single rule this is a `match` with a final
+   `none`, as in `ProVerif.DH`. A destructor whose rules have no may-fail
+   variable is written on messages and lifted by `liftFail`; one with may-fail
+   variables takes `Option T.Msg` arguments directly.
 5. **Public and private** declarations complete a `MsgAlgebra F`, the theory
    extended by `pubFun`, the public constructors, including the public free
    names, and `pubDtors`, the public destructors.
@@ -60,6 +65,9 @@ example.
    `Proc.run`: `out` is `Proc.send`, `in` is `Proc.recv`, `new` is `Proc.fresh`,
    `event` is `Proc.emit`, `P | Q` is `if ← Proc.fork then P else Q`, `!P` is
    `Proc.repl` followed by `P`, and `0` is `Proc.stop` or the end of the block.
+   `Proc.fork` and `Proc.repl` capture the rest of the block: whatever follows
+   them runs in both branches, or in every copy, so they end the block, and so
+   does a call to a helper that uses them.
    `let x = D in P else Q` is a Lean `match` on the destructor's result, and
    `if M = N then P else Q` a Lean `if` on the equation of messages. The process
    never uses `Theory.Msg.name`.
