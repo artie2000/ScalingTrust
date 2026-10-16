@@ -21,6 +21,7 @@ open ProVerif.TraceSemantics Classical
 inductive Free
   | c
   | d
+  | T'
 
 /-- The constructors, by arity: the free names, the declared constructors and the events. -/
 inductive Fun : ℕ → Type
@@ -60,6 +61,10 @@ def c : T.Msg :=
 
 def d : T.Msg :=
   .app (.const .d) ![]
+
+/-- The model's `T`, renamed since the translation uses that name. -/
+def T' : T.Msg :=
+  .app (.const .T') ![]
 
 def empty : T.Msg :=
   .app .empty ![]
@@ -327,7 +332,7 @@ def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   | some n =>
     .emit (Received n)
   | none =>
-    .send c empty
+    .send c (pair empty T')
 
 def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let y ← .recv c

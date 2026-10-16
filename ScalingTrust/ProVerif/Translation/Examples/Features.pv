@@ -5,13 +5,15 @@
    variables, queries that a fact never holds, and terms with effects (§4.1.4):
    function macros that create a name and emit an event, a conditional term whose
    condition may fail, an event in an argument after a sibling that fails, and a
-   restriction and a term evaluation inside an output. *)
+   restriction and a term evaluation inside an output; and a free name, T, whose
+   name the translation uses, so that it is renamed. *)
 
 type key.
 type nonce.
 
 channel c.
 free d : channel [private].
+free T : bitstring.
 
 const empty : bitstring [data].
 const yes, no : bool.
@@ -61,7 +63,7 @@ let receiver(k : key) =
   let n = sdec(x, k) in
     event Received(n)
   else
-    out(c, empty).
+    out(c, pair(empty, T)).
 
 let relay(k : key) =
   in(c, y : bitstring);

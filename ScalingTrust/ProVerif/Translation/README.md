@@ -64,9 +64,7 @@ Not translated: tuples and numerals, patterns other than a variable in `in` and
 `let`, booleans and the boolean operators as terms (an `if`, in a process or in
 a term, has to compare), may-fail parameters of macros, `let` in equations and
 rules, tables, predicates, phases, and queries other than the three above, so
-none with `&&`, `||`, `inj-event`, nested correspondences or `secret`. A model
-whose symbols include a name the translation uses, listed in `Emit.reserved`,
-is rejected too.
+none with `&&`, `||`, `inj-event`, nested correspondences or `secret`.
 
 The lexer reads identifiers, numerals and symbols, the longest symbol first, and
 skips comments, which may nest. ProVerif's reserved words are not identifiers,
@@ -78,6 +76,10 @@ and nothing else is reserved. The precedences of processes are the manual's
 ## The recipe
 
 A model is translated piece by piece, types erased as in the survey's semantics.
+An identifier of the model that is a name the translation uses unqualified,
+listed in `Emit.reserved`, such as `T` or `pure`, is first renamed by appending
+primes until it is free, `T'`, and the definition of a renamed symbol says so in
+its docstring.
 
 1. **Free names** (`free a`, `channel a`) become the constructors of an inductive
    type `Free`, and the nullary constructor `Fun.const : Free → Fun 0`; a free

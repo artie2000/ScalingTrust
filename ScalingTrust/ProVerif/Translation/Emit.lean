@@ -19,8 +19,8 @@ on the text of a model.
 The names of the model are kept: a symbol becomes a Lean definition of the same
 name, a variable a binder of the same name, prefixed with `_` when nothing uses it.
 The binders the translation introduces carry subscripts, `x₀`, `a₀`, `t₀`, `u₀`,
-which no ProVerif identifier has, and the names it uses unqualified, `reserved`, a
-model's symbols may not.
+which no ProVerif identifier has, and an identifier of the model that is a name the
+translation uses unqualified, `reserved`, is first renamed with primes, `Model.safe`.
 -/
 
 namespace ProVerif.Translation
@@ -42,6 +42,8 @@ structure Ctx where
   syms : Std.HashMap String Sym
   /-- The symbols at the root of an equation, which no destructor may match on. -/
   equated : Std.HashSet String
+  /-- The identifiers `Model.safe` renamed, new name to old. -/
+  renamed : Std.HashMap String String
 
 /-- A `match` on a view in a compiled rule: the scrutinee, the pattern matched against it,
 the pattern's symbol and the binder of the arguments. -/
@@ -70,11 +72,34 @@ abbrev EmitM := ReaderT Ctx (StateT St CoreM)
 /-- Start a declaration afresh, keeping the record of the function macros. -/
 def resetSt : EmitM Unit := modify fun st => { fns := st.fns }
 
-/-- The names the translation uses unqualified, which a model's symbols must avoid. -/
+/-- The names the translation uses unqualified, which a definition or a binder of the
+model would shadow: its own definitions, and those of Lean, Mathlib and the trace
+semantics that the generated code and proofs mention. -/
 def reserved : List String :=
   ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "alg", "system", "system_mem_tree", "Option",
    "some", "none", "pure", "Set", "Term", "Theory", "MsgAlgebra", "liftFail", "Cont", "Proc", "Unit",
-   "Prop", "Type", "Bool", "Fact", "True", "False", "Classical", "Fin", "Descriptive", "Act"]
+   "Prop", "Type", "Bool", "true", "false", "Fact", "True", "False", "Classical", "Fin",
+   "Descriptive", "Act", "FirstOrder", "Or", "rfl", "trivial", "congrArg", "comp_vecCons",
+   "comp_vecEmpty", "join_eq_some", "orElse_eq_some"]
+
+/-- `m` with each of its identifiers in `reserved` renamed by appending primes until the
+name is neither reserved nor another identifier of the model, and the renamings, new name
+to old. -/
+def Model.safe (m : Model) : Model × Std.HashMap String String := Id.run do
+  let names := m.names
+  let mut used : Std.HashSet String := Std.HashSet.ofList names.toList
+  let mut σ : Std.HashMap String String := {}
+  let mut renamed : Std.HashMap String String := {}
+  for x in names do
+    if reserved.contains x && !σ.contains x then
+      let mut y := x ++ "'"
+      while reserved.contains y || used.contains y do
+        y := y ++ "'"
+      σ := σ.insert x y
+      renamed := renamed.insert y x
+      used := used.insert y
+  if σ.isEmpty then return (m, renamed)
+  return (m.rename fun x => σ.getD x x, renamed)
 
 /-- Whether a destructor's rules match `fail`, by a may-fail variable or the constant. -/
 def Dtor.mayFail (d : Dtor) : Bool :=
@@ -92,10 +117,10 @@ partial def rootSymbol (syms : Std.HashMap String Sym) (vars : Array String) :
   | .fail => throw "`fail` in an equation"
   | t => throw s!"the side `{t.print}` of an equation has effects"
 
-def mkCtx (m : Model) : Except String Ctx := do
+/-- The context of a model `Model.safe` has renamed, with its renamings. -/
+def mkCtx (m : Model) (renamed : Std.HashMap String String) : Except String Ctx := do
   let add (syms : Std.HashMap String Sym) (x : String) (s : Sym) :
       Except String (Std.HashMap String Sym) := do
-    if reserved.contains x then throw s!"`{x}` is a name the translation uses; rename it"
     if syms.contains x then throw s!"`{x}` is declared twice"
     return syms.insert x s
   let mut syms : Std.HashMap String Sym := {}
@@ -109,7 +134,7 @@ def mkCtx (m : Model) : Except String Ctx := do
   for e in m.equations do
     equated := equated.insert (← rootSymbol syms e.vars e.lhs)
     equated := equated.insert (← rootSymbol syms e.vars e.rhs)
-  return { model := m, syms, equated }
+  return { model := m, syms, equated, renamed }
 
 /-! ## Syntax -/
 
@@ -1268,6 +1293,15 @@ namespace {ns}
 open ProVerif.TraceSemantics Classical
 "
 
+/-- The docstring of the definition of the symbol `x`: `doc`, and a note when `x` renames
+a reserved identifier of the model. -/
+def docOf (x : String) (doc : Option String) : EmitM (Option String) := do
+  match (← read).renamed[x]? with
+  | none => return doc
+  | some orig =>
+    let note := s!"The model's `{orig}`, renamed since the translation uses that name."
+    return some ((doc.map (· ++ " ")).getD "" ++ note)
+
 /-- The translation of the model, as the source of a Lean file in the namespace `ns`. -/
 def emitFile (ns src : String) : EmitM String := do
   let m := (← read).model
@@ -1287,12 +1321,12 @@ def emitFile (ns src : String) : EmitM String := do
   out ← push out none
     (← `(@[simp] theorem free_eq {n : ℕ} (f : Fun n) : T.free n f = free n f := rfl))
   out := out ++ "\n/-! ## Constructors -/\n"
-  for (a, _) in m.frees do out ← push out none (← emitCtorFun a 0)
+  for (a, _) in m.frees do out ← push out (← docOf a none) (← emitCtorFun a 0)
   for c in m.ctors do
-    unless c.converter do out ← push out none (← emitCtorFun c.name c.arity)
+    unless c.converter do out ← push out (← docOf c.name none) (← emitCtorFun c.name c.arity)
   unless m.events.isEmpty do
     out := out ++ "\n/-! ## Events -/\n"
-    for (e, n) in m.events do out ← push out none (← emitCtorFun e n)
+    for (e, n) in m.events do out ← push out (← docOf e none) (← emitCtorFun e n)
   unless m.equations.isEmpty do
     out := out ++ "\n/-! ## The equations, on messages -/\n"
     for (e, i) in m.equations.toList.zipIdx do
@@ -1302,7 +1336,7 @@ def emitFile (ns src : String) : EmitM String := do
     let mut thms : Array Command := #[]
     for d in m.dtors do
       let (doc, c, thm) ← emitDtor d
-      out ← push out doc c
+      out ← push out (← docOf d.name doc) c
       thms := thms.push thm
     out := out ++ "\n/-! ### The destructors' graphs are their rules -/\n"
     for t in thms do out ← push out none t
@@ -1314,9 +1348,9 @@ def emitFile (ns src : String) : EmitM String := do
     (← emitAlg)
   unless m.fns.isEmpty do
     out := out ++ "\n/-! ## Function macros -/\n"
-    for f in m.fns do out ← push out s!"`{f.print}`" (← emitFn f)
+    for f in m.fns do out ← push out (← docOf f.name s!"`{f.print}`") (← emitFn f)
   out := out ++ "\n/-! ## The process -/\n"
-  for p in m.macros do out ← push out none (← emitMacro p)
+  for p in m.macros do out ← push out (← docOf p.name none) (← emitMacro p)
   out ← push out "The main process." (← emitMain)
   out ← push out "The main process is prefix-closed." (← emitTree)
   unless m.queries.isEmpty do
@@ -1332,7 +1366,8 @@ def translate (env : Environment) (src text ns : String) : IO (Except String Str
   match Parser.parse text with
   | .error e => return .error s!"{src}:{e}"
   | .ok m =>
-    match mkCtx m with
+    let (m, renamed) := m.safe
+    match mkCtx m renamed with
     | .error e => return .error s!"{src}: {e}"
     | .ok ctx =>
       try

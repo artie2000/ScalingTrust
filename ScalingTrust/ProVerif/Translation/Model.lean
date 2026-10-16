@@ -8,8 +8,8 @@ Copyright (c) 2026. Released under the Apache 2.0 license.
 A model as the translation reads it, types erased: the free names, constructors,
 events, equations and destructors a ProVerif file declares, its function and
 process macros, its queries and its main process, with the printing of its terms
-and queries for the docstrings of the translation.  `Parser.parse` reads a model
-off the text of a file.
+and queries for the docstrings of the translation and the renaming of its
+identifiers.  `Parser.parse` reads a model off the text of a file.
 -/
 
 namespace ProVerif.Translation
@@ -164,5 +164,92 @@ def Query.print (q : Query) : String :=
 /-- A rule of the destructor `g`, as `g(p₁, …, pₙ) → r`. -/
 def Rule.print (g : String) (r : Rule) : String :=
   s!"{(Term.app g r.lhs).print} → {r.rhs.print}"
+
+/-! ## The identifiers of a model, and renaming them -/
+
+/-- Every identifier of a term: symbols and variables, bound or free. -/
+partial def Term.names : Term → Array String
+  | .ident x => #[x]
+  | .app f args => #[f] ++ args.flatMap names
+  | .fail => #[]
+  | .new x M => #[x] ++ M.names
+  | .ite l _ r N N' => l.names ++ r.names ++ N.names ++ (N'.map names).getD #[]
+  | .let x d N N' => #[x] ++ d.names ++ N.names ++ (N'.map names).getD #[]
+  | .event e args M => #[e] ++ args.flatMap names ++ M.names
+
+partial def Proc.names : Proc → Array String
+  | .nil => #[]
+  | .call p args => #[p] ++ args.flatMap Term.names
+  | .par P Q => P.names ++ Q.names
+  | .repl P => P.names
+  | .new x P => #[x] ++ P.names
+  | .ite l _ r P Q => l.names ++ r.names ++ P.names ++ Q.names
+  | .inp c x P => c.names ++ #[x] ++ P.names
+  | .out c m P => c.names ++ m.names ++ P.names
+  | .let x d P Q => #[x] ++ d.names ++ P.names ++ Q.names
+  | .event e args P => #[e] ++ args.flatMap Term.names ++ P.names
+
+def Fact.names : Fact → Array String
+  | .attacker m => m.names
+  | .event e args => #[e] ++ args.flatMap Term.names
+
+def Rule.names (r : Rule) : Array String :=
+  r.vars.map (·.1) ++ r.lhs.flatMap Term.names ++ r.rhs.names
+
+/-- Every identifier of a model. -/
+def Model.names (m : Model) : Array String :=
+  m.frees.map (·.1) ++ m.ctors.map (·.name) ++ m.events.map (·.1)
+    ++ m.equations.flatMap (fun e => e.vars ++ e.lhs.names ++ e.rhs.names)
+    ++ m.dtors.flatMap (fun d => #[d.name] ++ d.rules.flatMap Rule.names)
+    ++ m.fns.flatMap (fun f => #[f.name] ++ f.params ++ f.body.names)
+    ++ m.macros.flatMap (fun p => #[p.name] ++ p.params ++ p.body.names)
+    ++ m.queries.flatMap (fun q =>
+      q.vars ++ q.premise.names ++ (q.conclusion.map Fact.names).getD #[])
+    ++ m.main.names
+
+partial def Term.rename (σ : String → String) : Term → Term
+  | .ident x => .ident (σ x)
+  | .app f args => .app (σ f) (args.map (rename σ))
+  | .fail => .fail
+  | .new x M => .new (σ x) (M.rename σ)
+  | .ite l eq r N N' => .ite (l.rename σ) eq (r.rename σ) (N.rename σ) (N'.map (rename σ))
+  | .let x d N N' => .let (σ x) (d.rename σ) (N.rename σ) (N'.map (rename σ))
+  | .event e args M => .event (σ e) (args.map (rename σ)) (M.rename σ)
+
+partial def Proc.rename (σ : String → String) : Proc → Proc
+  | .nil => .nil
+  | .call p args => .call (σ p) (args.map (Term.rename σ))
+  | .par P Q => .par (P.rename σ) (Q.rename σ)
+  | .repl P => .repl (P.rename σ)
+  | .new x P => .new (σ x) (P.rename σ)
+  | .ite l eq r P Q => .ite (l.rename σ) eq (r.rename σ) (P.rename σ) (Q.rename σ)
+  | .inp c x P => .inp (c.rename σ) (σ x) (P.rename σ)
+  | .out c m P => .out (c.rename σ) (m.rename σ) (P.rename σ)
+  | .let x d P Q => .let (σ x) (d.rename σ) (P.rename σ) (Q.rename σ)
+  | .event e args P => .event (σ e) (args.map (Term.rename σ)) (P.rename σ)
+
+def Fact.rename (σ : String → String) : Fact → Fact
+  | .attacker m => .attacker (m.rename σ)
+  | .event e args => .event (σ e) (args.map (Term.rename σ))
+
+def Rule.rename (σ : String → String) (r : Rule) : Rule where
+  vars := r.vars.map fun (x, b) => (σ x, b)
+  lhs := r.lhs.map (Term.rename σ)
+  rhs := r.rhs.rename σ
+
+/-- `m` with `σ` applied to every identifier. -/
+def Model.rename (σ : String → String) (m : Model) : Model where
+  frees := m.frees.map fun (a, pub) => (σ a, pub)
+  ctors := m.ctors.map fun c => { c with name := σ c.name }
+  events := m.events.map fun (e, n) => (σ e, n)
+  equations := m.equations.map fun e =>
+    { vars := e.vars.map σ, lhs := e.lhs.rename σ, rhs := e.rhs.rename σ }
+  dtors := m.dtors.map fun d => { d with name := σ d.name, rules := d.rules.map (Rule.rename σ) }
+  fns := m.fns.map fun f => { name := σ f.name, params := f.params.map σ, body := f.body.rename σ }
+  macros := m.macros.map fun p =>
+    { name := σ p.name, params := p.params.map σ, body := p.body.rename σ }
+  queries := m.queries.map fun q =>
+    { vars := q.vars.map σ, premise := q.premise.rename σ, conclusion := q.conclusion.map (Fact.rename σ) }
+  main := m.main.rename σ
 
 end ProVerif.Translation
