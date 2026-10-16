@@ -5,8 +5,8 @@ import ScalingTrust.ProVerif.TraceSemantics.Process
 import ScalingTrust.ProVerif.TraceSemantics.Term
 import ScalingTrust.ProVerif.TraceSemantics.Security
 import ScalingTrust.ProVerif.TraceSemantics.Examples
-import ScalingTrust.ProVerif.Translation.Syntax
 import ScalingTrust.ProVerif.Translation.Model
+import ScalingTrust.ProVerif.Translation.Parser
 import ScalingTrust.ProVerif.Translation.Emit
 import ScalingTrust.ProVerif.Translation.Main
 import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
