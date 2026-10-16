@@ -23,8 +23,9 @@ many copies of a process, respectively.
 There is no syntax of processes: what a process computes between actions is Lean code.
 A ProVerif process is translated to a `do` block in the continuation monad
 `Cont (Proc M)`, closed with `Proc.run`: `Proc.send`, `Proc.recv`, `Proc.fresh` and
-`Proc.emit` for its actions, `Proc.fork` and `Proc.repl` for `|` and `!`, and Lean's
-`match` and `if` for `let` and `if`.
+`Proc.emit` for its actions, `Proc.fork` and `Proc.repl` for `|` and `!`, Lean's
+`match` and `if` for `let` and `if`, and an `Option` bound with `←` for a `let` without
+`else`, which stops the process when it fails.
 
 Every constructor preserves prefix-closure (`Descriptive.tree`), so a trace is a run
 so far and a process that blocks has no longer traces.  `out` and `in` are *unfinished*
@@ -442,6 +443,16 @@ abbrev repl : Cont (Proc M) Unit := .mk fun k => bang (k ())
 
 /-- Stop here. -/
 abbrev stop {α : Type} : Cont (Proc M) α := .mk fun _ => nil
+
+/-- `let x = D in P` without `else`: if `D` fails the process stops.  `Option` lifts into
+the monad this way, so a destructor's result is bound with `←`. -/
+abbrev ofOption {α : Type} (o : Option α) : Cont (Proc M) α :=
+  .mk fun k => match o with | some a => k a | none => nil
+
+instance : MonadLift Option (Cont (Proc M)) := ⟨ofOption⟩
+
+@[simp] theorem monadLift_eq_ofOption {α : Type} (o : Option α) :
+    (monadLift o : Cont (Proc M) α) = ofOption o := rfl
 
 /-- The traces of a body. -/
 abbrev run (b : Cont (Proc M) Unit) : Proc M := b.run fun _ => nil

@@ -28,8 +28,11 @@ a ProVerif model, types erased:
   manual's `catchfail(fail) → c0` does (§4.2.1), so destructors take may-fail
   arguments, `Option T.Msg`; one whose rules do neither is written on messages and
   lifted by `liftFail`.
-* The public declarations complete a `MsgAlgebra`: the theory, extended by the
-  operations the attacker may apply.
+* Tuples and booleans are built in whatever a model declares: `Data.lean` adds their
+  symbols to a signature and carries a theory across, so that the messages of a model
+  are `T.withData.Msg`, with the standard operations `StdOps`.
+* The public declarations give the attacker of the model, `Attacker.ofDecls` in
+  `Security.lean`: the operations it may apply on the messages.
 
 `Theory.Msg.view` shows a message's head symbol and arguments when the symbol is free, and
 nothing otherwise; since every equation has a non-free symbol at the root of both
@@ -302,22 +305,5 @@ theorem liftFail_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option
     rwa [show (fun i => (a i).get (h i)) = ms from
       funext fun i => Option.some_injective _ ((Option.some_get _).trans (hms i))]
   · exact iff_of_false (by simp) fun ⟨ms, hms, _⟩ => h fun i => by rw [hms i]; rfl
-
-/-! ## Message algebras -/
-
-/-- A message algebra, from a model's declarations: the theory, and the symbols and
-destructors the attacker may apply, the declarations not marked `[private]`. -/
-structure MsgAlgebra (F : Sig) extends Theory F where
-  /-- The public constructors, including the public free names. -/
-  pubFun : ∀ n, Set (F n)
-  /-- The public destructors, each of some arity, on may-fail arguments, written as
-  in the module docstring. -/
-  pubDtors : Set (Σ n, (Fin n → Option toTheory.Msg) → Option toTheory.Msg)
-
-/-- The attacker's operations on may-fail arguments: the public constructors, which
-fail when an argument does, and the public destructors. -/
-def MsgAlgebra.ops (A : MsgAlgebra F) : Set (Σ n, (Fin n → Option A.Msg) → Option A.Msg) :=
-  (⋃ n, (fun f : F n => (⟨n, liftFail fun as => some (.app f as)⟩ :
-    Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubFun n) ∪ A.pubDtors
 
 end ProVerif.TraceSemantics

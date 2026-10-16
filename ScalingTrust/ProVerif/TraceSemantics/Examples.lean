@@ -10,27 +10,29 @@ Security proofs of translated models.  `DenningSacco`, in `../Translation/Exampl
 is the translation of the survey's running example (§2.2), the simplified
 Denning-Sacco protocol, whose one query is `attacker(s)`; `system_secret` proves it by
 the closed-set method, `Proc.secret_of_closed`.  `leak_attack` exhibits an attack, on
-the one-action process `out(c, s)` over the same algebra.
+the one-action process `out(c, s)` over the same algebra, and `swap` is a process written
+by hand over it, with tuples and a boolean.
 -/
 
 namespace ProVerif.TraceSemantics.Examples
 
 open FirstOrder.Language DenningSacco
+open Attacker (derive)
 
 /-! ## An attack -/
 
 /-- Outputting `s` in the clear is an attack: the attacker receives it. -/
-theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret alg.derive s := by
+theorem leak_attack : ¬ (Proc.out c s Proc.nil).Secret s := by
   intro h
-  have hc : c ∈ alg.derive (∅ : Set T.Msg) :=
-    MsgAlgebra.app_mem_derive (ms := ![]) (by trivial) fun i => i.elim0
+  have hc : c ∈ derive (∅ : Set T.Msg) :=
+    Attacker.app_mem_derive (Attacker.ofDecls_mem (by trivial)) (ms := ![]) fun i => i.elim0
   have ht : [Act.out c s] ∈ Proc.out c s Proc.nil := .inr ⟨[], rfl, rfl⟩
-  have he : [Act.inp c s] ∈ Enemy alg.derive (∅ : Set T.Msg) := .inp _ _ hc .nil
+  have he : [Act.inp c s] ∈ Enemy (∅ : Set T.Msg) := .inp _ _ hc .nil
   refine h [.comm c s] ⟨⟨⟨![_, _], [(0, .out c s), (1, .inp c s)], Fin.forall_fin_two.2 ⟨ht, he⟩,
     Fin.forall_fin_two.2 ⟨rfl, rfl⟩, .pair (by decide) c s .nil⟩, List.nodup_nil⟩,
     List.forall_mem_singleton.2 nofun⟩ ?_
-  show s ∈ alg.derive (alg.derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ alg.derive ∅})
-  exact alg.derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
+  show s ∈ derive (derive ∅ ∪ {m | ∃ c', Act.comm c s = .comm c' m ∧ c' ∈ derive ∅})
+  exact derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩)
 
 /-! ## The secrecy proof
 
@@ -60,27 +62,31 @@ structure Shape where
 
 /-- The interpretation of the symbols on `Shape`.  `senc` hides its plaintext when the key
 is a name in `N`, and `aenc` when the key is the public key of one and the plaintext a
-signature by one; `pk` and `hash` hide their argument; every other symbol is safe when
-its arguments are. -/
-def shape : ∀ {n : ℕ}, Fun n → (Fin n → Shape) → Shape
-  | _, .const .c, _ => ⟨True, False, False, False⟩
-  | _, .const .s, _ => ⟨False, False, False, False⟩
-  | _, .g, _ => ⟨True, False, False, False⟩
-  | _, .pk, a => ⟨True, False, (a 0).nonce, False⟩
-  | _, .hash, _ => ⟨True, False, False, False⟩
-  | _, .senc, a => ⟨(a 0).safe ∧ (a 1).safe ∨ (a 1).nonce, False, False, False⟩
-  | _, .aenc, a => ⟨(a 0).safe ∧ (a 1).safe ∨ (a 1).key ∧ (a 0).sig, False, False, False⟩
-  | _, .sign, a => ⟨(a 0).safe ∧ (a 1).safe, False, False, (a 0).nonce ∧ (a 1).nonce⟩
-  | _, .exp, a => ⟨(a 0).safe ∧ (a 1).safe, False, False, False⟩
+signature by one; `pk` and `hash` hide their argument; every other symbol, the tuples
+included, is safe when its arguments are, and the booleans are safe. -/
+def shape : ∀ {n : ℕ}, Sig.withData Fun n → (Fin n → Shape) → Shape
+  | _, .inl (.const .c), _ => ⟨True, False, False, False⟩
+  | _, .inl (.const .s), _ => ⟨False, False, False, False⟩
+  | _, .inl .g, _ => ⟨True, False, False, False⟩
+  | _, .inl .pk, a => ⟨True, False, (a 0).nonce, False⟩
+  | _, .inl .hash, _ => ⟨True, False, False, False⟩
+  | _, .inl .senc, a => ⟨(a 0).safe ∧ (a 1).safe ∨ (a 1).nonce, False, False, False⟩
+  | _, .inl .aenc, a => ⟨(a 0).safe ∧ (a 1).safe ∨ (a 1).key ∧ (a 0).sig, False, False, False⟩
+  | _, .inl .sign, a => ⟨(a 0).safe ∧ (a 1).safe, False, False, (a 0).nonce ∧ (a 1).nonce⟩
+  | _, .inl .exp, a => ⟨(a 0).safe ∧ (a 1).safe, False, False, False⟩
+  | _, .inr (.tuple _), a => ⟨∀ i, (a i).safe, False, False, False⟩
+  | _, .inr .tt, _ => ⟨True, False, False, False⟩
+  | _, .inr .ff, _ => ⟨True, False, False, False⟩
 
-instance : (Sig.lang Fun).Structure Shape where
+instance : (Sig.lang (Sig.withData Fun)).Structure Shape where
   funMap := shape
   RelMap r := r.elim
 
-@[simp] theorem funMap_shape {n : ℕ} (f : Fun n) (args : Fin n → Shape) :
-    Structure.funMap (L := Sig.lang Fun) f args = shape f args := rfl
+@[simp] theorem funMap_shape {n : ℕ} (f : Sig.withData Fun n) (args : Fin n → Shape) :
+    Structure.funMap (L := Sig.lang (Sig.withData Fun)) f args = shape f args := rfl
 
 theorem shape_satisfies : T.Satisfies Shape := by
+  refine T₀.satisfies_withData_iff.2 ?_
   rintro e (rfl : e = _) v
   simp [Term.realize_var, shape, and_comm]
 
@@ -92,7 +98,7 @@ def abs (N : Set ℕ) : T.Msg → Shape :=
 /-- The messages the attacker may know when the protocol has created the names `N`. -/
 def Safe (N : Set ℕ) (m : T.Msg) : Prop := (abs N m).safe
 
-theorem abs_app (N : Set ℕ) {n : ℕ} (f : Fun n) (ms : Fin n → T.Msg) :
+theorem abs_app (N : Set ℕ) {n : ℕ} (f : Sig.withData Fun n) (ms : Fin n → T.Msg) :
     abs N (.app f ms) = shape f fun i => abs N (ms i) :=
   shape_satisfies.lift_app _ f ms
 
@@ -121,6 +127,16 @@ theorem abs_app (N : Set ℕ) {n : ℕ} (f : Fun n) (ms : Fin n → T.Msg) :
       ⟨(abs N m).safe ∧ (abs N k).safe, False, False, (abs N m).nonce ∧ (abs N k).nonce⟩ := by
   simp [sign, abs_app, shape]
 
+@[simp] theorem abs_tuple (N : Set ℕ) (n : ℕ) (ms : Fin n → T.Msg) :
+    abs N (StdOps.tuple n ms) = ⟨∀ i, (abs N (ms i)).safe, False, False, False⟩ := by
+  simp [Theory.Msg.tuple_def, abs_app, shape]
+
+@[simp] theorem abs_tt (N : Set ℕ) : abs N (StdOps.tt : T.Msg) = ⟨True, False, False, False⟩ := by
+  simp [Theory.Msg.tt_def, abs_app, shape]
+
+@[simp] theorem abs_ff (N : Set ℕ) : abs N (StdOps.ff : T.Msg) = ⟨True, False, False, False⟩ := by
+  simp [Theory.Msg.ff_def, abs_app, shape]
+
 /-- Only a name in `N` is a `nonce`, and the attacker may not know it. -/
 theorem not_safe_of_nonce (N : Set ℕ) (m : T.Msg) (h : (abs N m).nonce) : ¬ Safe N m := by
   induction m using Quotient.inductionOn with
@@ -128,19 +144,21 @@ theorem not_safe_of_nonce (N : Set ℕ) (m : T.Msg) (h : (abs N m).nonce) : ¬ S
     cases t with
     | var n => exact fun h' => h' h
     | func f ts =>
-      cases f
-      case const a => cases a <;> exact (h : False).elim
-      all_goals exact (h : False).elim
+      rcases f with f | d
+      · cases f
+        case const a => cases a <;> exact (h : False).elim
+        all_goals exact (h : False).elim
+      · cases d <;> exact (h : False).elim
 
 /-- The set is closed under the attacker's operations. -/
-theorem safe_closed (N : Set ℕ) : ClosedUnder alg.ops {m | Safe N m} := by
-  rintro o (ho | hd) args hargs r hr
+theorem safe_closed (N : Set ℕ) : ClosedUnder Attacker.ops {m | Safe N m} := by
+  rintro o ((ho | hd) | hs) args hargs r hr
   · obtain ⟨n, f, hf, rfl⟩ := Set.mem_iUnion.1 ho
     dsimp only at hr
     obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
     obtain rfl := Option.some_injective _ hr
     have h (i) : Safe N (ms i) := hargs i _ (hms i)
-    show (abs N (.app f ms)).safe
+    show (abs N (.app (.inl f) ms)).safe
     rw [abs_app]
     cases f with
     | const a =>
@@ -167,6 +185,21 @@ theorem safe_closed (N : Set ℕ) : ClosedUnder alg.ops {m | Safe N m} := by
       rw [hk] at h₀
       simp only [Set.mem_ofPred_eq, Safe, abs_sign] at h₀ ⊢
       exact h₀.1
+  · rcases hs with (⟨n, rfl⟩ | ⟨⟨k, i⟩, rfl⟩) | rfl | rfl <;> dsimp only at hr
+    · obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
+      obtain rfl := Option.some_injective _ hr
+      simp only [Set.mem_ofPred_eq, Safe, abs_tuple]
+      exact fun i => hargs i _ (hms i)
+    · obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
+      obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.1 hr
+      have h₀ : Safe N (ms 0) := hargs 0 _ (hms 0)
+      rw [StdOps.tuple_untuple hb] at h₀
+      simp only [Set.mem_ofPred_eq, Safe, abs_tuple] at h₀ ⊢
+      exact h₀ i
+    · obtain rfl := Option.some_injective _ hr
+      simp [Safe]
+    · obtain rfl := Option.some_injective _ hr
+      simp [Safe]
 
 /-- The protocol is bounded: its keys and session keys are the names it creates, and
 everything it sends is safe relative to them. -/
@@ -201,5 +234,19 @@ theorem system_bounded : system.Bounded (fun N => {m | Safe N m}) fun _ => True 
 theorem system_secret : query₁ :=
   Proc.secret_of_closed (S := fun N => {m | Safe N m}) safe_closed (fun _ _ hn => hn)
     system_bounded fun N h => by simp [Safe] at h
+
+/-! ## Tuples and booleans, written by hand -/
+
+/-- `in(c, (x, y)); out(c, (y, x, true))`.  `Tuple.ofMsg` reads the pair, and bound with
+`←` its failure stops the process, as ProVerif's `let` without `else` does; a product or a
+boolean where a message is expected is the tuple or the constant. -/
+def swap : Proc T.Msg :=
+  .run do
+    let m ← .recv c
+    let (x, y) ← Tuple.ofMsg (T.Msg × T.Msg) m
+    .send c (y, x, (true : T.Msg))
+
+theorem swap_mem_tree : swap ∈ Descriptive.tree (Act T.Msg) := by
+  aesop (add norm simp [swap])
 
 end ProVerif.TraceSemantics.Examples

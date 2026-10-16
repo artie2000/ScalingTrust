@@ -18,9 +18,10 @@ the rest of the folder.
 | Module | Contents |
 | --- | --- |
 | `ProVerif.TraceSemantics.Process` | Actions, processes as trace sets, interleaving and communication, `!P = P \| !P`, `do`-notation |
-| `ProVerif.TraceSemantics.Term` | Message algebras from ProVerif declarations: terms, the equations, `Theory.Msg`, views, destructors, `MsgAlgebra` |
-| `ProVerif.TraceSemantics.Security` | The attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Proc.Secret` and `Proc.Corr`, the closed-set method and `Proc.Bounded`; the Dolev–Yao model of a message algebra |
-| `ProVerif.TraceSemantics.Examples` | The proof of the secrecy query of `DenningSacco`, the translated model in `../Translation/Examples/`; an attack on `out(c, s)` |
+| `ProVerif.TraceSemantics.Term` | Messages from ProVerif declarations: terms, the equations, `Theory.Msg`, views, destructors |
+| `ProVerif.TraceSemantics.Data` | The data symbols, tuples and booleans: added to a signature by `Sig.withData` and to a theory by `Theory.withData`, the standard operations `StdOps` they give the messages, and products and `Bool` as messages for protocols written by hand |
+| `ProVerif.TraceSemantics.Security` | The attacker's operations `Attacker` as a class on a message type; bounded traces and processes; the attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Proc.Secret` and `Proc.Corr`, the closed-set method; the attacker of a model from its public declarations, `Attacker.ofDecls` |
+| `ProVerif.TraceSemantics.Examples` | The proof of the secrecy query of `DenningSacco`, the translated model in `../Translation/Examples/`; an attack on `out(c, s)`; a process written by hand with tuples and a boolean |
 
 `Examples` is the test of the semantics: it imports the translation of the
 survey's running example from `../Translation/Examples/` and proves its query.
@@ -37,8 +38,9 @@ communication `comm c m`, `new n`, whose name is `Names.nonce n`, and `event e`.
 The offers are the unfinished actions (`Act.Unfinished`); a trace with none is
 one in which every offer met a partner. Processes are written for any message
 type `M` with `Names M`, and the attacker and the security properties for any
-closure operator `derive` on `Set M` besides; a translated model with algebra
-`A` uses `A.Msg` and `A.derive`.
+`M` with an `Attacker M` instance besides, the attacker's operations being
+canonical for a type of messages; a translated model declares the instance its
+public declarations give.
 
 **Processes.** `Proc M` is `Set (List (Act M))`; every process built here is
 prefix-closed (Mathlib's `Descriptive.tree`; `aesop` proves it of a translated
@@ -49,7 +51,9 @@ longer traces. `Proc.out`, `Proc.inp`, `Proc.new` and
 `Proc.event` prepend an action and `Proc.nil` is `0`; `Proc.new` creates a
 name that the rest of the process does not create again. The `do`-notation in
 which translated processes are written is built from these in the continuation
-monad.
+monad. An `Option`, such as a destructor's result, is bound with `←` and stops
+the process when it is `none` (`Proc.ofOption`): ProVerif's `let` without
+`else`.
 
 **Parallel composition.** Two stages. First the component traces
 `f : ι → Trace M` are interleaved into a tagged trace `s : TaggedTrace ι M`:
@@ -73,11 +77,31 @@ written. A predicate on messages has to respect `E`; `Theory.Satisfies.lift` pro
 from any structure that satisfies the equations, and that is how the closed
 sets of secrecy proofs are defined.
 
-**The attacker.** For a message algebra `A` the attacker is the Dolev–Yao
-attacker: what it can deduce from a set of messages, `A.derive`, is the least
-superset closed under the public operations `A.ops` (`deriveOfOps`),
-ProVerif's `attacker` predicate (survey §3.2.2); an argument may be `fail`
-(`none`), which the attacker can always write. `Enemy derive K` is the most general
+The messages of a model are `T.withData.Msg`, for `T` the theory of its
+declarations: `Theory.withData` adds the data symbols that ProVerif builds into
+every term algebra, a tuple constructor of every arity and the two booleans,
+which give the messages their standard operations, the `StdOps` instance.
+`Theory.withData_satisfies` says that they still satisfy the equations of `T`,
+and `Theory.satisfies_withData_iff` that a structure for the extended signature
+satisfies `T.withData` when, read through the inclusion, it satisfies `T`;
+`Examples.shape_satisfies` uses it. For protocols written by hand, a product of
+messages `(m₁, …, mₙ)` where a message is expected is the `n`-tuple (the class
+`Tuple` and the coercion `Tuple.toMsg`), `Tuple.ofMsg (M × ⋯ × M)` reads the
+components back, and a `Bool` is the constant `StdOps.ofBool`; the components
+of a product are messages, so a nested tuple or a boolean inside one carries
+its type, as `((a, b) : M)`. `Examples.swap` is `in(c, (x, y)); out(c, (y, x,
+true))` written this way.
+
+**The attacker.** The attacker is the Dolev–Yao attacker: its operations,
+each of some arity on may-fail arguments, are the `Attacker` instance of the
+message type, and what it can deduce from a set of messages, `Attacker.derive`,
+is the least superset closed under them (`deriveOfOps`), ProVerif's `attacker`
+predicate (survey §3.2.2); an argument may be `fail` (`none`), which the
+attacker can always write. `Attacker.ofDecls` builds the instance of a model
+from its public declarations, the constructors and free names not marked
+`[private]` and the public destructors, together with the standard operations,
+`StdOps.ops`: the tuples, their projections and the booleans, which the attacker
+always has. `Enemy K` is the most general
 intruder as a process: knowing `K`, it may receive on any channel it can derive
 (learning the message), send anything it can derive on any channel it can
 derive, to the protocol or to itself, and create names. `t.attackerKnowledge K` reads its knowledge off a
@@ -90,13 +114,13 @@ adversary `Q` at once. A prefix of an attack is an attack
 (`Proc.attacks_mem_tree`), so a property of every attack is a property of
 every point of every attack. The facts of a query, `Fact`, are events and
 `knows m`, and `Fact.Holds` says whether one holds after an attack.
-`P.Secret derive s` says that in no attack does the attacker come to know `s`.
-`P.Corr derive F H` says that in every attack in which an instance `F σ` holds,
+`P.Secret s` says that in no attack does the attacker come to know `s`.
+`P.Corr F H` says that in every attack in which an instance `F σ` holds,
 `H σ'` holds for some `σ'` with `F σ' = F σ`, so by the time `F σ` does.
 `Examples.leak_attack` exhibits an attack.
 
 **The closed-set method.** `Proc.secret_of_closed` proves secrecy. A family of
-`derive`-closed sets `S N`, indexed by the set `N` of the names the protocol
+derivation-closed sets `S N`, indexed by the set `N` of the names the protocol
 creates in an attack, bounds everything the attacker can ever know, provided
 `S N` contains every name outside `N` and the protocol is bounded by `S`
 (`Proc.Bounded`): each of its traces sends only messages in `S N`, for every `N`
@@ -110,8 +134,9 @@ message received to `S N`, and `Proc.Bounded.out` asks that the message sent lie
 in `S N`. `Examples.system_secret` proves `DenningSacco.query₁`, the translated
 Denning–Sacco model's `query attacker(s)`, this way, with `S N` the messages in
 which `s` and the names in `N` occur only hashed, under `pk`, encrypted under a
-name in `N`, or signed with one and encrypted for one; `Examples.Shape` is the
-structure on which that set is defined so that it respects the equation.
+name in `N`, or signed with one and encrypted for one, a tuple being safe when
+its components are; `Examples.Shape` is the structure on which that set is
+defined so that it respects the equation.
 
 ## Design decisions
 
@@ -141,7 +166,7 @@ structure on which that set is defined so that it respects the equation.
   `(N_pub, N_priv)`. Here a free name is a nullary constructor, as the ProVerif
   manual treats it (§6.7.3: a free name, a constant and a top-level bound name
   "all declare a constant"), and only the names `new` creates are names. So
-  the `MsgAlgebra` alone says what is public, and the attacker starts from `∅`, the public
+  the `Attacker` instance alone says what is public, and the attacker starts from `∅`, the public
   free names being derivable from nothing. The survey's Def. 3.2, whose public
   channel must be a name, is the one definition this changes; see `Secret`.
 * **Freshness by index.** Rather than "the new name occurs nowhere", the
