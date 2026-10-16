@@ -5,7 +5,7 @@ import Mathlib.Data.Fin.VecNotation
 import Mathlib.Data.Nat.Notation
 import Mathlib.Data.Set.Defs
 import Mathlib.Tactic.FinCases
-import ScalingTrust.ProVerif.Translation.Model
+import ScalingTrust.ProVerif.Translation.Parser
 
 /-!
 # Emitting the translation
@@ -1329,19 +1329,16 @@ def emitFile (ns src : String) : EmitM String := do
 /-- Translate the text of the model `src`, in the environment `env`, which must import
 this module, to the source of a Lean file in the namespace `ns`. -/
 def translate (env : Environment) (src text ns : String) : IO (Except String String) := do
-  match parse env text src with
-  | .error e => return .error e
-  | .ok stx =>
-    match Model.ofSyntax (adapt text).toFileMap stx with
-    | .error e => return .error s!"{src}:{e}"
-    | .ok m =>
-      match mkCtx m with
-      | .error e => return .error s!"{src}: {e}"
-      | .ok ctx =>
-        try
-          let (s, _) ← (((emitFile ns src).run ctx).run' {}).toIO
-            { fileName := src, fileMap := default } { env }
-          return .ok s
-        catch e => return .error s!"{src}: {e}"
+  match Parser.parse text with
+  | .error e => return .error s!"{src}:{e}"
+  | .ok m =>
+    match mkCtx m with
+    | .error e => return .error s!"{src}: {e}"
+    | .ok ctx =>
+      try
+        let (s, _) ← (((emitFile ns src).run ctx).run' {}).toIO
+          { fileName := src, fileMap := default } { env }
+        return .ok s
+      catch e => return .error s!"{src}: {e}"
 
 end ProVerif.Translation

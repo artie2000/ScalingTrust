@@ -8,19 +8,18 @@ the API of the trace semantics, so that its security properties are proved as
 ordinary Lean theorems; the translator does not go through the syntax of
 `../Specification/`.
 
-The translator uses Lean's own machinery at both ends. It parses with Lean's
-parser, the fragment being declared as syntax categories, and it produces source
-by building Lean syntax with quotations and printing it with Lean's pretty
-printer. `Examples/DenningSacco.lean` is the survey's running example translated
-by the program; `ProVerif.TraceSemantics.Examples` imports it and proves its
-query.
+The translator reads a model with a parser of its own, written with the parser
+combinators of `Std.Internal.Parsec`, and produces source by building Lean syntax
+with quotations and printing it with Lean's pretty printer.
+`Examples/DenningSacco.lean` is the survey's running example translated by the
+program; `ProVerif.TraceSemantics.Examples` imports it and proves its query.
 
 ## Modules
 
 | Module | Contents |
 | --- | --- |
-| `ProVerif.Translation.Syntax` | The fragment as syntax categories (`pv_term`, `pv_proc`, `pv_fact`, `pv_decl`, `pv_model`), the lexical adaptation `adapt` and `parse` |
-| `ProVerif.Translation.Model` | The abstract model, types erased, and `Model.ofSyntax`, which reads it off the parsed text |
+| `ProVerif.Translation.Model` | The abstract model, types erased, and its printing |
+| `ProVerif.Translation.Parser` | The lexer and the parser of the fragment, with `Std.Internal.Parsec`: `Lexer.lex` and `parse` |
 | `ProVerif.Translation.Emit` | The recipe: Lean commands for a model, the definitions and the theorems about them, assembled by `emitFile`; `translate` runs the whole translation |
 | `ProVerif.Translation.Main` | The entry point |
 | `Examples/` | `DenningSacco.pv` and `Features.pv`, and their translations, which `ScalingTrust.ProVerif` imports so that the build checks them |
@@ -69,14 +68,12 @@ none with `&&`, `||`, `inj-event`, nested correspondences or `secret`. A model
 whose symbols include a name the translation uses, listed in `Emit.reserved`,
 is rejected too.
 
-Lean's tokenizer reads the model. Its identifiers are Lean's, so an identifier
-that is a reserved word of Lean, such as `at`, does not parse. `adapt` rewrites
-the two lexical conventions ProVerif does not share with Lean: comments, which
-may nest, and the `.` ending a declaration right after the process `0`, which Lean
-would read as part of a number. The precedences of processes are the manual's
-(§3.1.4): `|` binds most closely, then `if` and `let`, and `!`, `new`, `in`,
+The lexer reads identifiers, numerals and symbols, the longest symbol first, and
+skips comments, which may nest. ProVerif's reserved words are not identifiers,
+and nothing else is reserved. The precedences of processes are the manual's
+(§3.1.4): `|` is the one infix form, left-associative, and `!`, `new`, `in`,
 `out` and `event` extend to the right as far as possible, so `! P | Q` is
-`!(P | Q)`.
+`!(P | Q)`. A parse error names the line and column of the token it is at.
 
 ## The recipe
 
