@@ -51,19 +51,23 @@ and likewise for `Features`; run the same after changing the translator.
 The declarations `type`, `set`, `channel`, `free`, `const`, `fun` with the
 options `private`, `data` and `typeConverter`, `reduc` and `fun … reduc …
 otherwise …` with may-fail variables and the constant `fail`, `equation`,
-`event`, `let` process macros and `query`; the processes `0`, `P | Q`, `!P`,
-`new`, `in` and `out`, `event`, macro calls, `let x = D in P else Q` and
-`if D = D' then P else Q` or `if D <> D' then P else Q`; and the queries `F`,
-`F ==> false` and `F ==> H` for single facts `F` and `H`, `attacker(M)` or an
-event, possibly in parentheses, with variables declared before them. Terms are
-identifiers and applications; `(M)` is `M`.
+`event`, `let` process macros, `letfun` function macros and `query`; the
+processes `0`, `P | Q`, `!P`, `new`, `in` and `out`, `event`, macro calls,
+`let x = D in P else Q` and `if D = D' then P else Q` or
+`if D <> D' then P else Q`; and the queries `F`, `F ==> false` and `F ==> H` for
+single facts `F` and `H`, `attacker(M)` or an event, possibly in parentheses,
+with variables declared before them. Terms are identifiers and applications,
+`(M)` is `M`, and in a process position also the enriched terms of the manual's
+§4.1.4: `new a; M`, `event e(M…); M`, `if M = N then M' else M''` or with `<>`,
+and `let x = M in M' else M''`, an absent `else` being `fail`.
 
 Not translated: tuples and numerals, patterns other than a variable in `in` and
-`let`, booleans and the boolean operators as terms (`if D then P` has to compare),
-`letfun`, `let` in equations and rules, tables, phases, and queries other than
-the three above, so none with `&&`, `||`, `inj-event`, nested correspondences or
-`secret`. A model whose symbols include a name the translation uses, listed in
-`Emit.reserved`, is rejected too.
+`let`, booleans and the boolean operators as terms (an `if`, in a process or in
+a term, has to compare), may-fail parameters of macros, `let` in equations and
+rules, tables, predicates, phases, and queries other than the three above, so
+none with `&&`, `||`, `inj-event`, nested correspondences or `secret`. A model
+whose symbols include a name the translation uses, listed in `Emit.reserved`,
+is rejected too.
 
 Lean's tokenizer reads the model. Its identifiers are Lean's, so an identifier
 that is a reserved word of Lean, such as `at`, does not parse. `adapt` rewrites
@@ -128,7 +132,27 @@ A model is translated piece by piece, types erased as in the survey's semantics.
    `t₀`, with `Proc.stop` for `none`, and `if M = N then P else Q` is then a Lean
    `if` on the equation of messages. Variables keep their names, prefixed with
    `_` when nothing uses them. The process never uses `Theory.Msg.name`.
-7. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
+7. **Terms with effects**, the enriched terms, are emitted as the elements of
+   the enclosing block that perform their effects, followed by their value,
+   which the process then uses as in item 6: `new a; M` is `Proc.fresh`,
+   `event e(M…); M` is `Proc.emit`, and `let x = M in M'` with an `M` that
+   cannot fail is a Lean `let`. The order and the failure rules are those of
+   the manual's Appendix B (Figure B.1), which `../Specification/` does not yet
+   cover: the effects of every argument of an application run, left to right,
+   before a failure propagates, and so do those of the channel of an output
+   before those of its message; an event whose argument fails is not emitted
+   and its continuation does not run; a conditional whose condition fails runs
+   neither branch; a term evaluation whose term fails runs its `else` branch.
+   Where the effects depend on a test, the test and what follows it become a
+   sub-block bound to a fresh `tᵢ` by `←`, returning `Option T.Msg` when the
+   term may fail: the branches of a conditional or of a term evaluation when
+   either has effects, an event whose argument may fail, and a call of a
+   function macro with effects on an argument that may fail. Branches without
+   effects stay a Lean `if` or `match` on the value. A **function macro**
+   (`letfun`) becomes a function of its parameters: to its value, of type
+   `T.Msg` or `Option T.Msg`, when its body has no effects, and to a block in
+   `Cont (Proc T.Msg)` otherwise, so that a call with effects is bound by `←`.
+8. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
    with `attacker(M)` as `Fact.knows M` and `event(e(M))` as `Fact.event (e M)`.
    `query F` and `query F ==> false` both ask that `F` never holds: for
    `attacker(M)` this is `system.Secret alg.derive M`, and for an event it is
@@ -137,7 +161,7 @@ A model is translated piece by piece, types erased as in the survey's semantics.
    facts are functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
    variables, the inductive type `Varsᵢ`, and a never-holds query with variables
    is quantified over `σ`.
-8. **Theorems**, with generated proofs:
+9. **Theorems**, with generated proofs:
    * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
      instantiating `Theory.satisfies_msg` at the raw equation and evaluating
      both sides with `Term.realize_func_comp`, `comp_vecCons` and
@@ -158,7 +182,7 @@ A model is translated piece by piece, types erased as in the survey's semantics.
      backwards it substitutes and computes, with a lemma per earlier rule that
      it matches only as its disjunct says;
    * `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)`, by `aesop`
-     unfolding the macros and `system`.
+     unfolding the function macros, the process macros and `system`.
 
 Every binder the translation introduces carries a subscript, `x₀`, `a₀`, `t₀`,
 `u₀`, `σ`, and in proofs `h₀`, `hv₀`, `e₀`, `f₀`, `i₀`, `n₀`, which no ProVerif

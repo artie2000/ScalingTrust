@@ -28,11 +28,13 @@ inductive Fun : ℕ → Type
   | empty : Fun 0
   | yes : Fun 0
   | no : Fun 0
+  | pair : Fun 2
   | senc : Fun 2
   | n2b : Fun 1
   | tag : Fun 1
   | Sent : Fun 1
   | Received : Fun 1
+  | Stamped : Fun 1
 
 /-- No equations. -/
 def E : Set (Term Fun × Term Fun) :=
@@ -68,6 +70,9 @@ def yes : T.Msg :=
 def no : T.Msg :=
   .app .no ![]
 
+def pair (x₀ x₁ : T.Msg) : T.Msg :=
+  .app .pair ![x₀, x₁]
+
 def senc (x₀ x₁ : T.Msg) : T.Msg :=
   .app .senc ![x₀, x₁]
 
@@ -81,6 +86,9 @@ def Sent (x₀ : T.Msg) : T.Msg :=
 
 def Received (x₀ : T.Msg) : T.Msg :=
   .app .Received ![x₀]
+
+def Stamped (x₀ : T.Msg) : T.Msg :=
+  .app .Stamped ![x₀]
 
 /-! ## Destructors -/
 
@@ -281,6 +289,7 @@ def pub : ∀ n, Fun n → Prop
   | _, .tag => False
   | _, .Sent => False
   | _, .Received => False
+  | _, .Stamped => False
   | _, _ => True
 
 /-- The public constructors, including the public free names, and the public destructors. -/
@@ -290,6 +299,18 @@ abbrev alg : MsgAlgebra Fun where
   pubDtors :=
     {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => eq (a 0) (a 1)⟩,
       ⟨3, fun a => test (a 0) (a 1) (a 2)⟩, ⟨1, fun a => catchfail (a 0)⟩}
+
+/-! ## Function macros -/
+
+/-- `stamp(x) = event Stamped(x); x` -/
+def stamp (x : T.Msg) : Cont (Proc T.Msg) T.Msg := do
+  .emit (Stamped x)
+  pure x
+
+/-- `wrap(x, k) = new r; senc(pair(x, n2b(r)), k)` -/
+def wrap (x k : T.Msg) : Cont (Proc T.Msg) T.Msg := do
+  let r ← .fresh
+  pure (senc (pair x r) k)
 
 /-! ## The process -/
 
@@ -308,6 +329,30 @@ def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   | none =>
     .send c empty
 
+def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
+  let y ← .recv c
+  let t₂ ←
+    match sdec y k with
+    | some t₃ =>
+      if t₃ = empty then
+        let t₀ ← stamp y
+        pure (some t₀)
+      else
+        let t₁ ← wrap y k
+        pure (some t₁)
+    | none =>
+      pure none
+  match t₂ with
+  | some z =>
+    .send c z
+  | none =>
+    let t₄ ← stamp y
+    match sdec y k >>= fun t₅ => some (pair t₅ t₄) with
+    | some w =>
+      .send c w
+    | none =>
+      .send c y
+
 /-- The main process. -/
 def system : Proc T.Msg :=
   .run
@@ -316,32 +361,43 @@ def system : Proc T.Msg :=
       if ← .fork then
         if ← .fork then
           if ← .fork then
-            .repl
-            sender k
-          else
-            .repl
-            receiver k
-        else
-          let y ← .recv d
-          match catchfail (test (eq y empty) (some y) (some empty)) with
-          | some t₀ =>
-            if t₀ ≠ empty then
-              .send c y
+            if ← .fork then
+              if ← .fork then
+                .repl
+                sender k
+              else
+                .repl
+                receiver k
             else
+              .repl
+              relay k
+          else
+            let y ← .recv d
+            match catchfail (test (eq y empty) (some y) (some empty)) with
+            | some t₀ =>
+              if t₀ ≠ empty then
+                .send c y
+              else
+                .stop
+            | none =>
               .stop
+        else
+          let z ← .recv c
+          match sdec z k with
+          | some t₁ =>
+            .send c t₁
           | none =>
             .stop
       else
-        let z ← .recv c
-        match sdec z k with
-        | some t₁ =>
-          .send c t₁
-        | none =>
-          .stop)
+        let s ← .fresh
+        let t₂ ← wrap s k
+        let v := t₂
+        let t₃ ← stamp v
+        .send c (pair v t₃))
 
 /-- The main process is prefix-closed. -/
 theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [sender, receiver, system])
+  aesop  (add norm simp [stamp, wrap, sender, receiver, relay, system])
 
 /-! ## Queries -/
 
@@ -383,6 +439,15 @@ inductive Vars₅
 def query₅ : Prop :=
   ∀ σ : Vars₅ → T.Msg,
     ∀ t₀ ∈ system.Attacks alg.derive, ¬(Fact.event (Sent (σ .n))).Holds alg.derive t₀
+
+/-- The variables of `query x; event(Stamped(x)) ==> attacker(x)`. -/
+inductive Vars₆
+  | x
+
+/-- `query x; event(Stamped(x)) ==> attacker(x)` -/
+def query₆ : Prop :=
+  system.Corr alg.derive (fun σ : Vars₆ → T.Msg => Fact.event (Stamped (σ .x))) fun σ =>
+    Fact.knows (σ .x)
 
 end Features
 

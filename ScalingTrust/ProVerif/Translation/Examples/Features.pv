@@ -2,7 +2,10 @@
    rules and with may-fail arguments (the manual's eq, test and catchfail,
    §4.2.1), a type converter, a private channel and private constructors, a
    conditional, a destructor in an output, else branches, events, queries with
-   variables, and queries that a fact never holds. *)
+   variables, queries that a fact never holds, and terms with effects (§4.1.4):
+   function macros that create a name and emit an event, a conditional term whose
+   condition may fail, an event in an argument after a sibling that fails, and a
+   restriction and a term evaluation inside an output. *)
 
 type key.
 type nonce.
@@ -13,6 +16,7 @@ free d : channel [private].
 const empty : bitstring [data].
 const yes, no : bool.
 
+fun pair(bitstring, bitstring) : bitstring [data].
 fun senc(bitstring, key) : bitstring.
 reduc forall x : bitstring, k : key; sdec(senc(x, k), k) = x.
 
@@ -33,12 +37,17 @@ fun tag(nonce) : bitstring [private].
 
 event Sent(nonce).
 event Received(nonce).
+event Stamped(bitstring).
 
 query n : nonce; event(Received(n)) ==> event(Sent(n)).
 query n : nonce; attacker(tag(n)) ==> event(Sent(n)).
 query attacker(empty).
 query n : nonce; (attacker(tag(n))) ==> (false).
 query n : nonce; event(Sent(n)).
+query x : bitstring; event(Stamped(x)) ==> attacker(x).
+
+letfun stamp(x : bitstring) = event Stamped(x); x.
+letfun wrap(x : bitstring, k : key) = new r : nonce; senc(pair(x, n2b(r)), k).
 
 let sender(k : key) =
   new n : nonce;
@@ -54,10 +63,19 @@ let receiver(k : key) =
   else
     out(c, empty).
 
+let relay(k : key) =
+  in(c, y : bitstring);
+  let z = (if sdec(y, k) = empty then stamp(y) else wrap(y, k)) in
+    out(c, z)
+  else
+    let w = pair(sdec(y, k), stamp(y)) in out(c, w) else out(c, y).
+
 process
   new k : key;
   ( (!sender(k))
   | (!receiver(k))
+  | (!relay(k))
   | (in(d, y : bitstring);
      if catchfail(test(eq(y, empty), y, empty)) <> empty then out(c, y) else 0)
-  | (in(c, z : bitstring); out(c, sdec(z, k))) )
+  | (in(c, z : bitstring); out(c, sdec(z, k)))
+  | (out(c, new s : nonce; let v = wrap(n2b(s), k) in pair(v, stamp(v)))) )

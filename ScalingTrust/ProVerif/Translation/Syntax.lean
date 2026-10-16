@@ -33,11 +33,17 @@ open Lean
 
 An identifier is a variable, a free name or a constant, or `fail` in a rewrite rule.
 A parenthesised list is a tuple, which the translation rejects unless it has one
-element. -/
+element.  The enriched terms of the manual's §4.1.4 that the translation covers are
+a restriction, a conditional that compares two terms, a term evaluation binding a
+variable, and an event; each extends to the right as far as possible. -/
 
 syntax ident : pv_term
 syntax ident "(" pv_term,* ")" : pv_term
 syntax "(" pv_term,* ")" : pv_term
+syntax "new" ident (" : " ident)? "; " pv_term : pv_term
+syntax "if" pv_term (" = " <|> " <> ") pv_term " then " pv_term (" else " pv_term)? : pv_term
+syntax "let" ident (" : " ident)? " = " pv_term " in " pv_term (" else " pv_term)? : pv_term
+syntax "event" ident ("(" pv_term,* ")")? "; " pv_term : pv_term
 
 /-- `x, y : t`, or `x : t or fail` for a may-fail variable (manual §4.2.1). -/
 syntax pv_binders := ident,+ " : " ident (&"or" &"fail")?
@@ -91,6 +97,7 @@ syntax "reduc" pv_rule (";" pv_rule)* (pv_options)? "." : pv_decl
 syntax "equation" pv_rule (";" pv_rule)* (pv_options)? "." : pv_decl
 syntax "event" ident ("(" ident,* ")")? "." : pv_decl
 syntax "let" ident ("(" pv_binders,* ")")? " = " pv_proc "." : pv_decl
+syntax "letfun" ident ("(" pv_binders,* ")")? " = " pv_term "." : pv_decl
 syntax "query" (atomic(pv_qvars))? pv_query (";" pv_query)* (pv_options)? "." : pv_decl
 
 /-- A model: declarations, then `process` and the main process. -/

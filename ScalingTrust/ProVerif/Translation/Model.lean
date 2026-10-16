@@ -7,11 +7,11 @@ import ScalingTrust.ProVerif.Translation.Syntax
 # ProVerif models
 
 A model as the translation reads it, types erased: the free names, constructors,
-events, equations and destructors a ProVerif file declares, its process macros,
-its queries and its main process.  `Model.ofSyntax` reads one off the parsed
-text, and rejects what the fragment leaves out: tuples, numerals, patterns other
-than a variable, and queries other than a fact and a correspondence between two
-facts.
+events, equations and destructors a ProVerif file declares, its function and
+process macros, its queries and its main process.  `Model.ofSyntax` reads one off
+the parsed text, and rejects what the fragment leaves out: tuples, numerals,
+patterns other than a variable, may-fail parameters of macros, and queries other
+than a fact and a correspondence between two facts.
 -/
 
 namespace ProVerif.Translation
@@ -19,11 +19,17 @@ namespace ProVerif.Translation
 open Lean
 
 /-- A term: an identifier, which is a variable, a free name or a constant; an
-application; or `fail`, in rewrite rules. -/
+application; `fail`, in rewrite rules; or one of the enriched terms of the manual's
+§4.1.4, which evaluate with effects: a restriction, a conditional comparing two
+terms, a term evaluation and an event.  An absent `else` is `fail` (Appendix B). -/
 inductive Term where
   | ident (x : String)
   | app (f : String) (args : Array Term)
   | fail
+  | new (x : String) (M : Term)
+  | ite (l : Term) (eq : Bool) (r : Term) (N : Term) (N' : Option Term)
+  | «let» (x : String) (d : Term) (N : Term) (N' : Option Term)
+  | event (e : String) (args : Array Term) (M : Term)
   deriving Inhabited, Repr
 
 /-- `fun f(t₁, …, tₙ) : t` or `const c : t`, with its options. -/
@@ -97,6 +103,13 @@ structure Macro where
   body : Proc
   deriving Repr
 
+/-- `letfun f(x₁ : t₁, …) = M.`, a function macro (manual §4.2.3). -/
+structure Fn where
+  name : String
+  params : Array String
+  body : Term
+  deriving Repr
+
 /-- A model: its declarations, in order, and its main process. -/
 structure Model where
   /-- The free names, each marked if public. -/
@@ -106,6 +119,8 @@ structure Model where
   events : Array (String × Nat) := #[]
   equations : Array Equation := #[]
   dtors : Array Dtor := #[]
+  /-- The function macros, in order: each may call only the earlier ones. -/
+  fns : Array Fn := #[]
   macros : Array Macro := #[]
   queries : Array Query := #[]
   main : Proc := .nil
@@ -117,10 +132,28 @@ structure Model where
 def printApp (f : String) (args : Array String) : String :=
   if args.isEmpty then f else s!"{f}({", ".intercalate args.toList})"
 
+/-- Whether a term is an enriched one, printed in parentheses as an argument. -/
+def Term.enriched : Term → Bool
+  | .new .. | .ite .. | .let .. | .event .. => true
+  | _ => false
+
 partial def Term.print : Term → String
   | .ident x => x
-  | .app f args => s!"{f}({", ".intercalate (args.map print).toList})"
+  | .app f args => s!"{f}({", ".intercalate (args.map arg).toList})"
   | .fail => "fail"
+  | .new x M => s!"new {x}; {M.print}"
+  | .ite l eq r N N' =>
+    s!"if {l.print} {if eq then "=" else "<>"} {r.print} then {N.print}{orElse N'}"
+  | .let x d N N' => s!"let {x} = {d.print} in {N.print}{orElse N'}"
+  | .event e args M => s!"event {printApp e (args.map arg)}; {M.print}"
+where
+  arg (t : Term) : String := if t.enriched then s!"({t.print})" else t.print
+  orElse : Option Term → String
+    | none => ""
+    | some N' => s!" else {N'.print}"
+
+def Fn.print (f : Fn) : String :=
+  s!"{printApp f.name f.params} = {f.body.print}"
 
 def Fact.print : Fact → String
   | .attacker m => s!"attacker({m.print})"
@@ -161,6 +194,16 @@ partial def Term.ofSyntax (stx : TSyntax `pv_term) : ConvM Term :=
   | `(pv_term| $f:ident($args:pv_term,*)) => do
     return .app (← identStr f) (← args.getElems.mapM ofSyntax)
   | `(pv_term| ($t:pv_term)) => ofSyntax t
+  | `(pv_term| new $x:ident $[: $_t]? ; $M) => return .new (← identStr x) (← ofSyntax M)
+  | `(pv_term| if $l = $r then $N $[else $N']?) =>
+    return .ite (← ofSyntax l) true (← ofSyntax r) (← ofSyntax N) (← N'.mapM ofSyntax)
+  | `(pv_term| if $l <> $r then $N $[else $N']?) =>
+    return .ite (← ofSyntax l) false (← ofSyntax r) (← ofSyntax N) (← N'.mapM ofSyntax)
+  | `(pv_term| let $x:ident $[: $_t]? = $d in $N $[else $N']?) =>
+    return .let (← identStr x) (← ofSyntax d) (← ofSyntax N) (← N'.mapM ofSyntax)
+  | `(pv_term| event $e:ident $[($args:pv_term,*)]? ; $M) => do
+    let args ← (args.map (·.getElems)).getD #[] |>.mapM ofSyntax
+    return .event (← identStr e) args (← ofSyntax M)
   | _ => throwAt stx "unexpected term: tuples and numerals are not translated"
 
 /-- The variables of `x, y : t [or fail]`, each marked if it may fail. -/
@@ -313,6 +356,12 @@ def decl (m : Model) (stx : TSyntax `pv_decl) : ConvM Model :=
       throwAt stx s!"may-fail parameter `{x}` of a process macro"
     let mac : Macro := { name := ← identStr p, params := params.map (·.1), body := ← Proc.ofSyntax P }
     return { m with macros := m.macros.push mac }
+  | `(pv_decl| letfun $f:ident $[($bs:pv_binders,*)]? = $M .) => do
+    let params := (← (bs.map (·.getElems)).getD #[] |>.mapM binders).flatten
+    if let some (x, _) := params.find? (·.2) then
+      throwAt stx s!"may-fail parameter `{x}` of a function macro"
+    let fn : Fn := { name := ← identStr f, params := params.map (·.1), body := ← Term.ofSyntax M }
+    return { m with fns := m.fns.push fn }
   | `(pv_decl| query $[$vs:pv_qvars]? $q $[; $qs]* $[$_opts]? .) => do
     let vars ← match vs with
       | none => pure #[]
