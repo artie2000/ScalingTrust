@@ -83,7 +83,9 @@ The free constructors are the ones which may be used when destructor patterns. I
 
 The constants $\nu_k$ and constructors $f$ descend to $\mathcal{M}$ in the obvious way, and every substitution on constructor terms descends uniquely to one on messages.
 
-Adjoin a symbol $\bot$ to $\mathcal{M}$ to represent the failure of a computation; for $g:\mathcal{M}^n\to\mathcal{M}$, write $g^{\uparrow}$ for the extension to $\mathcal{M}_{\bot}^n\to\mathcal{M}_\bot$ which returns $\bot$ when any argument is $\bot$. We can now define destructors.
+Adjoin a symbol $\bot$ to $\mathcal{M}$ to represent the failure of a computation; for $g:\mathcal{M}^n\to\mathcal{M}$, write $g^{\uparrow}$ for the extension to $\mathcal{M}_{\bot}^n\to\mathcal{M}_\bot$ which returns $\bot$ when any argument is $\bot$.
+
+We now come to destructors, whose definition is a bit fiddly. The details are ultimately unimportant to the overall model.
 
 \begin{definition}[Destructor]\label{def:rules}
 A \textit{pattern} $p$ is given by
@@ -106,15 +108,17 @@ g(\vec u)=\begin{cases}
 
 Destructors are well-defined because, by construction, there is at most one valuation matching a pattern against a (possibly failing) term.
 
-The pattern $\nu_k$ represents a possibly-failing message $u\in\mathcal{M}_\bot$, $\lceil\nu_k\rceil$ represents a non-failing message $m\in\mathcal{M}$, $\bot$ represents $\bot$, and $\lceil f(t_1,\dots,t_n)\rceil$ represents $f(m_1,\dots,m_n)\in\mathcal{M}$ such that repeated variables are substituted the same.
+Intuitively, the pattern $\nu_k$ represents a possibly-failing message $u\in\mathcal{M}_\bot$, $\lceil\nu_k\rceil$ represents a non-failing message $m\in\mathcal{M}$, $\bot$ represents $\bot$, and $\lceil f(t_1,\dots,t_n)\rceil$ represents $f(m_1,\dots,m_n)\in\mathcal{M}$ such that repeated variables are substituted the same.
 
 \begin{definition}[Public operations]
 Fix a set of public constructors $\Pub\subseteq\bigcup_n\Sigma_n$ and public destructors $\Dt$. The \textit{public operations} $\mathcal{M}_\bot^n\to\mathcal{M}_\bot$ are $\Ops=\{f^{\uparrow}\mid f\in\Pub\}\cup\Dt$. Write $\langle S\rangle$ for the closure of $S\subseteq\mathcal{M}$ under public operations (possibly involving failing terms).
 \end{definition}
 
-Note that a public constant constructor lies in the closure of any set of messages.
+Our adversary will grow its knowledge by applying public operations to the messages it knows. Note that this automatically includes public constant constructors.
 
-\subsection{Traces and processes}
+\subsection{Processes and their traces}
+
+In our algebraic model of cryptographic protols, processes run computations on messages in parallel and exchange them over a hostile network. We represent a process by its possible traces: sequences of events which characterise the security properties of that run.
 
 \begin{definition}[Trace]
 An \textit{action} is given by
@@ -123,14 +127,18 @@ a\coloneqq\mathsf{out}(c,m)\mid\mathsf{in}(c,m)\mid\mathsf{comm}(c,m)\mid\mathsf
 \]
 where $c,m\in\mathcal{M}$ and $k\in\N$.
 
-A \textit{trace} is list of actions; write $\varepsilon$ for the empty trace and and $s\le t$ if $s$ is a prefix of $t$. A trace is \textit{closed} if it does not contain any "unfinished" actions $\mathsf{out}(c,m)$ or $\mathsf{in}(c,m)$. The set of nonces of a trace is the set of $\nu_k$ appearing in some $\mathsf{new}(\nu_k)$ in the trace. A \textit{process} is a prefix-closed set of actions.
+A \textit{trace} is list of actions; write $\varepsilon$ for the empty trace and and $s\le t$ if $s$ is a prefix of $t$. A trace is \textit{closed} if it does not contain any "unfinished" actions $\mathsf{out}(c,m)$ or $\mathsf{in}(c,m)$. A \textit{process} is a prefix-closed set of actions.
 \end{definition}
 
-\begin{definition}[Sequential constructors]\label{def:seq}
-For $a\in\Act$, $P\in\Proc$, $F:\mathcal{M}\to\Proc$:
+Write $\Act$ for the set of actions, $\Tr$ for the set of traces, and $\Proc$ for the set of processes.
+
+The actions $\mathsf{in}$ and $\mathsf{out}$ represent one side of a message transmission, while $\mathsf{comm}$ represents a completed communication between parallel sub-processes. The action $\mathsf{new}$ represents the creation of a nonce, and is necessary to prevent nonce collision when running processes in parallel. The action $\mathsf{ev}$ allows a process to raise an arbitrary event flag -- it's used to signal things like key leaks.
+
+\begin{definition}[Process constructors]\label{def:seq}
+We define the following standard processes. For an action $a$, a process $P$, and a map $F:\mathcal{M}\to\Proc$:
 \begin{align*}
-a\cdot P &= \{\varepsilon\}\cup\{a\,t\mid t\in P\}, &
-\mathbf{0} &= \{\varepsilon\},\\
+\mathbf{0} &= \{\varepsilon\}, &
+a\cdot P &= \{\varepsilon\}\cup\{a\,t\mid t\in P\},\\
 \mathsf{out}(c,m).P &= \mathsf{out}(c,m)\cdot P, &
 \mathsf{ev}(m).P &= \mathsf{ev}(m)\cdot P,\\
 \mathsf{in}(c).F &= \textstyle\bigcup_{m\in\mathcal{M}}\mathsf{in}(c,m)\cdot F(m), &
@@ -138,30 +146,23 @@ a\cdot P &= \{\varepsilon\}\cup\{a\,t\mid t\in P\}, &
 \end{align*}
 \end{definition}
 
-\begin{definition}[Parallel composition]\label{def:par}
-Let $I$ be a set. For $s\in(I\times\Act)^*$ and $i\in I$, $s{\restriction}i\in\Act^*$ is the word of actions of $s$ tagged $i$, in order, and $\overline{s}\in\Act^*$ is $s$ with tags removed. For $f:I\to\Act^*$, $\interleaves(f,s)$ holds if $s{\restriction}i=f(i)$ for all $i$. The relation $\comms\subseteq(I\times\Act)^*\times\Act^*$ is the least one such that
+By construction, the sets of traces remain prefix-closed. A trace should be interpreted as a \textbf{partial} execution of a process in an arbitrary network: arbitrary messages may be received, and outgoing messages may be intercepted. It remains to define parallel composition of processes, which is a bit more involved due to the need to keep track of completed communications.
+
+Fix an index set $I$. Given a "tagged trace" $s\in(I\times\Act)^*$ and $i\in I$, write $s{\restriction}i\in\Tr$ for the sub-trace of actions tagged $i$ and $\bar{s}\in\Tr$ for the trace with the tags forgotten. For a family of traces $\vec t:I\to\Tr$, the tagged trace $s$ \textit{interleaves} the $t_i$ if $s{\restriction}i=t_i$ for all $i$.
+
+Rather than simply forgetting the tags, we say a tagged trace $s$ \textit{reduces to} the trace $t$ if it satisfies the inductively-given relation
 \begin{align*}
-&\comms(\varepsilon,\varepsilon),\\
-&\comms(s,t)\Rightarrow\comms\big((i,a)\,s,\ a\,t\big),\\
-&\comms(s,t)\wedge i\ne j\Rightarrow\comms\big((i,\mathsf{out}(c,m))\,(j,\mathsf{in}(c,m))\,s,\ \mathsf{comm}(c,m)\,t\big).
+&\mathrel{\phantom{\Rightarrow}}s\to\bar{s},\\
+s\to t,i\ne j&\Rightarrow(i,\mathsf{out}(c,m))\,(j,\mathsf{in}(c,m))\,s\to\mathsf{comm}(c,m)\,t.
 \end{align*}
-For $P:I\to\Proc$,
-\begin{multline*}
-\mrg_I(P)=\{t\mid \exists f,s.\ (\forall i.\ f(i)\in P(i))\ \wedge\ \interleaves(f,s)\\
-\wedge\ \comms(s,t)\ \wedge\ \nonces(t)\text{ has no repeated letter}\}.
-\end{multline*}
-$P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P)$.
+
+\begin{definition}[Parallel composition]\label{def:par}
+Given a family $P:I\to\Proc$ of processes, a trace $t$ lies in their parallel composition $\mrg_I(P)$ if it has no repeated occurences of $\mathsf{new}(\nu_k)$ and there is a tagged trace $s$ and a family of traces trace $\vec u$ such that $u_i\in P_i$ for all $i$, $s$ interleaves $\vec u$, and $s$ reduces to $t$.
 \end{definition}
 
-\begin{proposition}\label{prop:comms}
-Let $\comms(s,t)$.
-\begin{enumerate}
-\item $\nonces(t)=\nonces(\overline{s})$.
-\item If $a$ occurs in $t$ then $(i,a)$ occurs in $s$ for some $i$, or $a=\mathsf{comm}(c,m)$ and $(i,\mathsf{out}(c,m))$, $(j,\mathsf{in}(c,m))$ occur in $s$ for some $i\ne j$.
-\item If $\Closed(t)$ and $(k,\mathsf{in}(c,m))$ occurs in $s$, then $(i,\mathsf{out}(c,m))$ occurs in $s$ for some $i\ne k$.
-\item $!P=P\mid{!P}$ for every $P\in\Proc$.
-\end{enumerate}
-\end{proposition}
+We write $P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P)$. We can prove that $!P=P\mid{!P}$.
+
+A trace in the parallel composition of several processes represents one possible parallel execution of these processes. Keep in mind that, since messages may be intercepted on the network, a communication between two parallel process may, or may not, be completed.
 
 \subsection{Translation of processes}
 
@@ -226,7 +227,7 @@ For $P\in\Proc$,
 \[
 \Attacks(P)=\{t\in P\mid\Enemy(\emptyset)\ :\ \Closed(t)\}.
 \]
-For $K\subseteq\mathcal{M}$, $\known(K,\cdot):\Act^*\to\mathcal{P}(\mathcal{M})$ is defined by
+For $K\subseteq\mathcal{M}$, $\known(K,\cdot):\Tr\to\mathcal{P}(\mathcal{M})$ is defined by
 \begin{align*}
 \known(K,\varepsilon)&=K,\\
 \known(K,a\,t)&=\known\big(\langle K\cup\{m\mid a=\mathsf{comm}(c,m),\ c\in K\}\rangle,\,t\big).
@@ -238,7 +239,7 @@ $\Enemy(K)$ and every process built from the constructors of Definitions~\ref{de
 \end{proposition}
 
 \begin{definition}[Facts, secrecy, correspondence]
-A \textit{fact} is $\pv{event}(e)$ or $\pv{knows}(m)$ with $e,m\in\mathcal{M}$; $\Fact$ is the set of facts. A fact \textit{holds} after $t\in\Act^*$, written $t\models f$, if
+A \textit{fact} is $\pv{event}(e)$ or $\pv{knows}(m)$ with $e,m\in\mathcal{M}$; $\Fact$ is the set of facts. A fact \textit{holds} after $t\in\Tr$, written $t\models f$, if
 \[
 t\models\pv{event}(e)\iff\mathsf{ev}(e)\in t,\qquad
 t\models\pv{knows}(m)\iff m\in\known(\langle\emptyset\rangle,t).
@@ -329,7 +330,7 @@ A \textit{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finit
 \end{align*}
 The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \textit{weak traces} is
 \[
-\Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Act^*\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\}.
+\Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Tr\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\}.
 \]
 \end{definition}
 
@@ -337,7 +338,7 @@ The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visib
 For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
-Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\mathcal{M}$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \textit{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\mathsf{ev}(\iota M)$ occurs in $t$.
+Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\mathcal{M}$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Tr$ say that $\mathrm{Tr}$ and $t$ \textit{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\mathsf{ev}(\iota M)$ occurs in $t$.
 
 \begin{theorem}[Attacks]\label{thm:A}
 Fix an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$, as well as a trace $t\in\mathcal{A}_0$.
