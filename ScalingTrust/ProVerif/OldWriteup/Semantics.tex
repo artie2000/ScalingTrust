@@ -108,26 +108,22 @@ Destructors are well-defined because, by construction, there is at most one valu
 
 The pattern $\nu_k$ represents a possibly-failing message $u\in\mathcal{M}_\bot$, $\lceil\nu_k\rceil$ represents a non-failing message $m\in\mathcal{M}$, $\bot$ represents $\bot$, and $\lceil f(t_1,\dots,t_n)\rceil$ represents $f(m_1,\dots,m_n)\in\mathcal{M}$ such that repeated variables are substituted the same.
 
-\begin{definition}[Public operations, deduction]
-Let $\Pub\subseteq\bigcup_n\Sigma_n$ and let $\Dt$ be a set of destructors. Set $\Ops=\{f^{\uparrow}\mid f\in\Pub\}\cup\Dt$. A set $S\subseteq\mathcal{M}$ is \textit{$\Ops$-closed} if for every $o\in\Ops$ of arity $n$ and every $\vec u\in(S\uplus\{\bot\})^n$, $o(\vec u)\in\mathcal{M}$ implies $o(\vec u)\in S$. For $K\subseteq\mathcal{M}$,
-\[
-\langle K\rangle=\bigcap\{S\supseteq K\mid S\text{ is $\Ops$-closed}\},
-\qquad
-K\vdash m\iff m\in\langle K\rangle .
-\]
+\begin{definition}[Public operations]
+Fix a set of public constructors $\Pub\subseteq\bigcup_n\Sigma_n$ and public destructors $\Dt$. The \textit{public operations} $\mathcal{M}_\bot^n\to\mathcal{M}_\bot$ are $\Ops=\{f^{\uparrow}\mid f\in\Pub\}\cup\Dt$. Write $\langle S\rangle$ for the closure of $S\subseteq\mathcal{M}$ under public operations (possibly involving failing terms).
 \end{definition}
 
-\begin{proposition}
-$\langle\cdot\rangle$ is a closure operator on $\mathcal{P}(\mathcal{M})$, $\langle K\rangle$ is $\Ops$-closed, and $K\vdash m_1,\dots,K\vdash m_n$ imply $K\vdash f(m_1,\dots,m_n)$ for $f\in\Pub\cap\Sigma_n$. In particular $\emptyset\vdash a$ for $a\in\Pub\cap\Sigma_0$.
-\end{proposition}
+Note that a public constant constructor lies in the closure of any set of messages.
 
 \subsection{Traces and processes}
 
-\begin{definition}[Actions, traces]
+\begin{definition}[Trace]
+An \textit{action} is given by
 \[
-\Act=\{\mathsf{out}(c,m),\ \mathsf{in}(c,m),\ \mathsf{comm}(c,m),\ \mathsf{new}(k),\ \mathsf{ev}(m)\mid c,m\in\mathcal{M},\ k\in\N\}.
+a\coloneqq\mathsf{out}(c,m)\mid\mathsf{in}(c,m)\mid\mathsf{comm}(c,m)\mid\mathsf{new}(\nu_k)\mid\mathsf{ev}(m),
 \]
-A \textit{trace} is a word $t\in\Act^*$; $\varepsilon$ is the empty trace and $l\le t$ means $l$ is a prefix of $t$. The actions $\mathsf{out}(c,m)$ and $\mathsf{in}(c,m)$ are \textit{unfinished}; $\Closed(t)$ holds if no action of $t$ is unfinished. $\nonces(t)\in\N^*$ is the image of $t$ under the monoid homomorphism with $\mathsf{new}(k)\mapsto k$ and every other action $\mapsto\varepsilon$. A \textit{process} is a subset of $\Act^*$; $\Proc=\mathcal{P}(\Act^*)$.
+where $c,m\in\mathcal{M}$ and $k\in\N$.
+
+A \textit{trace} is list of actions; write $\varepsilon$ for the empty trace and and $s\le t$ if $s$ is a prefix of $t$. A trace is \textit{closed} if it does not contain any "unfinished" actions $\mathsf{out}(c,m)$ or $\mathsf{in}(c,m)$. The set of nonces of a trace is the set of $\nu_k$ appearing in some $\mathsf{new}(\nu_k)$ in the trace. A \textit{process} is a prefix-closed set of actions.
 \end{definition}
 
 \begin{definition}[Sequential constructors]\label{def:seq}
