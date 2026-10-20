@@ -145,7 +145,7 @@ We say a tagged trace $s$ \textit{reduces to} the trace $t$ if it satisfies $s\t
 \[(i,\mathsf{out}(c,m))\,(j,\mathsf{in}(c,m))\,s\to\mathsf{comm}(c,m)\,t.\]
 
 \begin{definition}[Parallel composition]\label{def:par}
-Given a family $P:I\to\Proc$ of processes, a trace $t$ lies in their parallel composition $\mrg_I(P)$ if it has no repeated occurences of $\mathsf{new}(\nu_k)$ and there is a tagged trace $s$ and a family of traces trace $\vec u$ such that $u_i\in P_i$ for all $i$, $s$ interleaves $\vec u$, and $s$ reduces to $t$.
+Given a family $P:I\to\Proc$ of processes, a trace $t$ lies in their parallel composition $\mrg_I(P)$ if it has no repeated occurences of $\mathsf{new}(\nu_k)$ and there is a family of traces $\vec u$ and a tagged trace $s$ such that $u_i\in P_i$ for all $i$, $s$ interleaves $\vec u$, and $s$ reduces to $t$.
 \end{definition}
 
 We write $P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P)$. We can prove that $!P=P\mid{!P}$.
