@@ -31,12 +31,11 @@
 \newcommand{\nonces}{\operatorname{nonces}}
 \newcommand{\comms}{\operatorname{comms}}
 \newcommand{\mrg}{\operatorname{merge}}
-\newcommand{\Enemy}{\mathrm{Enemy}}
+\newcommand{\Adversary}{\mathrm{Adversary}}
 \newcommand{\Attacks}{\operatorname{Attacks}}
 \newcommand{\Secret}{\operatorname{Secret}}
 \newcommand{\Corr}{\operatorname{Corr}}
 \newcommand{\sem}[1]{\llbracket #1 \rrbracket}
-\newcommand{\pv}[1]{\mathsf{#1}}
 \newcommand{\fn}{\operatorname{fn}}
 \newcommand{\Tr}{\operatorname{Tr}}
 \newcommand{\interleaves}{\operatorname{Interleaves}}
@@ -53,7 +52,7 @@ ProVerif is a tool for reasoning about cryptographic security in a symbolic mode
 
 We formalise the ProVerif process calculus in Lean. Rather than copying the specification, we use a shallow translation in order to make security proofs simpler down the line. This means that we make use of existing Lean syntax and constructs where possible. In particular, some invariants are enforced only by what terms can arise from translating a valid ProVerif program. We also deviate from the calculus when sticking exactly to the specification would complicate the design.
 
-We use a trace-based semantics to encode the possible outcomes of parallel processes communicating on a network. The attacker is modelled as a set of traces satisfying informational constraints. Our trace semantics are good enough to express secrecy and simple ProVerif queries relating events. However, it is strictly less expressive than the formal operational semantics of ProVerif; in particular, we cannot express observational equivalence. 
+We use a trace-based semantics to encode the possible outcomes of parallel processes communicating on a network. The adversary is modelled as a set of traces satisfying informational constraints. Our trace semantics are good enough to express secrecy and simple ProVerif queries relating events. However, it is strictly less expressive than the formal operational semantics of ProVerif; in particular, we cannot express observational equivalence. 
 
 We give a mathematical account of the Lean development, and of the formal translation from terms in ProVerif's process calculus to our traces. Everything has been formalised in Lean.
 
@@ -73,7 +72,7 @@ In order to define deterministic destructors later, we must restrict the kinds o
 
 Fix a set of \textit{free} constructors. A set of equations $E\subseteq\mathcal{T}\times\mathcal{T}$ is \textit{valid} if, for every $(l,r)\in E$, both $l$ and $r$ are of the form $f(\dots)$ with $f$ not free.
 
-A \textit{substitution} on terms is a homomorphic extension of a map $\{\nu_k\}\to\mathcal{T}$ on variables. Given a set of equations $E$, define $\equiv_{E}$ to be the least equivalence relation on constructor terms that contains $E$ and is closed under substitutions and constructor applications.
+A \textit{substitution} on terms is a homomorphic extension of a valuation $\{\nu_k\}\to\mathcal{T}$ on variables. Given a set of equations $E$, define $\equiv_{E}$ to be the least equivalence relation on constructor terms that contains $E$ and is closed under substitutions and constructor applications.
 
 The free constructors are the ones which may be used when destructor patterns. In other words, the head symbols on either side of an equation cannot appear in any destructor's patterns.
 
@@ -87,7 +86,7 @@ Adjoin a symbol $\bot$ to $\mathcal{M}$ to represent the failure of a computatio
 
 We now come to destructors, whose definition is a bit fiddly. The details are ultimately unimportant to the overall model.
 
-\begin{definition}[Destructor]\label{def:destructor}
+\begin{definition}[Destructors]\label{def:destructor}
 A \textit{pattern} $p$ is given by
 \[p\Coloneqq\nu_k\mid\bot\mid\lceil T\rceil,\]
 where $T\in\mathcal{T}$. We extend a valuation $\theta:\{\nu_k\}\to\mathcal{M}_\bot$ to a pattern in the obvious way, except that we only define the extension to $\lceil T\rceil$ if $\theta(\nu_k)\ne\bot$ for all $\nu_k$ appearing in $T$. We say $\theta$ \textit{matches} $p$ with $u\in\mathcal{M}_\bot$ if $\theta(p)=u$.
@@ -120,7 +119,7 @@ Our adversary will grow its knowledge by applying public operations to the messa
 
 In our algebraic model of cryptographic protols, processes run computations on messages in parallel and exchange them over a hostile network. We represent a process by its possible traces: sequences of events which characterise the security properties of that run.
 
-\begin{definition}[Trace]
+\begin{definition}[Traces]
 An \textit{action} is given by
 \[
 a\coloneqq\mathsf{out}(c,m)\mid\mathsf{in}(c,m)\mid\mathsf{comm}(c,m)\mid\mathsf{new}(\nu_k)\mid\mathsf{ev}(m),
@@ -146,7 +145,7 @@ a\cdot P &= \{\varepsilon\}\cup\{a\,t\mid t\in P\},\\
 \end{align*}
 \end{definition}
 
-A trace of a process should be interpreted as a \textbf{partial} execution of that process in an arbitrary network: arbitrary messages may be received, outgoing messages may be intercepted, and the process may stop at any time. It remains to define parallel composition of processes, which is a bit more involved due to the need to keep track of completed communications.
+A trace of a process should be interpreted as a \textbf{partial} execution of that process in an arbitrary network: arbitrary messages may be received from the adversary, outgoing messages may be intercepted by the adversary, and the process may stop at any time. It remains to define parallel composition of processes, which is a bit more involved due to the need to keep track of completed communications.
 
 Fix an index set $I$. Given a "tagged trace" $s\in(I\times\Act)^*$ and $i\in I$, write $s{\restriction}i\in\Tr$ for the sub-trace of actions tagged $i$ and $\bar{s}\in\Tr$ for the trace with the tags forgotten. For a family of traces $\vec t:I\to\Tr$, the tagged trace $s$ \textit{interleaves} the $t_i$ if $s{\restriction}i=t_i$ for all $i$.
 
@@ -162,55 +161,55 @@ Given a family $P:I\to\Proc$ of processes, a trace $t$ lies in their parallel co
 
 We write $P\mid Q=\mrg_{\{0,1\}}(0\mapsto P,\ 1\mapsto Q)$ and $\,!P=\mrg_{\N}(k\mapsto P)$. We can prove that $!P=P\mid{!P}$.
 
-A trace in the parallel composition of several processes represents one possible parallel execution of these processes. Keep in mind that, since messages may be intercepted on the network, a communication between two parallel process may, or may not, be completed.
+A trace in the parallel composition of several processes represents one possible parallel execution of these processes. Keep in mind that, since messages may be intercepted by the adversary, a communication between two parallel processes may, or may not, be completed.
 
-\subsection{The attacker and the security properties}
+\subsection{The adversary and the security properties}
 
-\begin{definition}[Enemy]
-The processes $\Enemy(K)\in\Proc$, for $K\subseteq\mathcal{M}$, are the pointwise least such that
+The adversary is itself modelled as a process, run in parallel with the protocol under investigation. We keep track of the adversary's knowledge to ensure attacks are valid.
+
+\begin{definition}[Adversary process]
+The adversary processes $\Adversary(K)\in\Proc$, for $K\subseteq\mathcal{M}$, are defined jointly and inductively by
 \begin{enumerate}
-\item $\varepsilon\in\Enemy(K)$;
-\item if $K\vdash c$ and $e\in\Enemy(K\cup\{m\})$ then $\mathsf{in}(c,m)\,e\in\Enemy(K)$, for every $m\in\mathcal{M}$;
-\item if $K\vdash c$, $K\vdash m$ and $e\in\Enemy(K)$ then $\mathsf{out}(c,m)\,e\in\Enemy(K)$;
-\item if $K\vdash c$, $K\vdash m$ and $e\in\Enemy(K)$ then $\mathsf{comm}(c,m)\,e\in\Enemy(K)$, an output to itself;
-\item if $k\notin\nonces(e)$ and $e\in\Enemy(K\cup\{\nu_k\})$ then $\mathsf{new}(k)\,e\in\Enemy(K)$.
+\item $\varepsilon\in\Adversary(K)$;
+\item if $c\in\langle K\rangle$ and $e\in\Adversary(K\cup\{m\})$ then $\mathsf{in}(c,m)\,e\in\Adversary(K)$;
+\item if $c\in\langle K\rangle$, $m\in\langle K\rangle$ and $e\in\Adversary(K)$ then $\mathsf{out}(c,m)\,e\in\Adversary(K)$;
+\item if $c\in\langle K\rangle$, $m\in\langle K\rangle$ and $e\in\Adversary(K)$ then $\mathsf{comm}(c,m)\,e\in\Adversary(K)$;
+\item if $\nu_k\notin\nonces(e)$ and $e\in\Adversary(K\cup\{\nu_k\})$ then $\mathsf{new}(\nu_k)\,e\in\Adversary(K)$.
 \end{enumerate}
 \end{definition}
 
-\begin{definition}[Attacks, knowledge]
-For $P\in\Proc$,
-\[
-\Attacks(P)=\{t\in P\mid\Enemy(\emptyset)\ :\ \Closed(t)\}.
-\]
-For $K\subseteq\mathcal{M}$, $\known(K,\cdot):\Tr\to\mathcal{P}(\mathcal{M})$ is defined by
+\begin{definition}[Attacks]
+Let $P$ be a process. An \textit{attack} on $P$ is a closed trace of the process $P\mid\Adversary(\emptyset)$. Write $\Attacks(P)$ for the set of attacks on $P$.
+\end{definition}
+
+The adversary starts knowing nothing, and can only communicate on channels it already knows about (typically, the set of public channels is fixed). The closed trace condition finally forces all the communications in the process run to be completed -- in other words, we model the adversary intercepting and supplying messages as required. Note that $\Attacks(P)$ is prefix-closed.
+
+We can now define security properties of a process. First, we need to keep track of what the adversary has heard.
+
+\begin{definition}[Knowledge]
+Let $K\subseteq\mathcal{M}$, and let $t$ be a trace. The adversary \textit{knows} the message $m$ after $t$ starting from $K$ if $m\in\langle K\rangle(t)$, defined inductively by
 \begin{align*}
-\known(K,\varepsilon)&=K,\\
-\known(K,a\,t)&=\known\big(\langle K\cup\{m\mid a=\mathsf{comm}(c,m),\ c\in K\}\rangle,\,t\big).
+\langle K\rangle(\varepsilon)&=\langle K\rangle;\\
+\langle K\rangle(\mathsf{comm}(c,m)\,t)&=\langle\langle K\cup\{m\}\rangle(t)\rangle&\text{if }c\in\langle K\rangle(t);\\
+\langle K\rangle(a\,t)&=\langle K\rangle(t)&\text{otherwise.}
 \end{align*}
 \end{definition}
 
-\begin{proposition}[Prefix-closure]\label{prop:prefix}
-$\Enemy(K)$ and every process built from the constructors of Definitions~\ref{def:seq} and~\ref{def:par} are prefix-closed. If $P$ is prefix-closed, so is $\Attacks(P)$.
-\end{proposition}
+\begin{definition}[Event correspondences]
+A \textit{fact} is given by
+\[f\Coloneqq\mathsf{event}(e)\mid\mathsf{knows}(m),\]
+where $e,m\in\mathcal{M}$. We say $\mathsf{event}(e)$ \textit{holds} for a trace $t$ if $\mathsf{ev}(e)$ appears in $t$, and $\mathsf{knows}(m)$ \textit{holds} for $t$ if the adversary knows $m$ after $t$ (starting from $\emptyset$).
 
-\begin{definition}[Facts, secrecy, correspondence]
-A \textit{fact} is $\pv{event}(e)$ or $\pv{knows}(m)$ with $e,m\in\mathcal{M}$; $\Fact$ is the set of facts. A fact \textit{holds} after $t\in\Tr$, written $t\models f$, if
-\[
-t\models\pv{event}(e)\iff\mathsf{ev}(e)\in t,\qquad
-t\models\pv{knows}(m)\iff m\in\known(\langle\emptyset\rangle,t).
-\]
-For a set $X$, $F,H:(X\to\mathcal{M})\to\Fact$ and $s\in\mathcal{M}$,
-\begin{align*}
-\Corr(P,F,H)&\iff\forall\sigma:X\to\mathcal{M}.\ \forall t\in\Attacks(P).\\
-&\qquad\qquad t\models F(\sigma)\Rightarrow\exists\sigma':X\to\mathcal{M}.\ F(\sigma')=F(\sigma)\wedge t\models H(\sigma'),\\
-\Secret(P,s)&\iff\forall t\in\Attacks(P).\ t\not\models\pv{knows}(s).
-\end{align*}
-By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of every prefix of every attack: $\Corr(P,F,H)$ says that some $H(\sigma')$ holds by the time $F(\sigma)$ does.
+Fix a process $P$, and let $f_1$ and $f_2$ be facts. Then the \textit{correspondence} $f_1\implies f_2$ holds for $P$ if, given any attack on $P$, for every substitution $\sigma$ on messages such that $\sigma(f_1)$ holds, there is some substitution $\tau$ such that $\sigma(f_1)=\tau(f_1)$ and $\tau(f_2)$ holds.
 \end{definition}
+
+The substitutions allow us to parameterise events. A correspondence $f_1\implies f_2$ states that some $f_2(\sigma')$ holds by the time $f_1(\sigma)$ does, because the set of attacks is prefix closed.
+
+Similarly, we say that the message $m$ is \textit{secret} in $P$ if $\mathsf{knows}(m)$ doesn't hold for any attack on $P$.
 
 \section{The calculus of ProVerif}
 
-This section gives the syntax of the calculus and restates the semantics of Blanchet's survey (\S2.1, \S2.4, \S2.5.1, \S3.1--3.3) for it. Names are atoms. An equational theory $E$ is a finite set of equations between terms without names; $=_E$ is the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution. The survey states \S3 for the core calculus; here its definitions are taken modulo $=_E$: a step on a term $M'=_E M$ counts as a step on $M$, and substitutions are compared modulo $=_E$.
+We set out the process calculus of ProVerif as described in Blanchet's survey (\S2.1, \S2.4, \S2.5.1, \S3.1--3.3). The survey states \S3 for the core calculus; we extend to include equations by taking its definitions modulo $=_E$.
 
 \subsection{Syntax}
 
@@ -218,9 +217,9 @@ This section gives the syntax of the calculus and restates the semantics of Blan
 Fix a set of variables $x,y,\dots$ and a set of names $a,b,c,\dots$ containing the free names $\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$. Terms, expressions and processes are generated by
 \begin{align*}
 M,N &\Coloneqq x\mid a\mid f(M_1,\dots,M_n),\\
-D &\Coloneqq M\mid h(D_1,\dots,D_n)\mid\pv{fail},\\
-P,Q &\Coloneqq \mathbf{0}\mid \pv{out}(N,M);P\mid \pv{in}(N,x);P\mid P\mid Q\mid\,!P\mid\pv{new}\ a;P\\
-&\qquad\mid \pv{let}\ x=D\ \pv{in}\ P\ \pv{else}\ Q\mid \pv{if}\ M\ \pv{then}\ P\ \pv{else}\ Q\mid \pv{event}(M);P,
+D &\Coloneqq M\mid h(D_1,\dots,D_n)\mid\mathsf{fail},\\
+P,Q &\Coloneqq \mathbf{0}\mid \mathsf{out}(N,M);P\mid \mathsf{in}(N,x);P\mid P\mid Q\mid\,!P\mid\mathsf{new}\ a;P\\
+&\qquad\mid \mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\mid \mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\mid \mathsf{event}(M);P,
 \end{align*}
 where $f$ ranges over constructors and $h$ over constructors and destructors. Types are erased.
 \end{definition}
@@ -228,57 +227,59 @@ where $f$ ranges over constructors and $h$ over constructors and destructors. Ty
 \begin{definition}[Rewrite rules]\label{def:rewrite}
 Fix a set of \textit{may-fail variables} $u,v,\dots$, disjoint from the variables of Definition~\ref{def:syntax}, which are the \textit{ordinary variables}. A \textit{may-fail term} is
 \[
-U\Coloneqq M\mid u\mid\pv{fail},
+U\Coloneqq M\mid u\mid\mathsf{fail},
 \]
-where $M$ is a term without names. As in the survey's \S2.1, a destructor $g$ of arity $n$ is defined by a finite ordered list $\mathrm{def}(g)$ of \textit{rewrite rules} $g(U_1,\dots,U_n)\to U$ between may-fail terms without names, the variables of $U$ occurring in $U_1,\dots,U_n$. As in the survey's \S2.4, each constructor $f$ has $\mathrm{def}(f)$ containing the identity rule $f(\vec x)\to f(\vec x)$, and every $\mathrm{def}(h)$ ends with the rule $h(\vec u)\to\pv{fail}$ for may-fail variables $\vec u$, which makes $h$ fail when no other rule applies. A \textit{substitution} maps ordinary variables to terms and may-fail variables to may-fail terms.
+where $M$ is a term without names. As in the survey's \S2.1, a destructor $g$ of arity $n$ is defined by a finite ordered list $\mathrm{def}(g)$ of \textit{rewrite rules} $g(U_1,\dots,U_n)\to U$ between may-fail terms without names, the variables of $U$ occurring in $U_1,\dots,U_n$. As in the survey's \S2.4, each constructor $f$ has $\mathrm{def}(f)$ containing the identity rule $f(\vec x)\to f(\vec x)$, and every $\mathrm{def}(h)$ ends with the rule $h(\vec u)\to\mathsf{fail}$ for may-fail variables $\vec u$, which makes $h$ fail when no other rule applies. A \textit{substitution} maps ordinary variables to terms and may-fail variables to may-fail terms.
 \end{definition}
+
+An equational theory $E$ is a finite set of equations between terms without names; $=_E$ is the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution.
 
 \begin{definition}[Model]\label{def:model}
 A \textit{model} consists of a signature $\Sigma$ whose nullary symbols include $\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$, a theory $(E,\Fr)$ over $\Sigma$, a finite set of destructors each given by rules as in Definition~\ref{def:rewrite}, sets $\Pub$, $\Dt$ of public constructors and public destructors, and a closed process $P_0$ with $\fn(P_0)\subseteq\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$.
 \end{definition}
 
 \begin{definition}[Queries]\label{def:queries}
-A \textit{query fact} is $\pv{event}(M)$ or $\pv{attacker}(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \textit{event fact} or an \textit{attacker fact} accordingly. A \textit{query} is $\pv{query}\ \pv{attacker}(M)$ with $M$ without variables, or $\pv{query}\ F\Longrightarrow H$ with $F$ and $H$ query facts over $X$.
+A \textit{query fact} is $\mathsf{event}(M)$ or $\mathsf{attacker}(M)$ with $M$ a term over constructors, free names and a finite set $X$ of variables; it is an \textit{event fact} or an \textit{attacker fact} accordingly. A \textit{query} is $\mathsf{query}\ \mathsf{attacker}(M)$ with $M$ without variables, or $\mathsf{query}\ F\Longrightarrow H$ with $F$ and $H$ query facts over $X$.
 \end{definition}
 
 \subsection{Semantics}
 
-Evaluation $D\Downarrow U$ of closed expressions to closed may-fail terms is the least relation with $M\Downarrow M$, $\pv{fail}\Downarrow\pv{fail}$, and $h(D_1,\dots,D_n)\Downarrow\sigma U'_j$ whenever $D_i\Downarrow U_i$ for all $i$, $\mathrm{def}(h)=(h(U'_{i,1},\dots,U'_{i,n})\to U'_i)_{i\le k}$, $\sigma U'_{j,i}=_E U_i$ for all $i$, and for all $i<j$ and all $\sigma'$ there is some $l$ with $\sigma'U'_{i,l}\ne_E U_l$.
+Evaluation $D\Downarrow U$ of closed expressions to closed may-fail terms is the least relation with $M\Downarrow M$, $\mathsf{fail}\Downarrow\mathsf{fail}$, and $h(D_1,\dots,D_n)\Downarrow\sigma U'_j$ whenever $D_i\Downarrow U_i$ for all $i$, $\mathrm{def}(h)=(h(U'_{i,1},\dots,U'_{i,n})\to U'_i)_{i\le k}$, $\sigma U'_{j,i}=_E U_i$ for all $i$, and for all $i<j$ and all $\sigma'$ there is some $l$ with $\sigma'U'_{i,l}\ne_E U_l$.
 
 A \textit{configuration} is $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\mathcal{P}$ with $\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}$ finite disjoint sets of names and $\mathcal{P}$ a finite multiset of closed processes with $\fn(\mathcal{P})\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$. Writing $\mathcal{E}$ for the pair of name sets, reduction is the least relation closed under
 \begin{align*}
 \mathcal{E},\mathcal{P}\cup\{\mathbf{0}\}&\to\mathcal{E},\mathcal{P} \tag{Red Nil}\\
 \mathcal{E},\mathcal{P}\cup\{P\mid Q\}&\to\mathcal{E},\mathcal{P}\cup\{P,Q\} \tag{Red Par}\\
 \mathcal{E},\mathcal{P}\cup\{!P\}&\to\mathcal{E},\mathcal{P}\cup\{P,!P\} \tag{Red Repl}\\
-(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\mathcal{P}\cup\{\pv{new}\ a;P\}&\to(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}\cup\{a'\}),\mathcal{P}\cup\{P\{a'/a\}\}\notag\\
+(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\mathcal{P}\cup\{\mathsf{new}\ a;P\}&\to(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}\cup\{a'\}),\mathcal{P}\cup\{P\{a'/a\}\}\notag\\
 &\qquad\text{if } a'\notin\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}} \tag{Red Res}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{out}(N,M);Q,\ \pv{in}(N',x);P\}&\to\mathcal{E},\mathcal{P}\cup\{Q,\ P\{M/x\}\}\quad\text{if } N=_E N' \tag{Red I/O$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{let}\ x=D\ \pv{in}\ P\ \pv{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\{M/x\}\}\quad\text{if } D\Downarrow M \tag{Red Eval 1}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{let}\ x=D\ \pv{in}\ P\ \pv{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } D\Downarrow\pv{fail} \tag{Red Eval 2}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{if}\ M\ \pv{then}\ P\ \pv{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\}\quad\text{if } M=_E\pv{true} \tag{Red Cond 1$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{if}\ M\ \pv{then}\ P\ \pv{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } M\ne_E\pv{true} \tag{Red Cond 2$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\pv{event}(M);P\}&\to\mathcal{E},\mathcal{P}\cup\{P\} \tag{Red Event}
+\mathcal{E},\mathcal{P}\cup\{\mathsf{out}(N,M);Q,\ \mathsf{in}(N',x);P\}&\to\mathcal{E},\mathcal{P}\cup\{Q,\ P\{M/x\}\}\quad\text{if } N=_E N' \tag{Red I/O}\\
+\mathcal{E},\mathcal{P}\cup\{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\{M/x\}\}\quad\text{if } D\Downarrow M \tag{Red Eval 1}\\
+\mathcal{E},\mathcal{P}\cup\{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } D\Downarrow\mathsf{fail} \tag{Red Eval 2}\\
+\mathcal{E},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\}\quad\text{if } M=_E\mathsf{true} \tag{Red Cond 1}\\
+\mathcal{E},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } M\ne_E\mathsf{true} \tag{Red Cond 2}\\
+\mathcal{E},\mathcal{P}\cup\{\mathsf{event}(M);P\}&\to\mathcal{E},\mathcal{P}\cup\{P\} \tag{Red Event}
 \end{align*}
 A \textit{trace} is a finite reduction sequence $\mathcal{E}_0,\mathcal{P}_0\to\dots\to\mathcal{E}_n,\mathcal{P}_n$, written $\mathcal{E}_0,\mathcal{P}_0\to^*\mathcal{E}_n,\mathcal{P}_n$.
 
 \begin{definition}[Survey, Definitions 3.1--3.5]\label{def:survey}
 Let $P_0$ be a closed process.
 \begin{enumerate}
-\item A closed process $Q$ is an \textit{$\mathcal{N}_{\mathrm{pub}}$-adversary} if $\fn(Q)\subseteq\mathcal{N}_{\mathrm{pub}}$, every function symbol of $Q$ is public, and $Q$ contains no $\pv{event}$.
-\item A trace \textit{outputs $M$ publicly} if it contains a step \red{I/O$'$} whose output is $\pv{out}(N,M');Q$ with $N\in\mathcal{N}_{\mathrm{pub}}$ and $M'=_E M$. It \textit{executes $\pv{event}(M)$} if it contains a step \red{Event} on $\pv{event}(M');P$ with $M'=_E M$.
+\item A closed process $Q$ is an \textit{$\mathcal{N}_{\mathrm{pub}}$-adversary} if $\fn(Q)\subseteq\mathcal{N}_{\mathrm{pub}}$, every function symbol of $Q$ is public, and $Q$ contains no $\mathsf{event}$.
+\item A trace \textit{outputs $M$ publicly} if it contains a step \red{I/O} whose output is $\mathsf{out}(N,M');Q$ with $N\in\mathcal{N}_{\mathrm{pub}}$ and $M'=_E M$. It \textit{executes $\mathsf{event}(M)$} if it contains a step \red{Event} on $\mathsf{event}(M');P$ with $M'=_E M$.
 \item $P_0$ \textit{preserves the secrecy of} the closed term $M$ \textit{from} $\mathcal{N}_{\mathrm{pub}}$ if, for some $\mathcal{N}_{\mathrm{priv}}$ disjoint from $\mathcal{N}_{\mathrm{pub}}$ with $\fn(M)\cup\fn(P_0)\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, no trace $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}\to^*\mathcal{E}',\mathcal{P}'$ with $Q$ an $\mathcal{N}_{\mathrm{pub}}$-adversary outputs $M$ publicly.
-\item $P_0$ \textit{satisfies} $\pv{event}(M)\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}\pv{event}(M_{jk})$ \textit{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if, for some $\mathcal{N}_{\mathrm{priv}}$ as above, for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\pv{event}(\sigma M)$ then there are $\sigma'$ and $j$ with $\sigma'M=_E\sigma M$ such that $\mathrm{Tr}$ executes $\pv{event}(\sigma'M_{jk})$ for every $k\le l_j$.
+\item $P_0$ \textit{satisfies} $\mathsf{event}(M)\rightsquigarrow\mathsf{event}(M')$ \textit{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if, for some $\mathcal{N}_{\mathrm{priv}}$ as above, for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\mathsf{event}(\sigma M)$ then there is some $\sigma'$ with $\sigma'M=_E\sigma M$ such that $\mathrm{Tr}$ executes $\mathsf{event}(\sigma'M')$.
 \end{enumerate}
 \end{definition}
 
 Fix $\mathcal{N}_{\mathrm{priv}}$ as in Definition~\ref{def:survey}, and for an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ write $\mathcal{C}_Q$ for the configuration $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}$.
 
 \begin{definition}[Satisfaction]\label{def:satisfies}
-A trace \textit{satisfies} $\pv{attacker}(M)$ if it outputs $M$ publicly, and \textit{satisfies} $\pv{event}(M)$ if it executes $\pv{event}(M)$.
+A trace \textit{satisfies} $\mathsf{attacker}(M)$ if it outputs $M$ publicly, and \textit{satisfies} $\mathsf{event}(M)$ if it executes $\mathsf{event}(M)$.
 \end{definition}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
-Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \textit{satisfies} $F\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}H_{jk}$ \textit{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there are $\sigma'$ and $j$ with $\sigma'F=_E\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H_{jk}$ for every $k\le l_j$. For event facts this is Definition~\ref{def:survey}(4).
+Let $F$ and $H$ be query facts over $X$. $P_0$ \textit{satisfies} $F\rightsquigarrow H$ \textit{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ and every substitution $\sigma$: if $\mathrm{Tr}$ satisfies $\sigma F$ then there is some $\sigma'$ with $\sigma'F=_E\sigma F$ such that $\mathrm{Tr}$ satisfies $\sigma'H$. For event facts this is Definition~\ref{def:survey}(4).
 \end{definition}
 
 \section{The translation}
@@ -295,7 +296,7 @@ These conditions exclude some ProVerif models: an equation with a variable as on
 \subsection{Destructors, expressions, processes and queries}
 
 \begin{definition}[Destructors from rewrite rules]\label{def:rules}
-A \textit{valuation} $\theta$ sends variables to $\mathcal{M}$ and may-fail variables to $\mathcal{M}_\bot$, and gives a may-fail term the value $U\theta\in\mathcal{M}_\bot$: the evaluation $M\theta\in\mathcal{M}$ of a term, $\theta(u)$, and $\bot$ for $\pv{fail}$. A destructor $g$ with $\mathrm{def}(g)=(g(U_{i,1},\dots,U_{i,n})\to U_{i,0})_{i\le k}$ denotes the function
+A \textit{valuation} $\theta$ sends variables to $\mathcal{M}$ and may-fail variables to $\mathcal{M}_\bot$, and gives a may-fail term the value $U\theta\in\mathcal{M}_\bot$: the evaluation $M\theta\in\mathcal{M}$ of a term, $\theta(u)$, and $\bot$ for $\mathsf{fail}$. A destructor $g$ with $\mathrm{def}(g)=(g(U_{i,1},\dots,U_{i,n})\to U_{i,0})_{i\le k}$ denotes the function
 \[
 g(\vec u)=U_{i,0}\theta\quad\text{for } i \text{ least such that some } \theta \text{ has } U_{i,j}\theta=u_j \text{ for } j=1,\dots,n,
 \]
@@ -305,53 +306,53 @@ which the final rule of $\mathrm{def}(g)$ makes total. By (R2) and the validity 
 \begin{definition}[Translation]
 An \textit{environment} $\rho$ maps variables and names to $\mathcal{M}$; $\rho_0$ maps each free name $a$ to the constant $a\in\mathcal{M}$. Write $\rho M\in\mathcal{M}$ for the homomorphic extension. Expressions are evaluated in $\mathcal{M}_{\bot}$:
 \[
-\sem{M}\rho=\rho M,\qquad \sem{\pv{fail}}\rho=\bot,\qquad
+\sem{M}\rho=\rho M,\qquad \sem{\mathsf{fail}}\rho=\bot,\qquad
 \sem{f(\vec D)}\rho=f^{\uparrow}(\sem{\vec D}\rho),\qquad
 \sem{g(\vec D)}\rho=g(\sem{\vec D}\rho)
 \]
 for a constructor $f$ and a destructor $g$, the latter the function of Definition~\ref{def:rules}. Processes are translated by
 \begin{align*}
 \sem{\mathbf{0}}\rho&=\mathbf{0},&
-\sem{\pv{out}(N,M);P}\rho&=\mathsf{out}(\rho N,\rho M).\sem{P}\rho,\\
-\sem{\pv{event}(M);P}\rho&=\mathsf{ev}(\rho M).\sem{P}\rho,&
-\sem{\pv{in}(N,x);P}\rho&=\mathsf{in}(\rho N).\big(m\mapsto\sem{P}\rho[x\mapsto m]\big),\\
+\sem{\mathsf{out}(N,M);P}\rho&=\mathsf{out}(\rho N,\rho M).\sem{P}\rho,\\
+\sem{\mathsf{event}(M);P}\rho&=\mathsf{ev}(\rho M).\sem{P}\rho,&
+\sem{\mathsf{in}(N,x);P}\rho&=\mathsf{in}(\rho N).\big(m\mapsto\sem{P}\rho[x\mapsto m]\big),\\
 \sem{P\mid Q}\rho&=\sem{P}\rho\mid\sem{Q}\rho,&
-\sem{\pv{new}\ a;P}\rho&=\mathsf{new}.\big(m\mapsto\sem{P}\rho[a\mapsto m]\big),\\
+\sem{\mathsf{new}\ a;P}\rho&=\mathsf{new}.\big(m\mapsto\sem{P}\rho[a\mapsto m]\big),\\
 \sem{!P}\rho&=\,!\sem{P}\rho,&
-\sem{\pv{let}\ x=D\ \pv{in}\ P\ \pv{else}\ Q}\rho&=
+\sem{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q}\rho&=
 \begin{cases}\sem{P}\rho[x\mapsto m]&\sem{D}\rho=m\in\mathcal{M},\\ \sem{Q}\rho&\sem{D}\rho=\bot,\end{cases}\\
-&&\sem{\pv{if}\ M\ \pv{then}\ P\ \pv{else}\ Q}\rho&=
-\begin{cases}\sem{P}\rho&\rho M=\pv{true},\\ \sem{Q}\rho&\rho M\ne\pv{true}.\end{cases}
+&&\sem{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q}\rho&=
+\begin{cases}\sem{P}\rho&\rho M=\mathsf{true},\\ \sem{Q}\rho&\rho M\ne\mathsf{true}.\end{cases}
 \end{align*}
 The translation of $P_0$ is $\sem{P_0}\rho_0$. A translated process mentions no $\nu_k$ except through $\mathsf{new}$.
 \end{definition}
 
 \begin{remark}
-In the development a process is a program in the continuation monad with answer type $\Proc$, run by $\mathrm{run}(b)=b(\lambda\_.\,\mathbf{0})$, with primitives $\mathrm{send}(c,m)=\lambda\kappa.\,\mathsf{out}(c,m).\kappa()$, $\mathrm{recv}(c)=\lambda\kappa.\,\mathsf{in}(c).\kappa$, $\mathrm{fresh}=\lambda\kappa.\,\mathsf{new}.\kappa$, $\mathrm{emit}(m)=\lambda\kappa.\,\mathsf{ev}(m).\kappa()$, $\mathrm{fork}=\lambda\kappa.\,\kappa(\mathrm{tt})\mid\kappa(\mathrm{ff})$, $\mathrm{repl}=\lambda\kappa.\,!\kappa()$ and $\mathrm{stop}=\lambda\_.\,\mathbf{0}$; $\pv{let}$ and $\pv{if}$ are case analysis in the metalanguage. The clauses above are the unfolding of that presentation.
+In the development a process is a program in the continuation monad with answer type $\Proc$, run by $\mathrm{run}(b)=b(\lambda\_.\,\mathbf{0})$, with primitives $\mathrm{send}(c,m)=\lambda\kappa.\,\mathsf{out}(c,m).\kappa()$, $\mathrm{recv}(c)=\lambda\kappa.\,\mathsf{in}(c).\kappa$, $\mathrm{fresh}=\lambda\kappa.\,\mathsf{new}.\kappa$, $\mathrm{emit}(m)=\lambda\kappa.\,\mathsf{ev}(m).\kappa()$, $\mathrm{fork}=\lambda\kappa.\,\kappa(\mathrm{tt})\mid\kappa(\mathrm{ff})$, $\mathrm{repl}=\lambda\kappa.\,!\kappa()$ and $\mathrm{stop}=\lambda\_.\,\mathbf{0}$; $\mathsf{let}$ and $\mathsf{if}$ are case analysis in the metalanguage. The clauses above are the unfolding of that presentation.
 \end{remark}
 
 \begin{definition}[Translation of queries]
-For a valuation $\sigma:X\to\mathcal{M}$ write $\sigma M\in\mathcal{M}$ for the evaluation of $M$ with free names as constants, and let the \textit{instance} of a query fact under $\sigma$ be $\sigma\,\pv{event}(M)=\pv{event}(\sigma M)$ and $\sigma\,\pv{attacker}(M)=\pv{knows}(\sigma M)$. The query $\pv{query}\ \pv{attacker}(M)$ denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$, and $\pv{query}\ F\Longrightarrow H$ denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$.
+For a valuation $\sigma:X\to\mathcal{M}$ write $\sigma M\in\mathcal{M}$ for the evaluation of $M$ with free names as constants, and let the \textit{instance} of a query fact under $\sigma$ be $\sigma\,\mathsf{event}(M)=\mathsf{event}(\sigma M)$ and $\sigma\,\mathsf{attacker}(M)=\mathsf{knows}(\sigma M)$. The query $\mathsf{query}\ \mathsf{attacker}(M)$ denotes $\Secret(\sem{P_0}\rho_0,\rho_0M)$, and $\mathsf{query}\ F\Longrightarrow H$ denotes $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$, the survey's Definition~3.5 with $=$ read as $=_E$.
 \end{definition}
 
 \subsection{The correspondence}
 
-Names of the reduction semantics are the free names together with the created names; terms are interpreted in $\mathcal{M}$ through a bijection $\iota$ between the names outside $\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, those that \red{Res} may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\pv{fail}=\bot$; $\iota M=\iota M'$ exactly when $M=_E M'$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
+Names of the reduction semantics are the free names together with the created names; terms are interpreted in $\mathcal{M}$ through a bijection $\iota$ between the names outside $\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, those that \red{Res} may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\mathsf{fail}=\bot$; $\iota M=\iota M'$ exactly when $M=_E M'$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
 
 \begin{lemma}[Evaluation]\label{lem:eval}
 For every closed expression $D$ over free and created names, some $U$ satisfies $D\Downarrow U$, and $D\Downarrow U$ implies $\iota U=\sem{D}\rho_\iota$.
 \end{lemma}
 
 \begin{definition}[Labelled semantics]
-A \textit{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finite and $\mathcal{P}$ a finite multiset of closed processes whose names are free names and symbols $\nu_k$. The $\tau$-steps $(U,\mathcal{P})\xrightarrow{\tau}(U,\mathcal{P}')$ are the steps \red{Nil}, \red{Par}, \red{Repl}, \red{Eval 1}, \red{Eval 2}, \red{Cond 1$'$} and \red{Cond 2$'$}, with $=_E$ read on $\mathcal{M}$. The visible steps are
+A \textit{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finite and $\mathcal{P}$ a finite multiset of closed processes whose names are free names and symbols $\nu_k$. The $\tau$-steps $(U,\mathcal{P})\xrightarrow{\tau}(U,\mathcal{P}')$ are the steps \red{Nil}, \red{Par}, \red{Repl}, \red{Eval 1}, \red{Eval 2}, \red{Cond 1} and \red{Cond 2}, with $=_E$ read on $\mathcal{M}$. The visible steps are
 \begin{align*}
-(U,\mathcal{P}\cup\{\pv{out}(N,M);P\})&\xrightarrow{\mathsf{out}([N],[M])}(U,\mathcal{P}\cup\{P\}),\\
-(U,\mathcal{P}\cup\{\pv{in}(N,x);P\})&\xrightarrow{\mathsf{in}([N],[M])}(U,\mathcal{P}\cup\{P\{M/x\}\})\quad\text{for every closed term }M,\\
-(U,\mathcal{P}\cup\{\pv{out}(N,M);Q,\ \pv{in}(N',x);P\})&\xrightarrow{\mathsf{comm}([N],[M])}(U,\mathcal{P}\cup\{Q,\ P\{M/x\}\})\quad\text{if }N=_E N',\\
-(U,\mathcal{P}\cup\{\pv{new}\ a;P\})&\xrightarrow{\mathsf{new}(k)}(U\cup\{k\},\mathcal{P}\cup\{P\{\nu_k/a\}\})\quad\text{for every }k\notin U,\\
-(U,\mathcal{P}\cup\{\pv{event}(M);P\})&\xrightarrow{\mathsf{ev}([M])}(U,\mathcal{P}\cup\{P\}).
+(U,\mathcal{P}\cup\{\mathsf{out}(N,M);P\})&\xrightarrow{\mathsf{out}([N],[M])}(U,\mathcal{P}\cup\{P\}),\\
+(U,\mathcal{P}\cup\{\mathsf{in}(N,x);P\})&\xrightarrow{\mathsf{in}([N],[M])}(U,\mathcal{P}\cup\{P\{M/x\}\})\quad\text{for every closed term }M,\\
+(U,\mathcal{P}\cup\{\mathsf{out}(N,M);Q,\ \mathsf{in}(N',x);P\})&\xrightarrow{\mathsf{comm}([N],[M])}(U,\mathcal{P}\cup\{Q,\ P\{M/x\}\})\quad\text{if }N=_E N',\\
+(U,\mathcal{P}\cup\{\mathsf{new}\ a;P\})&\xrightarrow{\mathsf{new}(k)}(U\cup\{k\},\mathcal{P}\cup\{P\{\nu_k/a\}\})\quad\text{for every }k\notin U,\\
+(U,\mathcal{P}\cup\{\mathsf{event}(M);P\})&\xrightarrow{\mathsf{ev}([M])}(U,\mathcal{P}\cup\{P\}).
 \end{align*}
-The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \textit{weak traces} is
+The third step is \red{I/O} between two members of $\mathcal{P}$. It is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \textit{weak traces} is
 \[
 \Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Tr\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\}.
 \]
@@ -361,7 +362,7 @@ The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visib
 For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
-Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\mathcal{M}$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Tr$ say that $\mathrm{Tr}$ and $t$ \textit{have the same events} if $\mathrm{Tr}$ executes $\pv{event}(M)$ exactly when $\mathsf{ev}(\iota M)$ occurs in $t$.
+Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\mathcal{M}$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Tr$ say that $\mathrm{Tr}$ and $t$ \textit{have the same events} if $\mathrm{Tr}$ executes $\mathsf{event}(M)$ exactly when $\mathsf{ev}(\iota M)$ occurs in $t$.
 
 \begin{theorem}[Attacks]\label{thm:A}
 Fix an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$, as well as a trace $t\in\mathcal{A}_0$.
@@ -392,7 +393,7 @@ Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact, and let 
 \end{theorem}
 
 \begin{remark}
-Neither hypothesis can be dropped. When $\mathcal{N}_{\mathrm{pub}}=\emptyset$ and $F=\pv{attacker}(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\pv{attacker}(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\pv{knows}(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\mathcal{N}_{\mathrm{pub}}=\{c\}$ and $P_0=\pv{out}(c,\pv{senc}(s,k));\pv{out}(c,k);\pv{event}(e)$, $\Corr$ holds for $\pv{event}(e)\rightsquigarrow\pv{attacker}(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
+Neither hypothesis can be dropped. When $\mathcal{N}_{\mathrm{pub}}=\emptyset$ and $F=\mathsf{attacker}(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\mathsf{attacker}(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\mathsf{knows}(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\mathcal{N}_{\mathrm{pub}}=\{c\}$ and $P_0=\mathsf{out}(c,\mathsf{senc}(s,k));\mathsf{out}(c,k);\mathsf{event}(e)$, $\Corr$ holds for $\mathsf{event}(e)\rightsquigarrow\mathsf{attacker}(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
 \end{remark}
 
 \begin{thebibliography}{1}
