@@ -39,7 +39,6 @@
 \newcommand{\fn}{\operatorname{fn}}
 \newcommand{\Tr}{\operatorname{Tr}}
 \newcommand{\interleaves}{\operatorname{Interleaves}}
-\newcommand{\red}[1]{\text{(Red #1)}}
 
 \title{A trace semantics for the process calculus of ProVerif}
 \author{Artie Khovanov with lots of assistance from Claude Fable}
@@ -48,15 +47,15 @@
 \begin{document}
 \maketitle
 
-ProVerif is a tool for reasoning about cryptographic security in a symbolic model with a Dolev-Yao adversary. Although it uses resolution of Horn clauses to find attacks, it is backed theoretically by a process calculus, which is a variant of the applied pi calculus. We use the specification of ProVerif's semantics given in Blanchet 16~\cite{BlanchetFnTPS16}.
+ProVerif is a tool for reasoning about cryptographic security in a symbolic model with a Dolev-Yao adversary. Although it uses resolution of Horn clauses to find attacks, it is backed theoretically by a process calculus, which is a variant of the applied pi calculus. We use the semantics of ProVerif's input language given in its manual~\cite{ProVerifManual}, which extends the semantics of Blanchet 16~\cite{BlanchetFnTPS16} to terms with effects, and the definitions of the security properties given in Blanchet 16.
 
 We formalise the ProVerif process calculus in Lean. Rather than copying the specification, we use a shallow translation in order to make security proofs simpler down the line. This means that we make use of existing Lean syntax and constructs where possible. In particular, some invariants are enforced only by what terms can arise from translating a valid ProVerif program. We also deviate from the calculus when sticking exactly to the specification would complicate the design.
 
-We use a trace-based semantics to encode the possible outcomes of parallel processes communicating on a network. The attacker is modelled as a set of traces satisfying informational constraints. Our trace semantics are good enough to express secrecy and simple ProVerif queries relating events. However, it is strictly less expressive than the formal operational semantics of ProVerif; in particular, we cannot express observational equivalence. 
+We use a trace-based semantics to encode the possible outcomes of parallel processes communicating on a network. The attacker is modelled as a set of traces satisfying informational constraints. Our trace semantics are good enough to express secrecy and simple ProVerif queries relating events. However, it is strictly less expressive than the formal operational semantics of ProVerif; in particular, we cannot express observational equivalence.
 
 We give a mathematical account of the Lean development, and of the formal translation from terms in ProVerif's process calculus to our traces. Everything has been formalised in Lean.
 
-Section~\ref{sec:trace} presents the trace semantics; Section~\ref{sec:calculus} the calculus of ProVerif, its syntax and the semantics of the survey; and Section~\ref{sec:translation} the translation of the calculus into the trace semantics and the theorems relating the two. In the development these are the folders \texttt{TraceSemantics} and \texttt{Specification}, the translation being written twice: as the denotation in \texttt{Specification}, which the theorems are about, and as the program \texttt{Translation}, which turns a ProVerif model into Lean source over the trace semantics.
+Section~\ref{sec:trace} presents the trace semantics; Section~\ref{sec:calculus} the calculus of ProVerif, its syntax and the semantics of the manual; and Section~\ref{sec:translation} the translation of the calculus into the trace semantics and the theorems relating the two. In the development these are the folders \texttt{TraceSemantics} and \texttt{Specification}, the translation being written twice: as the denotation in \texttt{Specification}, which the theorems are about, and as the program \texttt{Translation}, which turns a ProVerif model into Lean source over the trace semantics.
 
 \section{The trace semantics}\label{sec:trace}
 
@@ -223,7 +222,7 @@ By Proposition~\ref{prop:prefix}, for prefix-closed $P$ these are properties of 
 
 \section{The calculus of ProVerif}\label{sec:calculus}
 
-This section gives the syntax of the calculus and restates the semantics of Blanchet's survey (\S2.1, \S2.4, \S2.5.1, \S3.1--3.3) for it.
+This section gives the syntax of the fragment of ProVerif's input language that the development covers and restates its semantics from the ProVerif manual (Appendix~B), which extends the semantics of Blanchet's survey (\S2.4, \S2.5.1) to terms with effects. The manual defines no adversary and no security property; those are the survey's (\S3.1--3.3), restated for the manual's semantics.
 
 \subsection{Syntax}
 
@@ -231,24 +230,25 @@ This section gives the syntax of the calculus and restates the semantics of Blan
 Fix a set of variables $x,y,\dots$ and a set of names $a,b,c,\dots$ containing the free names $\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$. Terms, expressions and processes are generated by
 \begin{align*}
 M,N &\Coloneqq x\mid a\mid f(M_1,\dots,M_n),\\
-D &\Coloneqq M\mid h(D_1,\dots,D_n)\mid\mathsf{fail},\\
-P,Q &\Coloneqq \mathbf{0}\mid \mathsf{out}(N,M);P\mid \mathsf{in}(N,x);P\mid P\mid Q\mid\,!P\mid\mathsf{new}\ a;P\\
-&\qquad\mid \mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\mid \mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\mid \mathsf{event}(M);P,
+D &\Coloneqq M\mid h(D_1,\dots,D_n)\mid\mathsf{fail}\mid\mathsf{new}\ a;D\mid\mathsf{if}\ D\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2\\
+&\qquad\mid\mathsf{let}\ x=D\ \mathsf{in}\ D_1\ \mathsf{else}\ D_2\mid\mathsf{event}(D);D',\\
+P,Q &\Coloneqq \mathbf{0}\mid \mathsf{out}(D,D');P\mid \mathsf{in}(D,x);P\mid P\mid Q\mid\,!P\mid\mathsf{new}\ a;P\\
+&\qquad\mid \mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\mid \mathsf{if}\ D\ \mathsf{then}\ P\ \mathsf{else}\ Q\mid \mathsf{event}(D);P,
 \end{align*}
-where $f$ ranges over constructors and $h$ over constructors and destructors. Types are erased.
+where $f$ ranges over constructors and $h$ over constructors and destructors. A term is an expression, and a \emph{may-fail term} is $U\Coloneqq M\mid\mathsf{fail}$. Types are erased. These are the manual's terms, process terms and processes (Appendix~A, Figures~A.1 and~A.8) without patterns other than variables, tables, predicates, phases, synchronisation and natural numbers. The manual's $x\leftarrow D;D'$ and $x\leftarrow D;P$ abbreviate $\mathsf{let}\ x=D\ \mathsf{in}\ D'\ \mathsf{else}\ \mathsf{fail}$ and $\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ \mathbf{0}$, its $a\xleftarrow{R}t$ abbreviates $\mathsf{new}\ a$, and an omitted $\mathsf{else}$ is $\mathsf{else}\ \mathsf{fail}$ in an expression and $\mathsf{else}\ \mathbf{0}$ in a process. An application $g(D_1,\dots,D_n)$ of a function macro $\mathsf{letfun}\ g(x_1,\dots,x_n)=D$ (\S4.2.3), none of whose parameters is declared $\mathsf{or\ fail}$, abbreviates $\mathsf{let}\ x_1=D_1\ \mathsf{in}\ \dots\ \mathsf{let}\ x_n=D_n\ \mathsf{in}\ D$ with every $\mathsf{else}$ omitted.
 \end{definition}
 
 \begin{definition}[Rewrite rules]\label{def:rewrite}
-Fix a set of \emph{may-fail variables} $u$, disjoint from the variables of Definition~\ref{def:syntax}, which are the \emph{ordinary variables}. A \emph{may-fail term} is $U\Coloneqq M\mid u\mid\mathsf{fail}$ with $M$ a term without names. Each destructor $g$ of arity $n$ carries a finite ordered list $\mathrm{def}(g)$ of \emph{rewrite rules} $g(U_1,\dots,U_n)\to U$ between may-fail terms, the variables of $U$ occurring in $U_1,\dots,U_n$; each constructor $f$ carries the single rule $f(\vec x)\to f(\vec x)$; and every $\mathrm{def}(h)$ ends with $h(\vec u)\to\mathsf{fail}$ for distinct may-fail variables $\vec u$. A \emph{substitution} maps ordinary variables to terms and may-fail variables to may-fail terms.
+Fix a set of \emph{may-fail variables} $u$, disjoint from the variables of Definition~\ref{def:syntax}, which are the \emph{ordinary variables}. The may-fail terms of a rule are $U\Coloneqq M\mid u\mid\mathsf{fail}$ with $M$ a term without names: the may-fail terms of Definition~\ref{def:syntax} with may-fail variables besides. Each destructor $g$ of arity $n$ carries a finite ordered list $\mathrm{def}(g)$ of \emph{rewrite rules} $g(U_1,\dots,U_n)\to U$ between may-fail terms, the variables of $U$ occurring in $U_1,\dots,U_n$, ending with $g(\vec u)\to\mathsf{fail}$ for distinct may-fail variables $\vec u$. A \emph{substitution} maps ordinary variables to terms and may-fail variables to may-fail terms. The manual writes $\mathrm{def}(g)$ as a set of rules each with a side condition that excludes the rules before it (Appendix~B); ProVerif generates that form from the ordered list, and the two define the same rewriting.
 \end{definition}
 
 \begin{definition}[Model]\label{def:model}
-A \emph{model} consists of a signature $\Sigma_0$ of declared constructors whose nullary symbols include $\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$, a theory $(E,\Fr)$ over $\Sigma_0$, a finite set of declared destructors each with its rules as in Definition~\ref{def:rewrite} over the signature with data $\Sigma=\Sigma_0\uplus\mathrm{Data}$ of Definition~\ref{def:data}, sets $\Pub\subseteq\bigcup_n(\Sigma_0)_n$, $\Dt$ of public constructors and public destructors, and a closed process $P_0$ with $\fn(P_0)\subseteq\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$. The constructors of the calculus are those of $\Sigma$, and its destructors the declared ones and the \emph{built-in} ones: the projections $i\mathrm{th}_n$, each with the single rule $i\mathrm{th}_n(\mathsf{tuple}_n(x_1,\dots,x_n))\to x_i$, and the boolean destructors $\mathsf{equal}$, $\mathsf{not}$, $\mathsf{and}$ and $\mathsf{or}$ with the rules
+A \emph{model} consists of finite disjoint sets $\mathcal{N}_{\mathrm{pub}}$ and $\mathcal{N}_{\mathrm{priv}}$ of free names; a finite set of \emph{declared} function symbols, each with an arity, each a constructor or a destructor, and each public or private, the destructors with their rules $\mathrm{def}(g)$ as in Definition~\ref{def:rewrite}; an \emph{equational theory} $E$, a finite set of equations $M=N$ between terms over the constructors without names; and a closed process $P_0$ with $\fn(P_0)\subseteq\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$. The constructors of the calculus are the declared ones and the \emph{data symbols}, a tuple constructor $(\cdot,\dots,\cdot)$ of each arity and the constants $\mathsf{true}$ and $\mathsf{false}$; its destructors are the declared ones and the \emph{built-in} ones, the projections $i\mathrm{th}_n$, each with the single rule $i\mathrm{th}_n((x_1,\dots,x_n))\to x_i$, and the boolean destructors $\mathsf{equal}$, $\mathsf{not}$, $\mathsf{and}$ and $\mathsf{or}$ with the rules
 \begin{align*}
 \mathsf{equal}(x,x)&\to\mathsf{true}, & \mathsf{equal}(x,y)&\to\mathsf{false}, & \mathsf{not}(\mathsf{true})&\to\mathsf{false}, & \mathsf{not}(x)&\to\mathsf{true},\\
 \mathsf{and}(\mathsf{true},u)&\to u, & \mathsf{and}(x,u)&\to\mathsf{false}, & \mathsf{or}(\mathsf{true},u)&\to\mathsf{true}, & \mathsf{or}(x,u)&\to u,
 \end{align*}
-$u$ a may-fail variable, so that $\mathsf{and}(\mathsf{false},\mathsf{fail})$ evaluates to $\mathsf{false}$; $M=N$, $M\neq N$, $M\mathbin{\&\&}N$, $M\mathbin{||}N$ and $\mathsf{not}(M)$ abbreviate the expressions $\mathsf{equal}(M,N)$, $\mathsf{not}(\mathsf{equal}(M,N))$, $\mathsf{and}(M,N)$, $\mathsf{or}(M,N)$ and $\mathsf{not}(M)$. The data symbols and the built-in destructors are public, and $\mathsf{true}$ in \red{Cond} is the data constant. These are the survey's tuples, projections and booleans (\S2.1, (2.5)) and the manual's infix operators (Appendix~B), built in as ProVerif has them.
+$u$ a may-fail variable, so that $\mathsf{and}(\mathsf{false},\mathsf{fail})$ rewrites to $\mathsf{false}$; $M=N$, $M\neq N$, $M\mathbin{\&\&}N$, $M\mathbin{||}N$ and $\mathsf{not}(M)$ abbreviate the expressions $\mathsf{equal}(M,N)$, $\mathsf{not}(\mathsf{equal}(M,N))$, $\mathsf{and}(M,N)$, $\mathsf{or}(M,N)$ and $\mathsf{not}(M)$. The rules of every destructor are over the constructors of the calculus. The data symbols and the built-in destructors are public. These are the survey's tuples, projections and booleans (\S2.1, (2.5)) and the manual's infix operators (Appendix~B), built in as ProVerif has them.
 \end{definition}
 
 \begin{definition}[Queries]\label{def:queries}
@@ -257,37 +257,70 @@ A \emph{query fact} is $\mathsf{event}(M)$ or $\mathsf{attacker}(M)$ with $M$ a 
 
 \subsection{Semantics}
 
-Names are atoms. An equational theory $E$ is a finite set of equations between terms without names; $=_E$ is the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution. The survey states \S3 for the core calculus; here its definitions are taken modulo $=_E$: a step on a term $M'=_E M$ counts as a step on $M$, and substitutions are compared modulo $=_E$.
+Names are atoms. The equational theory $E$ of the model gives $=_E$, the closure of $E$ under reflexivity, symmetry, transitivity, application of function symbols and substitution. The manual states its semantics for the full input language, in Figures~B.1 and~B.2, and reads it modulo $=_E$: a step on a term $M'=_E M$ counts as a step on $M$. Here its rules are restricted to the fragment of Definition~\ref{def:syntax}, and the tables, phases and synchronisation parameters that the fragment does not use are dropped from its configurations; the communication rule, which in the manual leaves the input to match its pattern in a further step, matches the variable at once.
 
-Evaluation $D\Downarrow U$ of closed expressions to closed may-fail terms is the least relation with $M\Downarrow M$, $\mathsf{fail}\Downarrow\mathsf{fail}$, and $h(D_1,\dots,D_n)\Downarrow\sigma U'_j$ whenever $D_i\Downarrow U_i$ for all $i$, $\mathrm{def}(h)=(h(U'_{i,1},\dots,U'_{i,n})\to U'_i)_{i\le k}$, $\sigma U'_{j,i}=_E U_i$ for all $i$, and for all $i<j$ and all $\sigma'$ there is some $l$ with $\sigma'U'_{i,l}\ne_E U_l$.
+\paragraph{Rewriting.} A closed destructor application $g(U_1,\dots,U_n)$ \emph{rewrites to} $U$, written $g(\vec U)\to U$, if $\mathrm{def}(g)=(g(U'_{i,1},\dots,U'_{i,n})\to U'_i)_{i\le k}$, $j$ is least such that some substitution $\sigma$ has $\sigma U'_{j,i}=_E U_i$ for $i=1,\dots,n$, and $U=\sigma U'_j$. The final rule of $\mathrm{def}(g)$ makes $j$ exist, so every closed destructor application rewrites.
 
-A \emph{configuration} is $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\mathcal{P}$ with $\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}$ finite disjoint sets of names and $\mathcal{P}$ a finite multiset of closed processes with $\fn(\mathcal{P})\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$. Writing $\mathcal{E}$ for the pair of name sets, reduction is the least relation closed under
+\paragraph{Expressions.} A \emph{term configuration} is $\mathcal{N},D$ with $\mathcal{N}$ a finite set of names disjoint from $\mathcal{N}_{\mathrm{pub}}$ and $D$ a closed expression with $\fn(D)\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}$. Writing $\ell$ for a label that is either empty or $\mathsf{event}(M)$ for a closed term $M$, the transitions $\mathcal{N},D\xrightarrow{\ell}_t\mathcal{N}',D'$ are the least relation closed under
 \begin{align*}
-\mathcal{E},\mathcal{P}\cup\{\mathbf{0}\}&\to\mathcal{E},\mathcal{P} \tag{Red Nil}\\
-\mathcal{E},\mathcal{P}\cup\{P\mid Q\}&\to\mathcal{E},\mathcal{P}\cup\{P,Q\} \tag{Red Par}\\
-\mathcal{E},\mathcal{P}\cup\{!P\}&\to\mathcal{E},\mathcal{P}\cup\{P,!P\} \tag{Red Repl}\\
-(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\mathcal{P}\cup\{\mathsf{new}\ a;P\}&\to(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}\cup\{a'\}),\mathcal{P}\cup\{P\{a'/a\}\}\notag\\
-&\qquad\text{if } a'\notin\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}} \tag{Red Res}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{out}(N,M);Q,\ \mathsf{in}(N',x);P\}&\to\mathcal{E},\mathcal{P}\cup\{Q,\ P\{M/x\}\}\quad\text{if } N=_E N' \tag{Red I/O$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\{M/x\}\}\quad\text{if } D\Downarrow M \tag{Red Eval 1}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } D\Downarrow\mathsf{fail} \tag{Red Eval 2}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{P\}\quad\text{if } M=_E\mathsf{true} \tag{Red Cond 1$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{E},\mathcal{P}\cup\{Q\}\quad\text{if } M\ne_E\mathsf{true} \tag{Red Cond 2$'$}\\
-\mathcal{E},\mathcal{P}\cup\{\mathsf{event}(M);P\}&\to\mathcal{E},\mathcal{P}\cup\{P\} \tag{Red Event}
+\mathcal{N},f(U_1,\dots,U_n)&\to_t\mathcal{N},\mathsf{fail} &&\text{if some }U_i=\mathsf{fail}\\
+\mathcal{N},g(U_1,\dots,U_n)&\to_t\mathcal{N},U &&\text{if }g(U_1,\dots,U_n)\to U\\
+\mathcal{N},\mathsf{new}\ a;D&\to_t\mathcal{N}\cup\{a'\},D\{a'/a\} &&\text{if }a'\notin\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}\\
+\mathcal{N},\mathsf{if}\ M\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2&\to_t\mathcal{N},D_1 &&\text{if }M=_E\mathsf{true}\\
+\mathcal{N},\mathsf{if}\ M\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2&\to_t\mathcal{N},D_2 &&\text{if }M\ne_E\mathsf{true}\\
+\mathcal{N},\mathsf{if}\ \mathsf{fail}\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2&\to_t\mathcal{N},\mathsf{fail}\\
+\mathcal{N},\mathsf{let}\ x=M\ \mathsf{in}\ D_1\ \mathsf{else}\ D_2&\to_t\mathcal{N},D_1\{M/x\}\\
+\mathcal{N},\mathsf{let}\ x=\mathsf{fail}\ \mathsf{in}\ D_1\ \mathsf{else}\ D_2&\to_t\mathcal{N},D_2\\
+\mathcal{N},\mathsf{event}(M);D&\xrightarrow{\mathsf{event}(M)}_t\mathcal{N},D\\
+\mathcal{N},\mathsf{event}(\mathsf{fail});D&\to_t\mathcal{N},\mathsf{fail}\\
+\mathcal{N},C[D]&\xrightarrow{\ell}_t\mathcal{N}',C[D'] &&\text{if }\mathcal{N},D\xrightarrow{\ell}_t\mathcal{N}',D'\text{, }C\in\mathcal{C}_t,
 \end{align*}
-A \emph{trace} is a finite reduction sequence $\mathcal{E}_0,\mathcal{P}_0\to\dots\to\mathcal{E}_n,\mathcal{P}_n$, written $\mathcal{E}_0,\mathcal{P}_0\to^*\mathcal{E}_n,\mathcal{P}_n$.
+where $f$ is a constructor, $g$ a destructor and $\mathcal{C}_t$ is the set of contexts
+\begin{gather*}
+h(U_1,\dots,U_{i-1},[\,],D_{i+1},\dots,D_n),\qquad
+\mathsf{if}\ [\,]\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2,\\
+\mathsf{let}\ x=[\,]\ \mathsf{in}\ D_1\ \mathsf{else}\ D_2,\qquad
+\mathsf{event}([\,]);D.
+\end{gather*}
+So the arguments of an application are evaluated from left to right, each to a may-fail term before the next, and the evaluation goes on after an argument has failed; a may-fail term has no transition.
+
+\paragraph{Processes.} A \emph{configuration} is $\mathcal{N},\mathcal{P}$ with $\mathcal{N}$ as above and $\mathcal{P}$ a finite multiset of closed processes with $\fn(\mathcal{P})\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}$. The transitions $\mathcal{N},\mathcal{P}\xrightarrow{\ell}\mathcal{N}',\mathcal{P}'$ are the least relation closed under
+\begin{align*}
+\mathcal{N},\mathcal{P}\cup\{\mathbf{0}\}&\to\mathcal{N},\mathcal{P}\\
+\mathcal{N},\mathcal{P}\cup\{P\mid Q\}&\to\mathcal{N},\mathcal{P}\cup\{P,Q\}\\
+\mathcal{N},\mathcal{P}\cup\{!P\}&\to\mathcal{N},\mathcal{P}\cup\{P,!P\}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{new}\ a;P\}&\to\mathcal{N}\cup\{a'\},\mathcal{P}\cup\{P\{a'/a\}\} &&\text{if }a'\notin\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{out}(N,M);Q,\ \mathsf{in}(N',x);P\}&\to\mathcal{N},\mathcal{P}\cup\{Q,\ P\{M/x\}\} &&\text{if }N=_E N'\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{N},\mathcal{P}\cup\{P\} &&\text{if }M=_E\mathsf{true}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q\}&\to\mathcal{N},\mathcal{P}\cup\{Q\} &&\text{if }M\ne_E\mathsf{true}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{let}\ x=M\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{N},\mathcal{P}\cup\{P\{M/x\}\}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{let}\ x=\mathsf{fail}\ \mathsf{in}\ P\ \mathsf{else}\ Q\}&\to\mathcal{N},\mathcal{P}\cup\{Q\}\\
+\mathcal{N},\mathcal{P}\cup\{\mathsf{event}(M);P\}&\xrightarrow{\mathsf{event}(M)}\mathcal{N},\mathcal{P}\cup\{P\}\\
+\mathcal{N},\mathcal{P}\cup\{C[D]\}&\xrightarrow{\ell}\mathcal{N}',\mathcal{P}\cup\{C[D']\} &&\text{if }\mathcal{N},D\xrightarrow{\ell}_t\mathcal{N}',D'\text{, }C\in\mathcal{C}_p,
+\end{align*}
+where $\mathcal{C}_p$ is the set of contexts
+\begin{gather*}
+\mathsf{out}([\,],D);P,\qquad
+\mathsf{out}(U,[\,]);P,\qquad
+\mathsf{in}([\,],x);P,\\
+\mathsf{if}\ [\,]\ \mathsf{then}\ P\ \mathsf{else}\ Q,\qquad
+\mathsf{let}\ x=[\,]\ \mathsf{in}\ P\ \mathsf{else}\ Q,\qquad
+\mathsf{event}([\,]);P.
+\end{gather*}
+A process whose expressions have become may-fail terms with $\mathsf{fail}$ where a term is required, as $\mathsf{out}(\mathsf{fail},M);P$, $\mathsf{in}(\mathsf{fail},x);P$, $\mathsf{if}\ \mathsf{fail}\ \mathsf{then}\ P\ \mathsf{else}\ Q$ or $\mathsf{event}(\mathsf{fail});P$, has no transition. A \emph{trace} is a finite transition sequence $\mathcal{N}_0,\mathcal{P}_0\xrightarrow{\ell_1}\dots\xrightarrow{\ell_n}\mathcal{N}_n,\mathcal{P}_n$, written $\mathcal{N}_0,\mathcal{P}_0\to^*\mathcal{N}_n,\mathcal{P}_n$.
 
 \begin{definition}[Survey, Definitions 3.1--3.5]\label{def:survey}
-Let $P_0$ be a closed process.
+Let $P_0$ be the closed process of the model.
 \begin{enumerate}
 \item A closed process $Q$ is an \emph{$\mathcal{N}_{\mathrm{pub}}$-adversary} if $\fn(Q)\subseteq\mathcal{N}_{\mathrm{pub}}$, every function symbol of $Q$ is public, and $Q$ contains no $\mathsf{event}$.
-\item A trace \emph{outputs $M$ publicly} if it contains a step \red{I/O$'$} whose output is $\mathsf{out}(N,M');Q$ with $N\in\mathcal{N}_{\mathrm{pub}}$ and $M'=_E M$. It \emph{executes $\mathsf{event}(M)$} if it contains a step \red{Event} on $\mathsf{event}(M');P$ with $M'=_E M$.
-\item $P_0$ \emph{preserves the secrecy of} the closed term $M$ \emph{from} $\mathcal{N}_{\mathrm{pub}}$ if, for some $\mathcal{N}_{\mathrm{priv}}$ disjoint from $\mathcal{N}_{\mathrm{pub}}$ with $\fn(M)\cup\fn(P_0)\subseteq\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, no trace $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}\to^*\mathcal{E}',\mathcal{P}'$ with $Q$ an $\mathcal{N}_{\mathrm{pub}}$-adversary outputs $M$ publicly.
-\item $P_0$ \emph{satisfies} $\mathsf{event}(M)\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}\mathsf{event}(M_{jk})$ \emph{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if, for some $\mathcal{N}_{\mathrm{priv}}$ as above, for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\mathsf{event}(\sigma M)$ then there are $\sigma'$ and $j$ with $\sigma'M=_E\sigma M$ such that $\mathrm{Tr}$ executes $\mathsf{event}(\sigma'M_{jk})$ for every $k\le l_j$.
+\item A trace \emph{outputs $M$ publicly} if it contains a communication step whose output is $\mathsf{out}(N,M');Q$ with $N\in\mathcal{N}_{\mathrm{pub}}$ and $M'=_E M$. It \emph{executes $\mathsf{event}(M)$} if it contains a step labelled $\mathsf{event}(M')$ with $M'=_E M$.
+\item $P_0$ \emph{preserves the secrecy of} the closed term $M$ \emph{from} $\mathcal{N}_{\mathrm{pub}}$ if no trace $\mathcal{N}_{\mathrm{priv}},\{P_0,Q\}\to^*\mathcal{N}',\mathcal{P}'$ with $Q$ an $\mathcal{N}_{\mathrm{pub}}$-adversary outputs $M$ publicly.
+\item $P_0$ \emph{satisfies} $\mathsf{event}(M)\rightsquigarrow\bigvee_{j=1}^m\bigwedge_{k=1}^{l_j}\mathsf{event}(M_{jk})$ \emph{against $\mathcal{N}_{\mathrm{pub}}$-adversaries} if, for every $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, every trace $\mathrm{Tr}$ from $\mathcal{N}_{\mathrm{priv}},\{P_0,Q\}$ and every substitution $\sigma$: if $\mathrm{Tr}$ executes $\mathsf{event}(\sigma M)$ then there are $\sigma'$ and $j$ with $\sigma'M=_E\sigma M$ such that $\mathrm{Tr}$ executes $\mathsf{event}(\sigma'M_{jk})$ for every $k\le l_j$.
 \end{enumerate}
+The survey states these for its own semantics, in which the set of private names is chosen with the model; here it is $\mathcal{N}_{\mathrm{priv}}$, and the traces are those of the manual's semantics above.
 \end{definition}
 
-Fix $\mathcal{N}_{\mathrm{priv}}$ as in Definition~\ref{def:survey}, and for an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ write $\mathcal{C}_Q$ for the configuration $(\mathcal{N}_{\mathrm{pub}},\mathcal{N}_{\mathrm{priv}}),\{P_0,Q\}$.
+For an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ write $\mathcal{C}_Q$ for the configuration $\mathcal{N}_{\mathrm{priv}},\{P_0,Q\}$.
 
 \begin{definition}[Satisfaction]\label{def:satisfies}
 A trace \emph{satisfies} $\mathsf{attacker}(M)$ if it outputs $M$ publicly, and \emph{satisfies} $\mathsf{event}(M)$ if it executes $\mathsf{event}(M)$.
@@ -299,16 +332,14 @@ Let $F$ and $H_{jk}$ ($j\le m$, $k\le l_j$) be query facts over $X$. $P_0$ \emph
 
 \section{The translation}\label{sec:translation}
 
-The calculus is translated into the trace semantics: a destructor to a function on may-fail messages, an expression to its value, a process to a set of traces and a query to the property it denotes. Section~\ref{sec:corr} relates the translation to the semantics of Section~\ref{sec:calculus}.
+The calculus is translated into the trace semantics: a destructor to a function on may-fail messages, an expression to a computation, a process to a set of traces and a query to the property it denotes. Section~\ref{sec:corr} relates the translation to the semantics of Section~\ref{sec:calculus}.
 
-Throughout, fix a model (Definition~\ref{def:model}) satisfying
+Throughout, fix a model (Definition~\ref{def:model}) and instantiate the trace semantics of Section~\ref{sec:trace} from it: the signature $\Sigma_0$ has the declared constructors and the free names $\mathcal{N}_{\mathrm{pub}}\uplus\mathcal{N}_{\mathrm{priv}}$ as nullary symbols, so that $\Sigma=\Sigma_0\uplus\mathrm{Data}$ of Definition~\ref{def:data} has the data symbols besides; $E$ is the equational theory of the model; $\Fr$ is the set of symbols of $\Sigma_0$ at the root of no equation; $\Pub$ is the set of public declared constructors together with $\mathcal{N}_{\mathrm{pub}}$; and $\Dt$ is the set of the functions of Definition~\ref{def:rules} of the public declared destructors, so that the attacker has the standard operations besides. A projection then denotes the standard projection $\pi^n_i$, and a boolean destructor is not among $\Ops$, which changes nothing, each of its results being $\mathsf{true}$, $\mathsf{false}$ or an argument. The instantiation requires
 \begin{enumerate}
-\item[(R1)] $\Fr$ is the set of symbols at the root of no equation and $(E,\Fr)$ satisfies (H);
-\item[(R2)] in every rule of every destructor, the terms among the arguments have all their constructors in $\Fr$;
-\item[(R3)] $\Pub$ consists of the public constructors and the names in $\mathcal{N}_{\mathrm{pub}}$, and $\Dt$ of the public declared destructors, so that by Definition~\ref{def:data} the attacker has the standard operations besides; a projection denotes the standard projection $\pi^n_i$ under Definition~\ref{def:rules}, and a boolean destructor is not among $\Ops$, which changes nothing, each of its results being $\mathsf{true}$, $\mathsf{false}$ or an argument;
-\item[(R4)] $P_0$ is a closed process of Definition~\ref{def:syntax}.
+\item[(R1)] no equation of $E$ has a variable as a side, so that $(E,\Fr)$ satisfies (H);
+\item[(R2)] in every rule of every destructor, the terms among the arguments have all their constructors in $\Fr$.
 \end{enumerate}
-These conditions exclude some ProVerif models: an equation with a variable as one side, such as the survey's (2.8), violates (H), and a destructor whose rules match on a symbol at the root of an equation has no counterpart under (R2).
+These conditions exclude some ProVerif models: an equation with a variable as one side, such as the survey's (2.8), and a destructor whose rules match on a symbol at the root of an equation.
 
 \subsection{Destructors, expressions, processes and queries}
 
@@ -320,32 +351,34 @@ g(\vec u)=U_{i,0}\theta\quad\text{for } i \text{ least such that some } \theta \
 which the final rule of $\mathrm{def}(g)$ makes total. By (R2) and Proposition~\ref{prop:view} at most one $\theta$ on the variables of the $i$-th rule has $U_{i,j}\theta=u_j$ for all $j$, so $g$ is well defined. A term among the $U_{i,j}$ thus accepts only messages, $\mathsf{fail}$ only $\bot$, and a may-fail variable any $u_j$, which is the survey's two kinds of substitution. When no rule but the final one contains $\mathsf{fail}$ or a may-fail variable, every other rule requires messages, so $g=g_0^{\uparrow}$ for the $g_0:\mathcal{M}^n\to\mathcal{M}_{\bot}$ that those rules define on messages.
 \end{definition}
 
-\begin{definition}[Translation]
-An \emph{environment} $\rho$ maps variables and names to $\mathcal{M}$; $\rho_0$ maps each free name $a$ to the constant $a\in\mathcal{M}$. Write $\rho M\in\mathcal{M}$ for the homomorphic extension. Expressions are evaluated in $\mathcal{M}_{\bot}$:
-\[
-\sem{M}\rho=\rho M,\qquad \sem{\mathsf{fail}}\rho=\bot,\qquad
-\sem{f(\vec D)}\rho=f^{\uparrow}(\sem{\vec D}\rho),\qquad
-\sem{g(\vec D)}\rho=g(\sem{\vec D}\rho)
-\]
-for a constructor $f$ and a destructor $g$, the latter the function of Definition~\ref{def:rules}. Processes are translated by
+\begin{definition}[Translation]\label{def:translation}
+An \emph{environment} $\rho$ maps variables and names to $\mathcal{M}$; $\rho_0$ maps each free name $a$ to the constant $a\in\mathcal{M}$. Write $\rho M\in\mathcal{M}$ for the homomorphic extension. An expression is translated to a \emph{computation} $\sem{D}\rho:(\mathcal{M}_{\bot}\to\Proc)\to\Proc$, the process it becomes when its result is passed to a continuation $\kappa$:
 \begin{align*}
-\sem{\mathbf{0}}\rho&=\mathbf{0},&
-\sem{\mathsf{out}(N,M);P}\rho&=\mathsf{out}(\rho N,\rho M).\sem{P}\rho,\\
-\sem{\mathsf{event}(M);P}\rho&=\mathsf{ev}(\rho M).\sem{P}\rho,&
-\sem{\mathsf{in}(N,x);P}\rho&=\mathsf{in}(\rho N).\big(m\mapsto\sem{P}\rho[x\mapsto m]\big),\\
-\sem{P\mid Q}\rho&=\sem{P}\rho\mid\sem{Q}\rho,&
-\sem{\mathsf{new}\ a;P}\rho&=\mathsf{new}.\big(m\mapsto\sem{P}\rho[a\mapsto m]\big),\\
-\sem{!P}\rho&=\,!\sem{P}\rho,&
-\sem{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q}\rho&=
-\begin{cases}\sem{P}\rho[x\mapsto m]&\sem{D}\rho=m\in\mathcal{M},\\ \sem{Q}\rho&\sem{D}\rho=\bot,\end{cases}\\
-&&\sem{\mathsf{if}\ M\ \mathsf{then}\ P\ \mathsf{else}\ Q}\rho&=
-\begin{cases}\sem{P}\rho&\rho M=\mathsf{true},\\ \sem{Q}\rho&\rho M\ne\mathsf{true}.\end{cases}
+\sem{M}\rho\,\kappa&=\kappa(\rho M), & \sem{\mathsf{fail}}\rho\,\kappa&=\kappa(\bot),\\
+\sem{h(D_1,\dots,D_n)}\rho\,\kappa&=\sem{D_1}\rho\,\big(u_1\mapsto\sem{D_2}\rho\,\big(u_2\mapsto\dots\\
+&\qquad\qquad\dots\sem{D_n}\rho\,\big(u_n\mapsto\kappa(h(u_1,\dots,u_n))\big)\dots\big)\big),\\
+\sem{\mathsf{new}\ a;D}\rho\,\kappa&=\mathsf{new}.\big(m\mapsto\sem{D}\rho[a\mapsto m]\,\kappa\big),\\
+\sem{\mathsf{if}\ D\ \mathsf{then}\ D_1\ \mathsf{else}\ D_2}\rho\,\kappa&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\sem{D_1}\rho\,\kappa&u=\mathsf{true},\\\sem{D_2}\rho\,\kappa&u\in\mathcal{M}\setminus\{\mathsf{true}\},\\\kappa(\bot)&u=\bot,\end{cases}\Big)\\
+\sem{\mathsf{let}\ x=D\ \mathsf{in}\ D_1\ \mathsf{else}\ D_2}\rho\,\kappa&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\sem{D_1}\rho[x\mapsto u]\,\kappa&u\in\mathcal{M},\\\sem{D_2}\rho\,\kappa&u=\bot,\end{cases}\Big)\\
+\sem{\mathsf{event}(D);D'}\rho\,\kappa&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\mathsf{ev}(u).\sem{D'}\rho\,\kappa&u\in\mathcal{M},\\\kappa(\bot)&u=\bot,\end{cases}\Big)
 \end{align*}
-The translation of $P_0$ is $\sem{P_0}\rho_0$. A translated process mentions no $\nu_k$ except through $\mathsf{new}$.
+where $h(u_1,\dots,u_n)$ is $f^{\uparrow}(\vec u)$ for a constructor $f$ and the function of Definition~\ref{def:rules} for a destructor $g$. Processes are translated by
+\begin{align*}
+\sem{\mathbf{0}}\rho&=\mathbf{0},\\
+\sem{\mathsf{out}(D,D');P}\rho&=\sem{D}\rho\,\Big(u\mapsto\sem{D'}\rho\,\big(v\mapsto\mathsf{out}(u,v).\sem{P}\rho\text{ if }u,v\in\mathcal{M}\text{, else }\mathbf{0}\big)\Big),\\
+\sem{\mathsf{in}(D,x);P}\rho&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\mathsf{in}(u).\big(m\mapsto\sem{P}\rho[x\mapsto m]\big)&u\in\mathcal{M},\\\mathbf{0}&u=\bot,\end{cases}\Big)\\
+\sem{P\mid Q}\rho&=\sem{P}\rho\mid\sem{Q}\rho,\\
+\sem{!P}\rho&=\,!\sem{P}\rho,\\
+\sem{\mathsf{new}\ a;P}\rho&=\mathsf{new}.\big(m\mapsto\sem{P}\rho[a\mapsto m]\big),\\
+\sem{\mathsf{let}\ x=D\ \mathsf{in}\ P\ \mathsf{else}\ Q}\rho&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\sem{P}\rho[x\mapsto u]&u\in\mathcal{M},\\\sem{Q}\rho&u=\bot,\end{cases}\Big)\\
+\sem{\mathsf{if}\ D\ \mathsf{then}\ P\ \mathsf{else}\ Q}\rho&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\sem{P}\rho&u=\mathsf{true},\\\sem{Q}\rho&u\in\mathcal{M}\setminus\{\mathsf{true}\},\\\mathbf{0}&u=\bot,\end{cases}\Big)\\
+\sem{\mathsf{event}(D);P}\rho&=\sem{D}\rho\,\Big(u\mapsto\begin{cases}\mathsf{ev}(u).\sem{P}\rho&u\in\mathcal{M},\\\mathbf{0}&u=\bot.\end{cases}\Big)
+\end{align*}
+The process $\mathbf{0}$ stands where the semantics of Section~\ref{sec:calculus} has no transition. The translation of $P_0$ is $\sem{P_0}\rho_0$. A translated process mentions no $\nu_k$ except through $\mathsf{new}$.
 \end{definition}
 
 \begin{remark}
-In the development a process is a program in the continuation monad with answer type $\Proc$, run by $\mathrm{run}(b)=b(\lambda\_.\,\mathbf{0})$, with primitives $\mathrm{send}(c,m)=\lambda\kappa.\,\mathsf{out}(c,m).\kappa()$, $\mathrm{recv}(c)=\lambda\kappa.\,\mathsf{in}(c).\kappa$, $\mathrm{fresh}=\lambda\kappa.\,\mathsf{new}.\kappa$, $\mathrm{emit}(m)=\lambda\kappa.\,\mathsf{ev}(m).\kappa()$, $\mathrm{fork}=\lambda\kappa.\,\kappa(\mathrm{tt})\mid\kappa(\mathrm{ff})$, $\mathrm{repl}=\lambda\kappa.\,!\kappa()$ and $\mathrm{stop}=\lambda\_.\,\mathbf{0}$; $\mathsf{let}$ and $\mathsf{if}$ are case analysis in the metalanguage. The clauses above are the unfolding of that presentation.
+In the development an expression is a program in the continuation monad with answer type $\Proc$ returning a may-fail message, and a process a program in the same monad run by $\mathrm{run}(b)=b(\lambda\_.\,\mathbf{0})$, with primitives $\mathrm{send}(c,m)=\lambda\kappa.\,\mathsf{out}(c,m).\kappa()$, $\mathrm{recv}(c)=\lambda\kappa.\,\mathsf{in}(c).\kappa$, $\mathrm{fresh}=\lambda\kappa.\,\mathsf{new}.\kappa$, $\mathrm{emit}(m)=\lambda\kappa.\,\mathsf{ev}(m).\kappa()$, $\mathrm{fork}=\lambda\kappa.\,\kappa(\mathrm{tt})\mid\kappa(\mathrm{ff})$, $\mathrm{repl}=\lambda\kappa.\,!\kappa()$ and $\mathrm{stop}=\lambda\_.\,\mathbf{0}$; $\mathsf{let}$ and $\mathsf{if}$ are case analysis in the metalanguage. The clauses above are the unfolding of that presentation, and the program the translator emits from a ProVerif model is that presentation.
 \end{remark}
 
 \begin{definition}[Translation of queries]
@@ -354,26 +387,28 @@ For a valuation $\sigma:X\to\mathcal{M}$ write $\sigma M\in\mathcal{M}$ for the 
 
 \subsection{The correspondence}\label{sec:corr}
 
-Names of the reduction semantics are the free names together with the created names; terms are interpreted in $\mathcal{M}$ through a bijection $\iota$ between the names outside $\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, those that \red{Res} may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\mathsf{fail}=\bot$; $\iota M=\iota M'$ exactly when $M=_E M'$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
+Names of the operational semantics are the free names together with the created names; terms are interpreted in $\mathcal{M}$ through a bijection $\iota$ between the names outside $\mathcal{N}_{\mathrm{pub}}\cup\mathcal{N}_{\mathrm{priv}}$, those that $\mathsf{new}$ may create, and $\N$, extended by $\iota a=a$ for free names, $\iota a'=\nu_{\iota a'}$ for created names, $\iota f(\vec M)=f(\iota\vec M)$ and $\iota\,\mathsf{fail}=\bot$; $\iota M=\iota M'$ exactly when $M=_E M'$. Let $\rho_\iota$ be the environment with $\rho_\iota(a)=\iota a$ for every free or created name $a$.
 
 \begin{lemma}[Evaluation]\label{lem:eval}
-For every closed expression $D$ over free and created names, some $U$ satisfies $D\Downarrow U$, and $D\Downarrow U$ implies $\iota U=\sem{D}\rho_\iota$.
+Let $D$ be a closed expression over free and created names without $\mathsf{new}$, $\mathsf{if}$, $\mathsf{let}$ and $\mathsf{event}$. Then $\mathcal{N},D\to_t^*\mathcal{N},U$ for some may-fail term $U$, and for every such $U$, $\sem{D}\rho_\iota=\kappa\mapsto\kappa(\iota U)$.
 \end{lemma}
 
 \begin{definition}[Labelled semantics]
-A \emph{labelled configuration} is $(U,\mathcal{P})$ with $U\subseteq\N$ finite and $\mathcal{P}$ a finite multiset of closed processes whose names are free names and symbols $\nu_k$. The $\tau$-steps $(U,\mathcal{P})\xrightarrow{\tau}(U,\mathcal{P}')$ are the steps \red{Nil}, \red{Par}, \red{Repl}, \red{Eval 1}, \red{Eval 2}, \red{Cond 1$'$} and \red{Cond 2$'$}, with $=_E$ read on $\mathcal{M}$. The visible steps are
+A \emph{labelled term configuration} is $(U,D)$ and a \emph{labelled configuration} is $(U,\mathcal{P})$, with $U\subseteq\N$ finite, $D$ a closed expression and $\mathcal{P}$ a finite multiset of closed processes, whose names are free names and symbols $\nu_k$. The transitions of Section~\ref{sec:calculus} become labelled steps, with $=_E$ read on $\mathcal{M}$: $\mathsf{new}\ a$ creates $\nu_k$ for any $k\notin U$ and adds $k$ to $U$, with the label $\mathsf{new}(k)$; the steps on $\mathsf{event}(M)$ have the label $\mathsf{ev}([M])$; the communication has the label $\mathsf{comm}([N],[M])$; the context rules carry the label of the step they lift; and every other step is a $\tau$-step. There are besides the \emph{offers}
 \begin{align*}
 (U,\mathcal{P}\cup\{\mathsf{out}(N,M);P\})&\xrightarrow{\mathsf{out}([N],[M])}(U,\mathcal{P}\cup\{P\}),\\
-(U,\mathcal{P}\cup\{\mathsf{in}(N,x);P\})&\xrightarrow{\mathsf{in}([N],[M])}(U,\mathcal{P}\cup\{P\{M/x\}\})\quad\text{for every closed term }M,\\
-(U,\mathcal{P}\cup\{\mathsf{out}(N,M);Q,\ \mathsf{in}(N',x);P\})&\xrightarrow{\mathsf{comm}([N],[M])}(U,\mathcal{P}\cup\{Q,\ P\{M/x\}\})\quad\text{if }N=_E N',\\
-(U,\mathcal{P}\cup\{\mathsf{new}\ a;P\})&\xrightarrow{\mathsf{new}(k)}(U\cup\{k\},\mathcal{P}\cup\{P\{\nu_k/a\}\})\quad\text{for every }k\notin U,\\
-(U,\mathcal{P}\cup\{\mathsf{event}(M);P\})&\xrightarrow{\mathsf{ev}([M])}(U,\mathcal{P}\cup\{P\}).
+(U,\mathcal{P}\cup\{\mathsf{in}(N,x);P\})&\xrightarrow{\mathsf{in}([N],[M])}(U,\mathcal{P}\cup\{P\{M/x\}\})\quad\text{for every closed term }M.
 \end{align*}
-The third step is \red{I/O$'$} between two members of $\mathcal{P}$. It is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \emph{weak traces} is
+The communication is visible rather than a $\tau$-step because a trace records a completed communication, which is what $\known$ reads the attacker's knowledge off. With $\xRightarrow{\alpha}\;=\;\xrightarrow{\tau}^{*}\xrightarrow{\alpha}\xrightarrow{\tau}^{*}$, the set of \emph{weak traces} is
 \[
-\Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Act^*\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\}.
+\Tr(U,\mathcal{P})=\{\alpha_1\cdots\alpha_n\in\Act^*\mid (U,\mathcal{P})\xRightarrow{\alpha_1}\cdots\xRightarrow{\alpha_n}\},
 \]
+and $(U,D)\xRightarrow{t}(U',D')$ means that the term configuration $(U,D)$ reaches $(U',D')$ by steps whose visible labels, in order, are $t$.
 \end{definition}
+
+\begin{lemma}[Expressions]\label{lem:expr}
+Let $D$ be a closed expression whose names are free names and symbols $\nu_k$, let $U\subseteq\N$ be finite, let $\kappa:\mathcal{M}_{\bot}\to\Proc$ satisfy $\varepsilon\in\kappa(u)$ for every $u$, and let $t\in\Act^*$ have no letter of $U$ in $\nonces(t)$. Then $t\in\sem{D}\rho\,\kappa$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$, if and only if $t=t_1t_2$ for some $(U,D)\xRightarrow{t_1}(U',D')$ such that either $t_2=\varepsilon$, or $D'$ is a may-fail term, $t_2\in\kappa(\iota D')$ and no letter of $U'$ is in $\nonces(t_2)$.
+\end{lemma}
 
 \begin{theorem}[Adequacy]\label{thm:T}
 For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
@@ -420,6 +455,12 @@ Bruno Blanchet.
 \newblock \emph{Foundations and Trends in Privacy and Security}, 1(1--2):1--135, October 2016.
 \newblock \href{file:../Reference/BlanchetFnTPS16.pdf}{\texttt{../Reference/BlanchetFnTPS16.pdf}},
 doi:\href{https://doi.org/10.1561/3300000004}{10.1561/3300000004}.
+
+\bibitem{ProVerifManual}
+Bruno Blanchet, Ben Smyth, Vincent Cheval, and Marc Sylvestre.
+\newblock {ProVerif} 2.05: Automatic cryptographic protocol verifier, user manual and tutorial.
+\newblock October 2023.
+\newblock \href{file:../Reference/proverif-manual.pdf}{\texttt{../Reference/proverif-manual.pdf}}.
 \end{thebibliography}
 
 \end{document}

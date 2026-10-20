@@ -8,34 +8,52 @@ import ScalingTrust.ProVerif.TraceSemantics.Security
 /-!
 # The operational semantics of ProVerif's calculus
 
-The write-up's §2.2, the semantics of Blanchet's survey (§2.4, §2.5.1, §3.1–3.3)
-taken modulo `=_E`, and its Definition "Labelled semantics", as one step relation.
+The write-up's §2.2, the semantics of the ProVerif manual (Appendix B, Figures B.1 and
+B.2) for the fragment of Definition "Source syntax", read modulo `=_E`, and the write-up's
+Definition "Labelled semantics" (§3.2), as two step relations: on term configurations and
+on process configurations.
 
 * **Messages.** The definitions are read on messages, `A.Msg`, terms over the declared
   constructors and the data symbols modulo `E`: a closed term `M` denotes `Tm.msg A M`,
-  and every `=_E` of the survey is an equality of messages; `true` is `StdOps.tt`.  In
+  and every `=_E` of the manual is an equality of messages; `true` is `StdOps.tt`.  In
   particular a rule's arguments are matched against may-fail messages: a substitution `σ`
   with `σ U =_E u` is a pair of valuations under which `U` has the value `u`,
-  `Rule.Matching`.
-* **Evaluation** `Eval A D u` of a closed expression to a may-fail message, `none` being
-  `fail`: a destructor rewrites by the first of its rules that matches, and fails when
-  none does, the survey's final rule `h(u⃗) → fail`.
+  `Rule.Matching`.  The **value** of a may-fail term, `Val A V u`: a term has its
+  message, `fail` has `none`.
+* **Term steps** `TStep A U D l U' D'`, Figure B.1: a term configuration is a finite set
+  `U` of created names and a closed expression.  A constructor applied to may-fail terms
+  yields their application, or `fail` if one of them is `fail`; a destructor rewrites by
+  the first of its rules that matches, and fails when none does, the manual's rules
+  being complete; `new` creates a name; `if`, `let` and `event` act on the value of their
+  first expression, `if fail` and `event(fail)` failing and `let … = fail` taking the
+  `else` branch; and the context rule evaluates the condition of `if`, the expression of
+  `let`, the term of `event`, and the arguments of a constructor or destructor from left
+  to right, one constructor here per context of the manual's `C_t`.  A step is labelled
+  `none` for `τ`, or `new k` or `event m`, the manual's labels.
 * **Configurations** are a finite set `U` of created names and a multiset of closed
-  processes.  The survey's `(N_pub, N_priv)` are the public and the private nullary
+  processes.  The manual's `N_pub` and `N_priv` are the public and the private nullary
   constructors, fixed by the model, and the created names are `ν_k` for `k ∈ U`.
-* **Steps** are labelled by `Option (Act A.Msg)`: `none` is a `τ`-step, (Red Nil), (Red
-  Par), (Red Repl), (Red Eval) and (Red Cond); the other rules carry the action of the
-  trace semantics.  The survey's reduction is a step whose label is not an offer: (Red
-  I/O') is the step labelled `comm`, (Red Res) the step labelled `new`, and (Red Event)
-  the step labelled `event`.  A trace of the survey is therefore a run whose labels are
-  closed; the `out` and `inp` steps are the offers of a process to its environment.
-  Since the semantics is modulo `E` but a process is a term, (Red I/O') and (Red Eval 1)
-  substitute any term of the message received or of the value.
+* **Steps** `Step A c l c'`, Figure B.2, labelled by `Option (Act A.Msg)`: `none` is a
+  `τ`-step, Nil, Par, Repl, the two rules of `if` and the two of `let`; `new` and
+  `event` carry the action of the trace semantics; a communication, between an output and
+  an input whose channels and message are may-fail terms, carries `comm`; and the `out`
+  and `inp` steps are the offers of a process to its environment, which the manual has
+  no rule for.  The context rule lifts a term step of the channel of an output, of its
+  message once the channel is a may-fail term, of the channel of an input, of the
+  condition of `if`, of the expression of `let` and of the term of `event`, the manual's
+  `C_t` for processes.  A process whose may-fail term is `fail` where a message is
+  needed, as `out(fail, M)` or `if fail`, has no step: it blocks.  A trace of the manual
+  is a run whose labels are closed.  Since the semantics is modulo `E` but a process is a
+  term, a communication and `let` substitute any term of the message received or of the
+  value, and the rewrite of a destructor yields any term of its result.
 * **Runs** `Runs A c t`: `c` performs the weak trace `t`, `τ`-steps elided.  A run of a
   union of two multisets interleaves runs of each with communications between them
-  (`Runs.split`), and conversely (`runs_add`).
+  (`Runs.split`), and conversely (`runs_add`).  A run of a term configuration,
+  `TRuns A U D t U' D'`, is lifted through a context of expressions (`TRuns.lift`) or of
+  processes (`Runs.ctx`).
 * **The survey's definitions** 3.1–3.5 and the write-up's Definitions "Satisfaction" and
-  "Correspondences between facts", for single query facts.
+  "Correspondences between facts", for single query facts; the manual defines no
+  adversary and no security property.
 -/
 
 namespace ProVerif.Specification
@@ -114,16 +132,147 @@ inductive Rewrites : List (Rule A.withData n) → (Fin n → Option A.Msg) → O
 
 variable (A)
 
-/-! ## Evaluation of expressions -/
+/-! ## Values and term steps -/
 
-/-- `D ⇓ u`, for a closed expression. -/
-inductive Eval : Expr F G (ℕ ⊕ Fin 0) → Option A.Msg → Prop
-  | term (M) : Eval (.term M) (some (Tm.msg A M))
-  | fail : Eval .fail none
-  | ctor {m : ℕ} (f : F.withData m) {args us} : (∀ i, Eval (args i) (us i)) →
-      Eval (.ctor f args) (liftFail (fun ms => some (Theory.Msg.app f ms)) us)
-  | dtor {m : ℕ} (g : Sig.withBuiltin G m) {args us v} : (∀ i, Eval (args i) (us i)) →
-      Rewrites (A.rules g) us v → Eval (.dtor g args) v
+/-- The value of a may-fail term: a term has its message, and `fail` has `none`. -/
+inductive Val : Expr F G 0 → Option A.Msg → Prop
+  | term (M : Tm F 0) : Val (.term M) (some (Tm.msg A M))
+  | fail : Val .fail none
+
+variable {A}
+
+theorem Val.isValue {V : Expr F G 0} {u : Option A.Msg} (h : Val A V u) : V.IsValue := by
+  cases h <;> trivial
+
+theorem Expr.IsValue.val : ∀ {V : Expr F G 0}, V.IsValue → ∃ u, Val A V u
+  | .term M, _ => ⟨_, .term M⟩
+  | .fail, _ => ⟨_, .fail⟩
+
+theorem Val.eq {V : Expr F G 0} {u u' : Option A.Msg} (h : Val A V u) (h' : Val A V u') :
+    u = u' := by
+  cases h <;> cases h' <;> rfl
+
+variable (A)
+
+/-- The steps of term configurations, the manual's Figure B.1: `none` is a `τ`-step, and
+the labels are `new k` and `event m`. -/
+inductive TStep : Finset ℕ → Expr F G 0 → Option (Act A.Msg) → Finset ℕ → Expr F G 0 → Prop
+  /-- A constructor applied to may-fail terms yields their application, or `fail` when
+  one of them is `fail`; the manual reads `f(M₁, …, Mₖ)` as a term already. -/
+  | ctor {U : Finset ℕ} {k : ℕ} (f : F.withData k) {args : Fin k → Expr F G 0}
+      {us : Fin k → Option A.Msg} {V : Expr F G 0} : (∀ i, Val A (args i) (us i)) →
+      Val A V (liftFail (fun ms => some (Theory.Msg.app f ms)) us) →
+      TStep U (.ctor f args) none U V
+  /-- A destructor applied to may-fail terms rewrites by the first of its rules that
+  matches, to any term of the result, and to `fail` when none matches. -/
+  | dtor {U : Finset ℕ} {k : ℕ} (g : Sig.withBuiltin G k) {args : Fin k → Expr F G 0}
+      {us : Fin k → Option A.Msg} {v : Option A.Msg} {V : Expr F G 0} :
+      (∀ i, Val A (args i) (us i)) → Rewrites (A.rules g) us v → Val A V v →
+      TStep U (.dtor g args) none U V
+  /-- `new a; D` creates the name `ν_k` for a fresh `k`. -/
+  | new {U : Finset ℕ} (D : Expr F G 1) (k : ℕ) : k ∉ U →
+      TStep U (.new D) (some (.new k)) (insert k U) (D.inst (.var (.inl k)))
+  | ite₁ {U : Finset ℕ} (M : Tm F 0) (D₁ D₂ : Expr F G 0) : Tm.msg A M = StdOps.tt →
+      TStep U (.ite (.term M) D₁ D₂) none U D₁
+  | ite₂ {U : Finset ℕ} (M : Tm F 0) (D₁ D₂ : Expr F G 0) : Tm.msg A M ≠ StdOps.tt →
+      TStep U (.ite (.term M) D₁ D₂) none U D₂
+  | ite_fail {U : Finset ℕ} (D₁ D₂ : Expr F G 0) : TStep U (.ite .fail D₁ D₂) none U .fail
+  /-- The variable receives any term of the value. -/
+  | let₁ {U : Finset ℕ} (M M' : Tm F 0) (D₁ : Expr F G 1) (D₂ : Expr F G 0) :
+      Tm.msg A M' = Tm.msg A M → TStep U (.let_ (.term M) D₁ D₂) none U (D₁.inst M')
+  | let₂ {U : Finset ℕ} (D₁ : Expr F G 1) (D₂ : Expr F G 0) :
+      TStep U (.let_ .fail D₁ D₂) none U D₂
+  | event {U : Finset ℕ} (M : Tm F 0) (D : Expr F G 0) :
+      TStep U (.event (.term M) D) (some (.event (Tm.msg A M))) U D
+  | event_fail {U : Finset ℕ} (D : Expr F G 0) : TStep U (.event .fail D) none U .fail
+  /-- The context `f(U₁, …, Uᵢ₋₁, _, Dᵢ₊₁, …, Dₖ)`: the arguments are evaluated from left
+  to right. -/
+  | ctor_ctx {U U' : Finset ℕ} {l : Option (Act A.Msg)} {k : ℕ} (f : F.withData k)
+      {args : Fin k → Expr F G 0} (i : Fin k) {D' : Expr F G 0} :
+      (∀ j, j < i → (args j).IsValue) → TStep U (args i) l U' D' →
+      TStep U (.ctor f args) l U' (.ctor f (Function.update args i D'))
+  /-- The context `g(U₁, …, Uᵢ₋₁, _, Dᵢ₊₁, …, Dₖ)`. -/
+  | dtor_ctx {U U' : Finset ℕ} {l : Option (Act A.Msg)} {k : ℕ} (g : Sig.withBuiltin G k)
+      {args : Fin k → Expr F G 0} (i : Fin k) {D' : Expr F G 0} :
+      (∀ j, j < i → (args j).IsValue) → TStep U (args i) l U' D' →
+      TStep U (.dtor g args) l U' (.dtor g (Function.update args i D'))
+  /-- The context `if _ then D₁ else D₂`. -/
+  | ite_ctx {U U' : Finset ℕ} {l : Option (Act A.Msg)} {C C' : Expr F G 0}
+      (D₁ D₂ : Expr F G 0) : TStep U C l U' C' → TStep U (.ite C D₁ D₂) l U' (.ite C' D₁ D₂)
+  /-- The context `let x = _ in D₁ else D₂`. -/
+  | let_ctx {U U' : Finset ℕ} {l : Option (Act A.Msg)} {D D' : Expr F G 0} (D₁ : Expr F G 1)
+      (D₂ : Expr F G 0) : TStep U D l U' D' → TStep U (.let_ D D₁ D₂) l U' (.let_ D' D₁ D₂)
+  /-- The context `event(_); D`. -/
+  | event_ctx {U U' : Finset ℕ} {l : Option (Act A.Msg)} {M M' : Expr F G 0} (D : Expr F G 0) :
+      TStep U M l U' M' → TStep U (.event M D) l U' (.event M' D)
+
+variable {A}
+
+/-- A term step is a `τ`-step, creates a name, or executes an event. -/
+theorem TStep.label {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)}
+    (h : TStep A U D l U' D') :
+    l = none ∨ (∃ k, l = some (.new k)) ∨ ∃ m, l = some (.event m) := by
+  induction h <;> first
+    | exact Or.inl rfl | exact Or.inr (Or.inl ⟨_, rfl⟩) | exact Or.inr (Or.inr ⟨_, rfl⟩)
+    | assumption
+
+/-- A may-fail term has no step. -/
+theorem TStep.not_value {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)}
+    (h : TStep A U D l U' D') : ¬ D.IsValue := by
+  cases h <;> exact id
+
+/-- A term step creates a name, or keeps the created names. -/
+theorem TStep.names_eq {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)}
+    (h : TStep A U D l U' D') :
+    (∃ k, l = some (.new k) ∧ k ∉ U ∧ U' = insert k U) ∨
+      (∀ k, l ≠ some (.new k)) ∧ U = U' := by
+  induction h <;> first
+    | exact Or.inr ⟨fun _ => nofun, rfl⟩ | exact Or.inl ⟨_, rfl, ‹_›, rfl⟩ | assumption
+
+/-- A term step is a step from any created names its new name, if any, is fresh for. -/
+theorem TStep.rename {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)}
+    (h : TStep A U D l U' D') (V : Finset ℕ) (hl : ∀ k, l = some (.new k) → k ∉ V) :
+    (∀ k, l ≠ some (.new k)) ∧ TStep A V D l V D' ∨
+      ∃ k, l = some (.new k) ∧ TStep A V D l (insert k V) D' := by
+  induction h generalizing V
+  case new D k hk => exact Or.inr ⟨k, rfl, .new D k (hl k rfl)⟩
+  case ctor_ctx f args i D' hv _ ih =>
+    rcases ih V hl with ⟨hl', hs⟩ | ⟨k, hk, hs⟩
+    · exact Or.inl ⟨hl', .ctor_ctx f i hv hs⟩
+    · exact Or.inr ⟨k, hk, .ctor_ctx f i hv hs⟩
+  case dtor_ctx g args i D' hv _ ih =>
+    rcases ih V hl with ⟨hl', hs⟩ | ⟨k, hk, hs⟩
+    · exact Or.inl ⟨hl', .dtor_ctx g i hv hs⟩
+    · exact Or.inr ⟨k, hk, .dtor_ctx g i hv hs⟩
+  case ite_ctx D₁ D₂ _ ih =>
+    rcases ih V hl with ⟨hl', hs⟩ | ⟨k, hk, hs⟩
+    · exact Or.inl ⟨hl', .ite_ctx D₁ D₂ hs⟩
+    · exact Or.inr ⟨k, hk, .ite_ctx D₁ D₂ hs⟩
+  case let_ctx D₁ D₂ _ ih =>
+    rcases ih V hl with ⟨hl', hs⟩ | ⟨k, hk, hs⟩
+    · exact Or.inl ⟨hl', .let_ctx D₁ D₂ hs⟩
+    · exact Or.inr ⟨k, hk, .let_ctx D₁ D₂ hs⟩
+  case event_ctx D _ ih =>
+    rcases ih V hl with ⟨hl', hs⟩ | ⟨k, hk, hs⟩
+    · exact Or.inl ⟨hl', .event_ctx D hs⟩
+    · exact Or.inr ⟨k, hk, .event_ctx D hs⟩
+  all_goals exact Or.inl ⟨fun _ => nofun, by constructor <;> assumption⟩
+
+/-- A term step is a term step from more created names, which its new name, if any, is
+fresh for. -/
+theorem TStep.add {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)}
+    (h : TStep A U D l U' D') (V : Finset ℕ) (hl : ∀ k, l = some (.new k) → k ∉ V) :
+    TStep A (U ∪ V) D l (U' ∪ V) D' := by
+  induction h generalizing V
+  case new D k hk =>
+    rw [Finset.insert_union]
+    exact .new D k fun h => (Finset.mem_union.1 h).elim hk (hl k rfl)
+  case ctor_ctx f args i D' hv _ ih => exact .ctor_ctx f i hv (ih V hl)
+  case dtor_ctx g args i D' hv _ ih => exact .dtor_ctx g i hv (ih V hl)
+  case ite_ctx D₁ D₂ _ ih => exact .ite_ctx D₁ D₂ (ih V hl)
+  case let_ctx D₁ D₂ _ ih => exact .let_ctx D₁ D₂ (ih V hl)
+  case event_ctx D _ ih => exact .event_ctx D (ih V hl)
+  all_goals (constructor <;> assumption)
 
 /-! ## Reduction -/
 
@@ -134,40 +283,63 @@ structure Config (F G : Sig) where
   /-- The processes, a multiset. -/
   procs : Multiset (Process F G 0)
 
-/-- The labelled steps, `none` being `τ`. -/
+variable (A)
+
+/-- The labelled steps of configurations, the manual's Figure B.2, `none` being `τ`. -/
 inductive Step : Config F G → Option (Act A.Msg) → Config F G → Prop
-  /-- (Red Nil) -/
+  /-- `0` -/
   | nil {U Ps} : Step ⟨U, .nil ::ₘ Ps⟩ none ⟨U, Ps⟩
-  /-- (Red Par) -/
+  /-- `P | Q` -/
   | par {U Ps} (P Q) : Step ⟨U, .par P Q ::ₘ Ps⟩ none ⟨U, P ::ₘ Q ::ₘ Ps⟩
-  /-- (Red Repl) -/
+  /-- `!P` -/
   | bang {U Ps} (P) : Step ⟨U, .bang P ::ₘ Ps⟩ none ⟨U, P ::ₘ .bang P ::ₘ Ps⟩
-  /-- (Red Res): the created name is `ν_k` for a fresh `k`. -/
+  /-- `new a; P`: the created name is `ν_k` for a fresh `k`. -/
   | new {U Ps} (P) (k : ℕ) : k ∉ U →
       Step ⟨U, .new P ::ₘ Ps⟩ (some (.new k)) ⟨insert k U, P.inst (.var (.inl k)) ::ₘ Ps⟩
-  /-- (Red I/O'), the input receiving any term of the message -/
+  /-- A communication, the input receiving any term of the message. -/
   | comm {U Ps} (N M Q N' P M') : Tm.msg A N = Tm.msg A N' → Tm.msg A M' = Tm.msg A M →
-      Step ⟨U, .out N M Q ::ₘ .inp N' P ::ₘ Ps⟩ (some (.comm (Tm.msg A N) (Tm.msg A M)))
-        ⟨U, Q ::ₘ P.inst M' ::ₘ Ps⟩
-  /-- (Red Eval 1), the variable receiving any term of the value -/
-  | eval₁ {U Ps} (D P Q M) : Eval A D (some (Tm.msg A M)) →
-      Step ⟨U, .let_ D P Q ::ₘ Ps⟩ none ⟨U, P.inst M ::ₘ Ps⟩
-  /-- (Red Eval 2) -/
-  | eval₂ {U Ps} (D P Q) : Eval A D none → Step ⟨U, .let_ D P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
-  /-- (Red Cond 1') -/
+      Step ⟨U, .out (.term N) (.term M) Q ::ₘ .inp (.term N') P ::ₘ Ps⟩
+        (some (.comm (Tm.msg A N) (Tm.msg A M))) ⟨U, Q ::ₘ P.inst M' ::ₘ Ps⟩
+  /-- `let x = M in P else Q`, the variable receiving any term of the value -/
+  | eval₁ {U Ps} (M M' P Q) : Tm.msg A M' = Tm.msg A M →
+      Step ⟨U, .let_ (.term M) P Q ::ₘ Ps⟩ none ⟨U, P.inst M' ::ₘ Ps⟩
+  /-- `let x = fail in P else Q` -/
+  | eval₂ {U Ps} (P Q) : Step ⟨U, .let_ .fail P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
+  /-- `if M then P else Q` with `M =_E true` -/
   | cond₁ {U Ps} (M P Q) : Tm.msg A M = StdOps.tt →
-      Step ⟨U, .ite M P Q ::ₘ Ps⟩ none ⟨U, P ::ₘ Ps⟩
-  /-- (Red Cond 2') -/
+      Step ⟨U, .ite (.term M) P Q ::ₘ Ps⟩ none ⟨U, P ::ₘ Ps⟩
+  /-- `if M then P else Q` with `M ≠_E true` -/
   | cond₂ {U Ps} (M P Q) : Tm.msg A M ≠ StdOps.tt →
-      Step ⟨U, .ite M P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
-  /-- (Red Event) -/
-  | event {U Ps} (M P) : Step ⟨U, .event M P ::ₘ Ps⟩ (some (.event (Tm.msg A M))) ⟨U, P ::ₘ Ps⟩
+      Step ⟨U, .ite (.term M) P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
+  /-- `event(M); P` -/
+  | event {U Ps} (M P) :
+      Step ⟨U, .event (.term M) P ::ₘ Ps⟩ (some (.event (Tm.msg A M))) ⟨U, P ::ₘ Ps⟩
   /-- An offer to send. -/
   | out {U Ps} (N M P) :
-      Step ⟨U, .out N M P ::ₘ Ps⟩ (some (.out (Tm.msg A N) (Tm.msg A M))) ⟨U, P ::ₘ Ps⟩
+      Step ⟨U, .out (.term N) (.term M) P ::ₘ Ps⟩ (some (.out (Tm.msg A N) (Tm.msg A M)))
+        ⟨U, P ::ₘ Ps⟩
   /-- An offer to receive any closed term. -/
   | inp {U Ps} (N P M) :
-      Step ⟨U, .inp N P ::ₘ Ps⟩ (some (.inp (Tm.msg A N) (Tm.msg A M))) ⟨U, P.inst M ::ₘ Ps⟩
+      Step ⟨U, .inp (.term N) P ::ₘ Ps⟩ (some (.inp (Tm.msg A N) (Tm.msg A M)))
+        ⟨U, P.inst M ::ₘ Ps⟩
+  /-- The context `out(_, M); P`. -/
+  | out_ctx₁ {U U' Ps l} {N N'} (M P) : TStep A U N l U' N' →
+      Step ⟨U, .out N M P ::ₘ Ps⟩ l ⟨U', .out N' M P ::ₘ Ps⟩
+  /-- The context `out(U, _); P`. -/
+  | out_ctx₂ {U U' Ps l} (N) {M M'} (P) : N.IsValue → TStep A U M l U' M' →
+      Step ⟨U, .out N M P ::ₘ Ps⟩ l ⟨U', .out N M' P ::ₘ Ps⟩
+  /-- The context `in(_, x); P`. -/
+  | inp_ctx {U U' Ps l} {N N'} (P) : TStep A U N l U' N' →
+      Step ⟨U, .inp N P ::ₘ Ps⟩ l ⟨U', .inp N' P ::ₘ Ps⟩
+  /-- The context `if _ then P else Q`. -/
+  | ite_ctx {U U' Ps l} {C C'} (P Q) : TStep A U C l U' C' →
+      Step ⟨U, .ite C P Q ::ₘ Ps⟩ l ⟨U', .ite C' P Q ::ₘ Ps⟩
+  /-- The context `let x = _ in P else Q`. -/
+  | let_ctx {U U' Ps l} {D D'} (P Q) : TStep A U D l U' D' →
+      Step ⟨U, .let_ D P Q ::ₘ Ps⟩ l ⟨U', .let_ D' P Q ::ₘ Ps⟩
+  /-- The context `event(_); P`. -/
+  | event_ctx {U U' Ps l} {M M'} (P) : TStep A U M l U' M' →
+      Step ⟨U, .event M P ::ₘ Ps⟩ l ⟨U', .event M' P ::ₘ Ps⟩
 
 /-- `c` performs the weak trace `t`: its visible labels in order, `τ`-steps elided. -/
 inductive Runs : Config F G → Trace A.Msg → Prop
@@ -182,11 +354,20 @@ def Config.traces (c : Config F G) : Proc A.Msg := {t | Runs A c t}
 abbrev TauStar : Config F G → Config F G → Prop :=
   Relation.ReflTransGen fun c c' => Step A c none c'
 
+/-- The term configuration performs the weak trace `t` and reaches the other, `τ`-steps
+elided. -/
+inductive TRuns : Finset ℕ → Expr F G 0 → Trace A.Msg → Finset ℕ → Expr F G 0 → Prop
+  | nil (U D) : TRuns U D [] U D
+  | tau {U D U' D' t U'' D''} : TStep A U D none U' D' → TRuns U' D' t U'' D'' →
+      TRuns U D t U'' D''
+  | act {U D U' D' a t U'' D''} : TStep A U D (some a) U' D' → TRuns U' D' t U'' D'' →
+      TRuns U D (a :: t) U'' D''
+
 /-! ### Steps of processes beside others
 
 A step of some processes is a step of them beside any others, and a step of a union
 of two multisets is a step of one side or a communication between them.  The created
-names matter only to (Red Res), whose new name must be fresh for them.
+names matter only to the creation of a name, which must be fresh for them.
 -/
 
 variable {A}
@@ -212,7 +393,7 @@ theorem Step.names_eq {U U' : Finset ℕ} {Ps Ps' : Multiset (Process F G 0)}
       (∀ k, l ≠ some (.new k)) ∧ U = U' := by
   cases h
   case new P k hk => exact Or.inl ⟨k, rfl, hk, rfl⟩
-  all_goals exact Or.inr ⟨fun _ => nofun, rfl⟩
+  all_goals first | exact Or.inr ⟨fun _ => nofun, rfl⟩ | exact TStep.names_eq ‹_›
 
 /-- A step is a step from any created names its new name, if any, is fresh for. -/
 theorem Step.rename {U U' : Finset ℕ} {Ps Ps' : Multiset (Process F G 0)}
@@ -222,6 +403,30 @@ theorem Step.rename {U U' : Finset ℕ} {Ps Ps' : Multiset (Process F G 0)}
       ∃ k, l = some (.new k) ∧ Step A ⟨V, Ps⟩ l ⟨insert k V, Ps'⟩ := by
   cases h
   case new P k hk => exact Or.inr ⟨k, rfl, .new P k (hl k rfl)⟩
+  case out_ctx₁ hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .out_ctx₁ _ _ hs'⟩
+    · exact Or.inr ⟨k, hk, .out_ctx₁ _ _ hs'⟩
+  case out_ctx₂ hN hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .out_ctx₂ _ _ hN hs'⟩
+    · exact Or.inr ⟨k, hk, .out_ctx₂ _ _ hN hs'⟩
+  case inp_ctx hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .inp_ctx _ hs'⟩
+    · exact Or.inr ⟨k, hk, .inp_ctx _ hs'⟩
+  case ite_ctx hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .ite_ctx _ _ hs'⟩
+    · exact Or.inr ⟨k, hk, .ite_ctx _ _ hs'⟩
+  case let_ctx hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .let_ctx _ _ hs'⟩
+    · exact Or.inr ⟨k, hk, .let_ctx _ _ hs'⟩
+  case event_ctx hs =>
+    rcases hs.rename V hl with ⟨hl', hs'⟩ | ⟨k, hk, hs'⟩
+    · exact Or.inl ⟨hl', .event_ctx _ hs'⟩
+    · exact Or.inr ⟨k, hk, .event_ctx _ hs'⟩
   all_goals exact Or.inl ⟨fun _ => nofun, by constructor <;> assumption⟩
 
 /-- A step of some processes is a step of them beside others, whose created names its
@@ -234,7 +439,13 @@ theorem Step.add {U U' U₁ : Finset ℕ} {Ps Ps' : Multiset (Process F G 0)}
   case new P k hk =>
     simp only [Multiset.cons_add, Finset.insert_union]
     exact .new P k fun h => (Finset.mem_union.1 h).elim hk (hl k rfl)
-  all_goals (simp only [Multiset.cons_add]; constructor <;> assumption)
+  all_goals
+    simp only [Multiset.cons_add]
+    first
+      | exact .out_ctx₁ _ _ (TStep.add ‹_› U₁ hl) | exact .out_ctx₂ _ _ ‹_› (TStep.add ‹_› U₁ hl)
+      | exact .inp_ctx _ (TStep.add ‹_› U₁ hl) | exact .ite_ctx _ _ (TStep.add ‹_› U₁ hl)
+      | exact .let_ctx _ _ (TStep.add ‹_› U₁ hl) | exact .event_ctx _ (TStep.add ‹_› U₁ hl)
+      | (constructor <;> assumption)
 
 theorem Step.add_left {U U₀ U' : Finset ℕ} {Qs Qs' : Multiset (Process F G 0)}
     {l : Option (Act A.Msg)} (h : Step A ⟨U, Qs⟩ l ⟨U', Qs'⟩) (Ps : Multiset (Process F G 0))
@@ -245,16 +456,19 @@ theorem Step.add_left {U U₀ U' : Finset ℕ} {Qs Qs' : Multiset (Process F G 0
 
 theorem Step.out_inv {U : Finset ℕ} {Ps : Multiset (Process F G 0)} {c m : A.Msg}
     {c' : Config F G} (h : Step A ⟨U, Ps⟩ (some (.out c m)) c') :
-    ∃ N M P R, Ps = .out N M P ::ₘ R ∧ Tm.msg A N = c ∧ Tm.msg A M = m ∧ c' = ⟨U, P ::ₘ R⟩ := by
+    ∃ N M P R, Ps = .out (.term N) (.term M) P ::ₘ R ∧ Tm.msg A N = c ∧ Tm.msg A M = m ∧
+      c' = ⟨U, P ::ₘ R⟩ := by
   cases h
-  exact ⟨_, _, _, _, rfl, rfl, rfl, rfl⟩
+  case out => exact ⟨_, _, _, _, rfl, rfl, rfl, rfl⟩
+  all_goals rcases TStep.label ‹_› with h | ⟨_, h⟩ | ⟨_, h⟩ <;> cases h
 
 theorem Step.inp_inv {U : Finset ℕ} {Ps : Multiset (Process F G 0)} {c m : A.Msg}
     {c' : Config F G} (h : Step A ⟨U, Ps⟩ (some (.inp c m)) c') :
-    ∃ N P M R, Ps = .inp N P ::ₘ R ∧ Tm.msg A N = c ∧ Tm.msg A M = m ∧
+    ∃ N P M R, Ps = .inp (.term N) P ::ₘ R ∧ Tm.msg A N = c ∧ Tm.msg A M = m ∧
       c' = ⟨U, P.inst M ::ₘ R⟩ := by
   cases h
-  exact ⟨_, _, _, _, rfl, rfl, rfl, rfl⟩
+  case inp => exact ⟨_, _, _, _, rfl, rfl, rfl, rfl⟩
+  all_goals rcases TStep.label ‹_› with h | ⟨_, h⟩ | ⟨_, h⟩ <;> cases h
 
 /-- An output and an input of the same message meet in a communication. -/
 theorem Step.out_inp {U V W : Finset ℕ} {Ps Ps' Qs Qs' : Multiset (Process F G 0)} {c m : A.Msg}
@@ -304,17 +518,21 @@ theorem Step.add_cases {c c' : Config F G} {l : Option (Act A.Msg)} (h : Step A 
       case st =>
         first
           | exact .nil | exact .par _ _ | exact .bang _ | exact .new _ _ (by assumption)
-          | exact .eval₁ _ _ _ _ (by assumption) | exact .eval₂ _ _ _ (by assumption)
+          | exact .eval₁ _ _ _ _ (by assumption) | exact .eval₂ _ _
           | exact .cond₁ _ _ _ (by assumption) | exact .cond₂ _ _ _ (by assumption)
           | exact .event _ _ | exact .out _ _ _ | exact .inp _ _ _
+          | exact .out_ctx₁ _ _ ‹_› | exact .out_ctx₂ _ _ ‹_› ‹_› | exact .inp_ctx _ ‹_›
+          | exact .ite_ctx _ _ ‹_› | exact .let_ctx _ _ ‹_› | exact .event_ctx _ ‹_›
       case eq => first | rfl | simp only [Multiset.cons_add]
     · refine Or.inr (Or.inl ⟨?_, ?_, ?eq, ?st⟩)
       case st =>
         first
           | exact .nil | exact .par _ _ | exact .bang _ | exact .new _ _ (by assumption)
-          | exact .eval₁ _ _ _ _ (by assumption) | exact .eval₂ _ _ _ (by assumption)
+          | exact .eval₁ _ _ _ _ (by assumption) | exact .eval₂ _ _
           | exact .cond₁ _ _ _ (by assumption) | exact .cond₂ _ _ _ (by assumption)
           | exact .event _ _ | exact .out _ _ _ | exact .inp _ _ _
+          | exact .out_ctx₁ _ _ ‹_› | exact .out_ctx₂ _ _ ‹_› ‹_› | exact .inp_ctx _ ‹_›
+          | exact .ite_ctx _ _ ‹_› | exact .let_ctx _ _ ‹_› | exact .event_ctx _ ‹_›
       case eq => first | rfl | simp only [add_cons']
 
 /-! ### Runs -/
@@ -410,6 +628,84 @@ theorem TauStar.add_left {U U₀ : Finset ℕ} {Qs : Multiset (Process F G 0)} {
     ∃ Qs', c = ⟨U, Qs'⟩ ∧ TauStar A ⟨U₀ ∪ U, Ps + Qs⟩ ⟨U₀ ∪ U, Ps + Qs'⟩ := by
   obtain ⟨Qs', rfl, h'⟩ := h.add (U₁ := U₀) Ps
   exact ⟨Qs', rfl, by rwa [Finset.union_comm, add_comm Qs, add_comm Qs'] at h'⟩
+
+/-! ### Runs of term configurations -/
+
+theorem TRuns.append {U U' U'' : Finset ℕ} {D D' D'' : Expr F G 0} {t t' : Trace A.Msg}
+    (h : TRuns A U D t U' D') (h' : TRuns A U' D' t' U'' D'') : TRuns A U D (t ++ t') U'' D'' := by
+  induction h with
+  | nil => exact h'
+  | tau hs _ ih => exact .tau hs (ih h')
+  | act hs _ ih => exact .act hs (ih h')
+
+theorem Trace.nonces_append {M : Type} :
+    ∀ l₁ l₂ : Trace M, Trace.nonces (l₁ ++ l₂) = l₁.nonces ++ l₂.nonces
+  | [], _ => rfl
+  | a :: l₁, l₂ => by cases a <;> simp [Trace.nonces, Trace.nonces_append l₁ l₂]
+
+/-- A run of a term configuration only creates names. -/
+theorem TRuns.subset {U U' : Finset ℕ} {D D' : Expr F G 0} {t : Trace A.Msg}
+    (h : TRuns A U D t U' D') : U ⊆ U' := by
+  induction h with
+  | nil => exact subset_rfl
+  | tau hs _ ih =>
+    rcases hs.names_eq with ⟨k, hk, -, -⟩ | ⟨-, rfl⟩
+    · cases hk
+    · exact ih
+  | act hs _ ih =>
+    rcases hs.names_eq with ⟨k, -, -, rfl⟩ | ⟨-, rfl⟩
+    · exact (Finset.subset_insert k _).trans ih
+    · exact ih
+
+/-- The names a run of a term configuration creates are fresh for those created before. -/
+theorem TRuns.fresh {U U' : Finset ℕ} {D D' : Expr F G 0} {t : Trace A.Msg}
+    (h : TRuns A U D t U' D') : ∀ k ∈ t.nonces, k ∉ U := by
+  induction h with
+  | nil => simp [Trace.nonces]
+  | tau hs _ ih =>
+    rcases hs.names_eq with ⟨k, hk, -, -⟩ | ⟨-, rfl⟩
+    · cases hk
+    · exact ih
+  | @act U D U₁ D₁ a t U₂ D₂ hs _ ih =>
+    rcases hs.names_eq with ⟨k, hk, hkU, rfl⟩ | ⟨hl, rfl⟩
+    · obtain rfl := Option.some.inj hk
+      intro k' hk'
+      simp only [Trace.nonces] at hk'
+      rcases List.mem_cons.1 hk' with rfl | hk'
+      · exact hkU
+      · exact fun h => ih k' hk' (Finset.mem_insert_of_mem h)
+    · cases a <;> first | exact (hl _ rfl).elim | simpa [Trace.nonces] using ih
+
+/-- A context of expressions: a term step of the expression in the hole is a term step of
+the whole. -/
+def TStep.IsCtx (A : Model F G) (C : Expr F G 0 → Expr F G 0) : Prop :=
+  ∀ {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)},
+    TStep A U D l U' D' → TStep A U (C D) l U' (C D')
+
+/-- A context of processes: a term step of the expression in the hole is a step of the
+process. -/
+def Step.IsCtx (A : Model F G) (C : Expr F G 0 → Process F G 0) : Prop :=
+  ∀ {U U' : Finset ℕ} {D D' : Expr F G 0} {l : Option (Act A.Msg)},
+    TStep A U D l U' D' → Step A ⟨U, {C D}⟩ l ⟨U', {C D'}⟩
+
+/-- A run of a term configuration is a run of it in a context of expressions. -/
+theorem TRuns.lift {C : Expr F G 0 → Expr F G 0} (hC : TStep.IsCtx A C) {U U' : Finset ℕ}
+    {D D' : Expr F G 0} {t : Trace A.Msg} (h : TRuns A U D t U' D') :
+    TRuns A U (C D) t U' (C D') := by
+  induction h with
+  | nil => exact .nil _ _
+  | tau hs _ ih => exact .tau (hC hs) ih
+  | act hs _ ih => exact .act (hC hs) ih
+
+/-- A run of a term configuration, then a run of the process in a context of processes,
+is a run of the process from the start. -/
+theorem Runs.ctx {C : Expr F G 0 → Process F G 0} (hC : Step.IsCtx A C) {U U' : Finset ℕ}
+    {D D' : Expr F G 0} {t t' : Trace A.Msg} (h : TRuns A U D t U' D')
+    (hr : Runs A ⟨U', {C D'}⟩ t') : Runs A ⟨U, {C D}⟩ (t ++ t') := by
+  induction h with
+  | nil => exact hr
+  | tau hs _ ih => exact .tau (hC hs) (ih hr)
+  | act hs _ ih => exact .act (hC hs) (ih hr)
 
 /-! ### Runs of a union
 
@@ -583,32 +879,37 @@ def Model.PubTerm : Tm F n → Prop
   | .var (.inr _) => True
   | .func f ts => A.Public f ∧ ∀ i, Model.PubTerm (ts i)
 
-/-- Every symbol of the expression is public, and no created name occurs. -/
-def Model.PubExpr : Expr F G (ℕ ⊕ Fin n) → Prop
-  | .term M => A.PubTerm M
-  | .ctor f args => A.Public f ∧ ∀ i, Model.PubExpr (args i)
-  | .dtor g args => A.PublicDt g ∧ ∀ i, Model.PubExpr (args i)
-  | .fail => True
+/-- Every symbol of the expression is public, no created name occurs, and it has no
+event. -/
+def Model.PubExpr : ∀ {n : ℕ}, Expr F G n → Prop
+  | _, .term M => A.PubTerm M
+  | _, .ctor f args => A.Public f ∧ ∀ i, Model.PubExpr (args i)
+  | _, .dtor g args => A.PublicDt g ∧ ∀ i, Model.PubExpr (args i)
+  | _, .fail => True
+  | _, .new D => Model.PubExpr D
+  | _, .ite C D₁ D₂ => Model.PubExpr C ∧ Model.PubExpr D₁ ∧ Model.PubExpr D₂
+  | _, .let_ D D₁ D₂ => Model.PubExpr D ∧ Model.PubExpr D₁ ∧ Model.PubExpr D₂
+  | _, .event _ _ => False
 
 /-- An `N_pub`-adversary, the survey's Definition 3.1: its names and symbols are public
 and it has no event. -/
 def Model.Adversary : ∀ {n : ℕ}, Process F G n → Prop
   | _, .nil => True
-  | _, .out N M P => A.PubTerm N ∧ A.PubTerm M ∧ Model.Adversary P
-  | _, .inp N P => A.PubTerm N ∧ Model.Adversary P
+  | _, .out N M P => A.PubExpr N ∧ A.PubExpr M ∧ Model.Adversary P
+  | _, .inp N P => A.PubExpr N ∧ Model.Adversary P
   | _, .par P Q => Model.Adversary P ∧ Model.Adversary Q
   | _, .bang P => Model.Adversary P
   | _, .new P => Model.Adversary P
   | _, .let_ D P Q => A.PubExpr D ∧ Model.Adversary P ∧ Model.Adversary Q
-  | _, .ite M P Q => A.PubTerm M ∧ Model.Adversary P ∧ Model.Adversary Q
+  | _, .ite C P Q => A.PubExpr C ∧ Model.Adversary P ∧ Model.Adversary Q
   | _, .event _ _ => False
 
 /-- The configuration `C_Q` of the protocol `P₀` against the adversary `Q`. -/
 def Config.against (P₀ Q : Process F G 0) : Config F G := ⟨∅, {P₀, Q}⟩
 
-/-- A trace of the survey from `c`: a run whose labels are closed, the survey's
-reduction having no rule for an offer. -/
-def Model.SurveyTrace (c : Config F G) (t : Trace A.Msg) : Prop := Runs A c t ∧ t.Closed
+/-- A trace of the manual's semantics from `c`: a run whose labels are closed, the
+manual's transition relation having no rule for an offer. -/
+def Model.ManualTrace (c : Config F G) (t : Trace A.Msg) : Prop := Runs A c t ∧ t.Closed
 
 /-- The trace outputs `m` publicly, the survey's Definition 3.2: a communication on a
 public name carries it. -/
@@ -618,7 +919,7 @@ def Model.OutputsPublicly (t : Trace A.Msg) (m : A.Msg) : Prop :=
 /-- `P₀` preserves the secrecy of the closed term `M` from `N_pub`, the survey's
 Definition 3.3. -/
 def Model.Preserves (P₀ : Process F G 0) (M : Tm F 0) : Prop :=
-  ∀ Q, A.Adversary Q → ∀ t, A.SurveyTrace (.against P₀ Q) t → ¬ A.OutputsPublicly t (Tm.msg A M)
+  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ¬ A.OutputsPublicly t (Tm.msg A M)
 
 /-- A query fact over the variables `X`: `event(M)` or `attacker(M)` with `M` a term
 over constructors, free names and `X`. -/
@@ -642,10 +943,10 @@ def QueryFact.inst {X : Type} (σ : X → A.Msg) : QueryFact F X → Fact A.Msg
 variable (A)
 
 /-- `P₀` satisfies `F ⇝ H` against `N_pub`-adversaries, the write-up's Definition
-"Correspondences between facts" for single facts: in every trace of the survey in which
+"Correspondences between facts" for single facts: in every trace of the manual in which
 `F σ` is satisfied, some `H σ'` with `F σ' = F σ` is. -/
 def Model.Satisfies (P₀ : Process F G 0) {X : Type} (Fq Hq : QueryFact F X) : Prop :=
-  ∀ Q, A.Adversary Q → ∀ t, A.SurveyTrace (.against P₀ Q) t → ∀ σ : X → A.Msg,
+  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ∀ σ : X → A.Msg,
     Fq.Satisfied A t σ → ∃ σ' : X → A.Msg, Fq.inst σ' = Fq.inst σ ∧ Hq.Satisfied A t σ'
 
 end ProVerif.Specification

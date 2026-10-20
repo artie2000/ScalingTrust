@@ -6,7 +6,7 @@ import ScalingTrust.ProVerif.Specification.Semantics
 /-!
 # The denotation in the trace semantics
 
-The write-up's Definition "Translation" and its Lemma "Evaluation".
+The write-up's Definition "Translation".
 
 * A destructor denotes the function of the write-up's Definition "Destructors from
   rewrite rules", `Model.dtorFun`: the right-hand side of the first rule with a
@@ -19,14 +19,20 @@ The write-up's Definition "Translation" and its Lemma "Evaluation".
   declared destructors; so its operations are the standard ones besides, which
   `Model.Public` and `Model.PublicDt` count as public, as they do the boolean
   destructors, which add nothing to what it derives (`Model.dtorFun_mem_derive`).
-* An expression under `n` binders is evaluated in an environment `env xs` with
-  `xs : Fin n → A.Msg`, the created name `ν_k` being the nonce `Theory.Msg.name k`;
-  `eval_iff` is the Evaluation lemma, that the survey's evaluation of a closed
-  expression is total and its value is the expression's denotation.
+* An expression under `n` binders denotes, in an environment `env xs` with
+  `xs : Fin n → A.Msg`, a computation in the continuation monad of the trace
+  semantics with a may-fail message as its result, `Expr.denote`, as the translator
+  emits it: the arguments of a constructor or destructor are run from left to right
+  (`seqFin`), `new` is `Proc.fresh`, `event` is `Proc.emit` and `if` and `let` are case
+  analyses on the result of their first expression.  A may-fail term denotes `pure` of
+  its value (`Val.denote`), and running the arguments before the `i`-th, which are
+  may-fail terms, reaches the `i`-th (`ctor_run_update`).
 * A process under `n` binders denotes, for each environment, a process of the trace
-  semantics, `Process.denote`; `in`, `new` and `let` extend the environment with
-  `Fin.snoc`.  Substitution commutes with denotation, `Process.denote_inst`: `P{M/x}`
-  denotes what `P` denotes in the environment extended by the message of `M`.
+  semantics, `Process.denote`, running the computations of its expressions with the
+  rest of the process as the continuation, and `Proc.nil` where the manual's rules
+  block; `in`, `new` and `let` extend the environment with `Fin.snoc`.  Substitution
+  commutes with denotation, `Process.denote_inst`: `P{M/x}` denotes what `P` denotes in
+  the environment extended by the message of `M`.
 -/
 
 namespace ProVerif.Specification
@@ -262,85 +268,230 @@ theorem Model.dtorFun_mem_derive {g : Sig.withBuiltin G n} (hg : A.PublicDt g) {
 
 /-! ## Expressions -/
 
-/-- The value of an expression in the environment `env`, `none` being `fail`. -/
-noncomputable def Expr.denote {α : Type} (env : α → A.Msg) : Expr F G α → Option A.Msg
-  | .term M => some (M.realize env)
-  | .ctor f args => liftFail (fun ms => some (Theory.Msg.app f ms)) fun i => (args i).denote env
-  | .dtor g args => A.dtorFun g fun i => (args i).denote env
-  | .fail => none
+/-- Run the computations `cs 0, …, cs (k - 1)` in that order, collecting their results. -/
+def seqFin {m : Type → Type} [Monad m] {α : Type} : {k : ℕ} → (Fin k → m α) → m (Fin k → α)
+  | 0, _ => pure finZeroElim
+  | _ + 1, cs => do
+    let u ← cs 0
+    let us ← seqFin fun i => cs i.succ
+    pure (Fin.cons (α := fun _ => α) u us)
 
-theorem Eval.denote_eq {D : Expr F G (ℕ ⊕ Fin 0)} {v : Option A.Msg} (h : Eval A D v) :
-    v = D.denote (env finZeroElim) := by
-  induction h with
-  | term M => rfl
-  | fail => rfl
-  | ctor f _ ih =>
-    simp only [Expr.denote]
-    congr 1
-    funext i
-    exact ih i
-  | dtor g _ hr ih =>
-    rw [← rewrites_iff.1 hr]
-    show Model.dtorFun g _ = Model.dtorFun g _
-    congr 1
-    funext i
-    exact ih i
+theorem seqFin_pure {m : Type → Type} [Monad m] [LawfulMonad m] {α : Type} :
+    ∀ {k : ℕ} (us : Fin k → α), seqFin (fun i => (pure (us i) : m α)) = pure us
+  | 0, us => by
+    rw [seqFin]
+    exact congrArg pure (funext fun i => i.elim0)
+  | k + 1, us => by
+    show (pure (us 0) >>= fun u => seqFin (fun i => (pure (us i.succ) : m α)) >>=
+      fun us' => pure (Fin.cons (α := fun _ => α) u us')) = pure us
+    rw [pure_bind, seqFin_pure (fun i => us i.succ), pure_bind]
+    exact congrArg pure (Fin.cons_self_tail us)
 
-theorem eval_denote : ∀ D : Expr F G (ℕ ⊕ Fin 0), Eval A D (D.denote (env finZeroElim))
-  | .term M => .term M
-  | .fail => .fail
-  | .ctor f args => .ctor f fun i => eval_denote (args i)
-  | .dtor g args => .dtor g (fun i => eval_denote (args i)) (rewrites_iff.2 rfl)
+/-- A computation of the continuation monad run with a continuation, in the answer type
+(`ContT.run` lands in `Id`). -/
+abbrev Cont.runWith {r α : Type} (c : Cont r α) (κ : α → r) : r := c.run κ
 
-/-- The Evaluation lemma: a closed expression evaluates exactly to its denotation. -/
-theorem eval_iff {D : Expr F G (ℕ ⊕ Fin 0)} {v : Option A.Msg} :
-    Eval A D v ↔ v = D.denote (env finZeroElim) :=
-  ⟨Eval.denote_eq, fun h => h ▸ eval_denote D⟩
+theorem Cont.runWith_pure {r α : Type} (a : α) (κ : α → r) : Cont.runWith (pure a) κ = κ a := rfl
 
-/-! ## Processes -/
+theorem Cont.runWith_bind {r α β : Type} (c : Cont r α) (f : α → Cont r β) (κ : β → r) :
+    Cont.runWith (c >>= f) κ = Cont.runWith c fun a => Cont.runWith (f a) κ := rfl
+
+theorem Proc.pure_inj {M α : Type} {u u' : α} (h : (pure u : Cont (Proc M) α) = pure u') :
+    u = u' := by
+  have := congrArg (fun c : Cont (Proc M) α => Cont.runWith c fun x => {t : Trace M | x = u}) h
+  simp only [Cont.runWith_pure] at this
+  exact ((Set.ext_iff.1 this []).1 trivial).symm
+
+theorem update_succ {α : Type} {k : ℕ} (cs : Fin (k + 1) → α) (j : Fin k) (c : α) :
+    (fun j' : Fin k => Function.update cs j.succ c j'.succ) =
+      Function.update (fun j' => cs j'.succ) j c := funext fun j' => by
+  by_cases h : j' = j
+  · subst h
+    simp
+  · rw [Function.update_of_ne h, Function.update_of_ne fun h' => h (Fin.succ_injective _ h')]
+
+/-- Running the computations with `c` at position `i`, those before `i` being `pure`, is
+running `c` and then the computations with its result at position `i`. -/
+theorem seqFin_run_update {r α : Type} :
+    ∀ {k : ℕ} (cs : Fin k → Cont r α) (i : Fin k), (∀ j, j < i → ∃ u, cs j = pure u) →
+      ∀ (c : Cont r α) (K : (Fin k → α) → r),
+        Cont.runWith (seqFin (Function.update cs i c)) K =
+          Cont.runWith c fun u => Cont.runWith (seqFin (Function.update cs i (pure u))) K
+  | 0, _, i, _, _, _ => i.elim0
+  | k + 1, cs, i, hv, c, K => by
+    induction i using Fin.cases with
+    | zero =>
+      have ht : ∀ c', (fun j : Fin k => Function.update cs 0 c' j.succ) = fun j => cs j.succ :=
+        fun c' => funext fun j => Function.update_of_ne (Fin.succ_ne_zero j) _ _
+      show Cont.runWith (Function.update cs 0 c 0 >>= fun u =>
+          seqFin (fun j => Function.update cs 0 c j.succ) >>=
+            fun us => pure (Fin.cons (α := fun _ => α) u us)) K =
+        Cont.runWith c fun u => Cont.runWith (Function.update cs 0 (pure u) 0 >>= fun u' =>
+          seqFin (fun j => Function.update cs 0 (pure u) j.succ) >>=
+            fun us => pure (Fin.cons (α := fun _ => α) u' us)) K
+      simp only [Function.update_self, ht, Cont.runWith_bind, Cont.runWith_pure]
+    | succ j =>
+      obtain ⟨u₀, hu₀⟩ := hv 0 (Fin.succ_pos j)
+      have h0 : ∀ c', Function.update cs j.succ c' 0 = pure u₀ := fun c' => by
+        rw [Function.update_of_ne (Fin.succ_ne_zero j).symm, hu₀]
+      show Cont.runWith (Function.update cs j.succ c 0 >>= fun u =>
+          seqFin (fun j' => Function.update cs j.succ c j'.succ) >>=
+            fun us => pure (Fin.cons (α := fun _ => α) u us)) K =
+        Cont.runWith c fun u => Cont.runWith (Function.update cs j.succ (pure u) 0 >>= fun u' =>
+          seqFin (fun j' => Function.update cs j.succ (pure u) j'.succ) >>=
+            fun us => pure (Fin.cons (α := fun _ => α) u' us)) K
+      simp only [h0, update_succ, Cont.runWith_bind, Cont.runWith_pure]
+      exact seqFin_run_update (fun j' => cs j'.succ) j
+        (fun j' hj' => hv j'.succ (Fin.succ_lt_succ_iff.2 hj')) c fun us => K (Fin.cons u₀ us)
 
 open Classical in
+/-- The computation of an expression under `n` binders in the environment `xs`, with a
+may-fail message as its result, `none` being `fail`: the arguments of a constructor or
+destructor run from left to right, `new` is `Proc.fresh`, `event` is `Proc.emit`, and `if`
+and `let` are case analyses on the result of their first expression. -/
+noncomputable def Expr.denote : {n : ℕ} → Expr F G n → (Fin n → A.Msg) →
+    Cont (Proc A.Msg) (Option A.Msg)
+  | _, .term M, xs => pure (some (M.realize (env xs)))
+  | _, .ctor f args, xs => do
+    let us ← seqFin fun i => (args i).denote xs
+    pure (liftFail (fun ms => some (Theory.Msg.app f ms)) us)
+  | _, .dtor g args, xs => do
+    let us ← seqFin fun i => (args i).denote xs
+    pure (A.dtorFun g us)
+  | _, .fail, _ => pure none
+  | _, .new D, xs => do
+    let a ← Proc.fresh
+    D.denote (Fin.snoc xs a)
+  | _, .ite C D₁ D₂, xs => do
+    match ← C.denote xs with
+    | some c => if c = StdOps.tt then D₁.denote xs else D₂.denote xs
+    | none => pure none
+  | _, .let_ D D₁ D₂, xs => do
+    match ← D.denote xs with
+    | some a => D₁.denote (Fin.snoc xs a)
+    | none => D₂.denote xs
+  | _, .event M D, xs => do
+    match ← M.denote xs with
+    | some e =>
+      Proc.emit e
+      D.denote xs
+    | none => pure none
+
+/-- A may-fail term denotes `pure` of its value. -/
+theorem Val.denote {V : Expr F G 0} {u : Option A.Msg} (h : Val A V u) :
+    V.denote finZeroElim = pure u := by
+  cases h <;> rfl
+
+/-! ## Processes
+
+The continuations of the expressions of a process: what the process does with the
+may-fail messages they yield.  Where the manual's rules block on `fail`, they give
+`Proc.nil`.
+-/
+
+/-- After the channel and the message of an output: the offer, then `P`. -/
+def outK (P : Proc A.Msg) : Option A.Msg → Option A.Msg → Proc A.Msg
+  | some c, some m => Proc.out c m P
+  | _, _ => Proc.nil
+
+/-- After the channel of an input: receive, then `P` on the message. -/
+def inpK (P : A.Msg → Proc A.Msg) : Option A.Msg → Proc A.Msg
+  | some c => Proc.inp c P
+  | none => Proc.nil
+
+/-- After the expression of `let`: `P` on the value, or `Q`. -/
+def letK (P : A.Msg → Proc A.Msg) (Q : Proc A.Msg) : Option A.Msg → Proc A.Msg
+  | some a => P a
+  | none => Q
+
+open Classical in
+/-- After the condition of `if`: `P` on `true`, `Q` on another message. -/
+noncomputable def iteK (P Q : Proc A.Msg) : Option A.Msg → Proc A.Msg
+  | some c => if c = StdOps.tt then P else Q
+  | none => Proc.nil
+
+/-- After the term of an event: the event, then `P`. -/
+def eventK (P : Proc A.Msg) : Option A.Msg → Proc A.Msg
+  | some e => Proc.event e P
+  | none => Proc.nil
+
 /-- The process of the trace semantics that a process under `n` binders denotes in the
-environment `xs`. -/
+environment `xs`: the computations of its expressions run with the rest of the process as
+the continuation. -/
 noncomputable def Process.denote : {n : ℕ} → Process F G n → (Fin n → A.Msg) → Proc A.Msg
   | _, .nil, _ => Proc.nil
-  | _, .out N M P, xs => Proc.out (N.realize (env xs)) (M.realize (env xs)) (P.denote xs)
-  | _, .inp N P, xs => Proc.inp (N.realize (env xs)) fun a => P.denote (Fin.snoc xs a)
+  | _, .out N M P, xs =>
+    Cont.runWith (N.denote xs) fun c => Cont.runWith (M.denote xs) (outK (P.denote xs) c)
+  | _, .inp N P, xs => Cont.runWith (N.denote xs) (inpK fun a => P.denote (Fin.snoc xs a))
   | _, .par P Q, xs => Proc.par (P.denote xs) (Q.denote xs)
   | _, .bang P, xs => Proc.bang (P.denote xs)
   | _, .new P, xs => Proc.new fun a => P.denote (Fin.snoc xs a)
   | _, .let_ D P Q, xs =>
-    match D.denote (env xs) with
-    | some a => P.denote (Fin.snoc xs a)
-    | none => Q.denote xs
-  | _, .ite M P Q, xs =>
-    if M.realize (env xs) = StdOps.tt then P.denote xs else Q.denote xs
-  | _, .event M P, xs => Proc.event (M.realize (env xs)) (P.denote xs)
+    Cont.runWith (D.denote xs) (letK (fun a => P.denote (Fin.snoc xs a)) (Q.denote xs))
+  | _, .ite C P Q, xs => Cont.runWith (C.denote xs) (iteK (P.denote xs) (Q.denote xs))
+  | _, .event M P, xs => Cont.runWith (M.denote xs) (eventK (P.denote xs))
 
 /-! ## Substitution -/
 
-theorem Expr.denote_subst (σ : Fin n → Tm F m) (xs : Fin m → A.Msg) :
-    ∀ D : Expr F G (ℕ ⊕ Fin n),
-      (D.subst σ).denote (env xs) = D.denote (env fun i => (σ i).realize (env xs))
-  | .term M => by simp only [Expr.subst, Expr.denote, Tm.realize_subst]
-  | .ctor f args => by
+theorem Expr.denote_subst :
+    ∀ {n m : ℕ} (σ : Fin n → Tm F m) (D : Expr F G n) (xs : Fin m → A.Msg),
+      (D.subst σ).denote xs = D.denote fun i => (σ i).realize (env xs)
+  | _, _, σ, .term M, xs => by simp only [Expr.subst, Expr.denote, Tm.realize_subst]
+  | _, _, σ, .ctor f args, xs => by
+    simp only [Expr.subst, Expr.denote]
+    congr 2
+    funext i
+    exact Expr.denote_subst σ (args i) xs
+  | _, _, σ, .dtor g args, xs => by
+    simp only [Expr.subst, Expr.denote]
+    congr 2
+    funext i
+    exact Expr.denote_subst σ (args i) xs
+  | _, _, _, .fail, _ => rfl
+  | _, _, σ, .new D, xs => by
     simp only [Expr.subst, Expr.denote]
     congr 1
-    funext i
-    exact Expr.denote_subst σ xs (args i)
-  | .dtor g args => by
-    simp only [Expr.subst, Expr.denote]
+    funext a
+    rw [Expr.denote_subst (liftSubst σ) D (Fin.snoc xs a)]
     congr 1
     funext i
-    exact Expr.denote_subst σ xs (args i)
-  | .fail => rfl
+    exact realize_liftSubst σ xs a i
+  | _, _, σ, .ite C D₁ D₂, xs => by
+    simp only [Expr.subst, Expr.denote]
+    rw [Expr.denote_subst σ C xs, Expr.denote_subst σ D₁ xs, Expr.denote_subst σ D₂ xs]
+  | _, _, σ, .let_ D D₁ D₂, xs => by
+    simp only [Expr.subst, Expr.denote]
+    rw [Expr.denote_subst σ D xs, Expr.denote_subst σ D₂ xs]
+    congr 1
+    funext u
+    cases u with
+    | none => rfl
+    | some a =>
+      show (D₁.subst (liftSubst σ)).denote (Fin.snoc xs a) = _
+      rw [Expr.denote_subst (liftSubst σ) D₁ (Fin.snoc xs a)]
+      congr 1
+      funext i
+      exact realize_liftSubst σ xs a i
+  | _, _, σ, .event M D, xs => by
+    simp only [Expr.subst, Expr.denote]
+    rw [Expr.denote_subst σ M xs, Expr.denote_subst σ D xs]
+
+/-- `D{M/x}` denotes what `D` denotes in the environment extended by `M`'s message. -/
+theorem Expr.denote_inst (D : Expr F G (n + 1)) (M : Tm F n) (xs : Fin n → A.Msg) :
+    (D.inst M).denote xs = D.denote (Fin.snoc xs (M.realize (env xs))) := by
+  rw [Expr.inst, Expr.denote_subst]
+  congr 1
+  funext i
+  induction i using Fin.lastCases with
+  | last => simp
+  | cast j => simp
 
 theorem Process.denote_subst :
     ∀ {n m : ℕ} (σ : Fin n → Tm F m) (P : Process F G n) (xs : Fin m → A.Msg),
       (P.subst σ).denote xs = P.denote fun i => (σ i).realize (env xs)
   | _, _, _, .nil, _ => rfl
   | _, _, σ, .out N M P, xs => by
-    simp only [Process.subst, Process.denote, Tm.realize_subst, Process.denote_subst σ P xs]
+    simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ P xs]
   | _, _, σ, .inp N P, xs => by
     have h : (fun a => (P.subst (liftSubst σ)).denote (Fin.snoc xs a)) =
         fun a => P.denote (Fin.snoc (α := fun _ => A.Msg) (fun i => (σ i).realize (env xs)) a) :=
@@ -349,7 +500,7 @@ theorem Process.denote_subst :
       congr 1
       funext i
       exact realize_liftSubst σ xs a i
-    simp only [Process.subst, Process.denote, Tm.realize_subst, h]
+    simp only [Process.subst, Process.denote, Expr.denote_subst, h]
   | _, _, σ, .par P Q, xs => by
     simp only [Process.subst, Process.denote, Process.denote_subst σ P xs,
       Process.denote_subst σ Q xs]
@@ -372,16 +523,12 @@ theorem Process.denote_subst :
       congr 1
       funext i
       exact realize_liftSubst σ xs a i
-    simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ Q xs]
-    cases D.denote (env fun i => (σ i).realize (env xs)) with
-    | none => rfl
-    | some a => exact congrFun h a
-  | _, _, σ, .ite M P Q, xs => by
-    simp only [Process.subst, Process.denote, Process.denote_subst σ P xs,
+    simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ Q xs, h]
+  | _, _, σ, .ite C P Q, xs => by
+    simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ P xs,
       Process.denote_subst σ Q xs]
-    rw [Tm.realize_subst]
   | _, _, σ, .event M P, xs => by
-    simp only [Process.subst, Process.denote, Tm.realize_subst, Process.denote_subst σ P xs]
+    simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ P xs]
 
 /-- `P{M/x}` denotes what `P` denotes in the environment extended by `M`'s message. -/
 theorem Process.denote_inst (P : Process F G (n + 1)) (M : Tm F n) (xs : Fin n → A.Msg) :

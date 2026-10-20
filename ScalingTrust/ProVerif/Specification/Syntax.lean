@@ -18,12 +18,20 @@ destructors.
   binders their variables are `ℕ ⊕ Fin n`: the created name `ν_k` is `.var (.inl k)` and
   the `i`-th bound variable `.var (.inr i)`.  Free names are nullary constructors, as in
   the trace semantics.
-* **Expressions** apply constructors and destructors to expressions, or `fail`.
+* **Expressions** are the manual's process terms (§4.1.4, Appendix B) for the fragment
+  without tables and patterns: a term, a constructor or destructor applied to
+  expressions, `fail`, and the enriched forms `new a; D`, `if C then D₁ else D₂`,
+  `let x = D in D₁ else D₂` and `event(M); D`, the event being a term `ev(M₁, …, Mₙ)`
+  over an event constructor `ev`.  A term is a leaf: `f(M₁, …, Mₙ)` as an expression is
+  the constructor `f` applied to the terms `Mᵢ`, which a step turns into the term, where
+  the manual reads the two as one.  A **may-fail term** is a term or `fail`, the values of
+  expressions.
 * **Processes** are indexed by their number of bound variables, as Mathlib's
-  `BoundedFormula` is: `in`, `new` and `let` bind the last variable `Fin.last n`, and an
-  environment extends with `Fin.snoc`.  A closed process is a `Process F G 0`.  `new`
-  binds a variable where the survey binds a name; (Red Res) replaces it by a created
-  name `ν_k`.
+  `BoundedFormula` is, and so are expressions: `in`, `new` and `let` bind the last
+  variable `Fin.last n`, and an environment extends with `Fin.snoc`.  A closed process is
+  a `Process F G 0`.  `new` binds a variable where the manual binds a name; the step
+  replaces it by a created name `ν_k`.  Every term position of a process holds an
+  expression, as in the manual's Figure A.8.
 * **Rewrite rules** of destructors, the write-up's Definition "Rewrite rules": the
   arguments and the right-hand side are may-fail terms, a term over constructors and
   ordinary variables, a may-fail variable or `fail`, the arguments over the free symbols
@@ -214,21 +222,48 @@ def Model.rules (A : Model F G) : ∀ {n : ℕ}, Sig.withBuiltin G n → List (R
 /-- A term under `n` binders, over the declared constructors and the data symbols. -/
 abbrev Tm (F : Sig) (n : ℕ) : Type := F.withData.lang.Term (ℕ ⊕ Fin n)
 
-/-- An expression over the variables `α`. -/
-inductive Expr (F G : Sig) (α : Type) : Type
-  | term (M : F.withData.lang.Term α)
-  | ctor {n : ℕ} (f : F.withData n) (args : Fin n → Expr F G α)
-  | dtor {n : ℕ} (g : Sig.withBuiltin G n) (args : Fin n → Expr F G α)
-  | fail
+/-- An expression under `n` binders. -/
+inductive Expr (F G : Sig) : ℕ → Type
+  /-- A term. -/
+  | term {n : ℕ} (M : Tm F n) : Expr F G n
+  /-- `f(D₁, …, Dₖ)` -/
+  | ctor {n k : ℕ} (f : F.withData k) (args : Fin k → Expr F G n) : Expr F G n
+  /-- `g(D₁, …, Dₖ)` -/
+  | dtor {n k : ℕ} (g : Sig.withBuiltin G k) (args : Fin k → Expr F G n) : Expr F G n
+  /-- `fail` -/
+  | fail {n : ℕ} : Expr F G n
+  /-- `new a; D` -/
+  | new {n : ℕ} (D : Expr F G (n + 1)) : Expr F G n
+  /-- `if C then D₁ else D₂` -/
+  | ite {n : ℕ} (C D₁ D₂ : Expr F G n) : Expr F G n
+  /-- `let x = D in D₁ else D₂` -/
+  | let_ {n : ℕ} (D : Expr F G n) (D₁ : Expr F G (n + 1)) (D₂ : Expr F G n) : Expr F G n
+  /-- `event(M); D` -/
+  | event {n : ℕ} (M D : Expr F G n) : Expr F G n
+
+/-- A may-fail term: a term or `fail`, the value of an expression. -/
+def Expr.IsValue {n : ℕ} : Expr F G n → Prop
+  | .term _ => True
+  | .fail => True
+  | _ => False
+
+/-- An expression of the survey's core calculus: constructors and destructors applied to
+terms and `fail`, without effects. -/
+def Expr.Pure : ∀ {n : ℕ}, Expr F G n → Prop
+  | _, .term _ => True
+  | _, .ctor _ args => ∀ i, Expr.Pure (args i)
+  | _, .dtor _ args => ∀ i, Expr.Pure (args i)
+  | _, .fail => True
+  | _, _ => False
 
 /-- A process under `n` binders. -/
 inductive Process (F G : Sig) : ℕ → Type
   /-- `0` -/
   | nil {n : ℕ} : Process F G n
   /-- `out(N, M); P` -/
-  | out {n : ℕ} (N M : Tm F n) (P : Process F G n) : Process F G n
+  | out {n : ℕ} (N M : Expr F G n) (P : Process F G n) : Process F G n
   /-- `in(N, x); P` -/
-  | inp {n : ℕ} (N : Tm F n) (P : Process F G (n + 1)) : Process F G n
+  | inp {n : ℕ} (N : Expr F G n) (P : Process F G (n + 1)) : Process F G n
   /-- `P | Q` -/
   | par {n : ℕ} (P Q : Process F G n) : Process F G n
   /-- `!P` -/
@@ -236,12 +271,11 @@ inductive Process (F G : Sig) : ℕ → Type
   /-- `new a; P` -/
   | new {n : ℕ} (P : Process F G (n + 1)) : Process F G n
   /-- `let x = D in P else Q` -/
-  | let_ {n : ℕ} (D : Expr F G (ℕ ⊕ Fin n)) (P : Process F G (n + 1)) (Q : Process F G n) :
-      Process F G n
-  /-- `if M then P else Q` -/
-  | ite {n : ℕ} (M : Tm F n) (P Q : Process F G n) : Process F G n
+  | let_ {n : ℕ} (D : Expr F G n) (P : Process F G (n + 1)) (Q : Process F G n) : Process F G n
+  /-- `if C then P else Q` -/
+  | ite {n : ℕ} (C : Expr F G n) (P Q : Process F G n) : Process F G n
   /-- `event(M); P` -/
-  | event {n : ℕ} (M : Tm F n) (P : Process F G n) : Process F G n
+  | event {n : ℕ} (M : Expr F G n) (P : Process F G n) : Process F G n
 
 /-! ## Substitution for the bound variables -/
 
@@ -257,26 +291,40 @@ def Tm.subst (σ : Fin n → Tm F m) (M : Tm F n) : Tm F m :=
   Term.subst M (Sum.elim (fun k => .var (.inl k)) σ)
 
 /-- Substitute for the bound variables of an expression. -/
-def Expr.subst (σ : Fin n → Tm F m) : Expr F G (ℕ ⊕ Fin n) → Expr F G (ℕ ⊕ Fin m)
-  | .term M => .term (Tm.subst σ M)
-  | .ctor f args => .ctor f fun i => (args i).subst σ
-  | .dtor g args => .dtor g fun i => (args i).subst σ
-  | .fail => .fail
+def Expr.subst : {n m : ℕ} → (Fin n → Tm F m) → Expr F G n → Expr F G m
+  | _, _, σ, .term M => .term (Tm.subst σ M)
+  | _, _, σ, .ctor f args => .ctor f fun i => (args i).subst σ
+  | _, _, σ, .dtor g args => .dtor g fun i => (args i).subst σ
+  | _, _, _, .fail => .fail
+  | _, _, σ, .new D => .new (D.subst (liftSubst σ))
+  | _, _, σ, .ite C D₁ D₂ => .ite (C.subst σ) (D₁.subst σ) (D₂.subst σ)
+  | _, _, σ, .let_ D D₁ D₂ => .let_ (D.subst σ) (D₁.subst (liftSubst σ)) (D₂.subst σ)
+  | _, _, σ, .event M D => .event (M.subst σ) (D.subst σ)
+
+/-- `D{M/x}`: substitute `M` for the last bound variable. -/
+def Expr.inst (D : Expr F G (n + 1)) (M : Tm F n) : Expr F G n :=
+  D.subst (Fin.snoc (fun i => .var (.inr i)) M)
 
 /-- Substitute for the bound variables of a process. -/
 def Process.subst : {n m : ℕ} → (Fin n → Tm F m) → Process F G n → Process F G m
   | _, _, _, .nil => .nil
-  | _, _, σ, .out N M P => .out (Tm.subst σ N) (Tm.subst σ M) (P.subst σ)
-  | _, _, σ, .inp N P => .inp (Tm.subst σ N) (P.subst (liftSubst σ))
+  | _, _, σ, .out N M P => .out (N.subst σ) (M.subst σ) (P.subst σ)
+  | _, _, σ, .inp N P => .inp (N.subst σ) (P.subst (liftSubst σ))
   | _, _, σ, .par P Q => .par (P.subst σ) (Q.subst σ)
   | _, _, σ, .bang P => .bang (P.subst σ)
   | _, _, σ, .new P => .new (P.subst (liftSubst σ))
   | _, _, σ, .let_ D P Q => .let_ (D.subst σ) (P.subst (liftSubst σ)) (Q.subst σ)
-  | _, _, σ, .ite M P Q => .ite (Tm.subst σ M) (P.subst σ) (Q.subst σ)
-  | _, _, σ, .event M P => .event (Tm.subst σ M) (P.subst σ)
+  | _, _, σ, .ite C P Q => .ite (C.subst σ) (P.subst σ) (Q.subst σ)
+  | _, _, σ, .event M P => .event (M.subst σ) (P.subst σ)
 
 /-- `P{M/x}`: substitute `M` for the last bound variable. -/
 def Process.inst (P : Process F G (n + 1)) (M : Tm F n) : Process F G n :=
   P.subst (Fin.snoc (fun i => .var (.inr i)) M)
+
+theorem Expr.Pure.subst {σ : Fin n → Tm F m} : ∀ {D : Expr F G n}, D.Pure → (D.subst σ).Pure
+  | .term _, _ => trivial
+  | .ctor _ args, h => fun i => Expr.Pure.subst (D := args i) (h i)
+  | .dtor _ args, h => fun i => Expr.Pure.subst (D := args i) (h i)
+  | .fail, _ => trivial
 
 end ProVerif.Specification

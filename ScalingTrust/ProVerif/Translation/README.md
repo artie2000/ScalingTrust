@@ -175,8 +175,8 @@ its docstring.
    `event e(M…); M` is `Proc.emit`, `let x = M in M'` with an `M` that
    cannot fail is a Lean `let`, and a pattern is matched as in item 6. The order
    and the failure rules are those of
-   the manual's Appendix B (Figure B.1), which `../Specification/` does not yet
-   cover: the effects of every argument of an application run, left to right,
+   the manual's Appendix B (Figure B.1), which `../Specification/` formalises:
+   the effects of every argument of an application run, left to right,
    before a failure propagates, and so do those of the channel of an output
    before those of its message; an event whose argument fails is not emitted
    and its continuation does not run; a conditional whose condition fails runs
