@@ -21,6 +21,7 @@ The two halves of the write-up's Theorem "Attacks", on the operational side.
 namespace ProVerif.Specification
 
 open FirstOrder FirstOrder.Language ProVerif.TraceSemantics
+open Attacker (derive)
 
 variable {F G : Sig} {A : Model F G} {n : ℕ}
 
@@ -29,14 +30,14 @@ variable {F G : Sig} {A : Model F G} {n : ℕ}
 /-- In an environment of messages derivable from any `K' ⊇ K`, the term's value is
 derivable from `K'`. -/
 def Model.Deriv (K : Set A.Msg) (N : Tm F n) : Prop :=
-  ∀ K', K ⊆ K' → ∀ xs : Fin n → A.Msg, (∀ i, xs i ∈ A.alg.derive K') →
-    N.realize (env xs) ∈ A.alg.derive K'
+  ∀ K', K ⊆ K' → ∀ xs : Fin n → A.Msg, (∀ i, xs i ∈ derive K') →
+    N.realize (env xs) ∈ derive K'
 
 /-- In an environment of messages derivable from any `K' ⊇ K`, the expression's value, if
 any, is derivable from `K'`. -/
 def Model.DerivE (K : Set A.Msg) (D : Expr F G (ℕ ⊕ Fin n)) : Prop :=
-  ∀ K', K ⊆ K' → ∀ xs : Fin n → A.Msg, (∀ i, xs i ∈ A.alg.derive K') →
-    ∀ a, D.denote (env xs) = some a → a ∈ A.alg.derive K'
+  ∀ K', K ⊆ K' → ∀ xs : Fin n → A.Msg, (∀ i, xs i ∈ derive K') →
+    ∀ a, D.denote (env xs) = some a → a ∈ derive K'
 
 /-- An adversary with closed terms derivable from `K` substituted in: what an
 `N_pub`-adversary becomes as it runs, knowing `K`. -/
@@ -72,13 +73,13 @@ theorem Model.AdvK.mono {K K' : Set A.Msg} (hK : K ⊆ K') :
   | _, .event _ _, h => h.elim
 
 theorem Model.Deriv.msg {K : Set A.Msg} {M : Tm F 0} (h : A.Deriv K M) :
-    Tm.msg A M ∈ A.alg.derive K :=
+    Tm.msg A M ∈ derive K :=
   h K subset_rfl finZeroElim fun i => i.elim0
 
-theorem Model.deriv_of_msg {K : Set A.Msg} {M : Tm F 0} (h : Tm.msg A M ∈ A.alg.derive K) :
+theorem Model.deriv_of_msg {K : Set A.Msg} {M : Tm F 0} (h : Tm.msg A M ∈ derive K) :
     A.Deriv K M := fun K' hK xs _ => by
   rw [show xs = finZeroElim from funext fun i => i.elim0]
-  exact A.alg.derive.monotone hK h
+  exact derive.monotone hK h
 
 theorem Model.deriv_var (K : Set A.Msg) (i : Fin n) : A.Deriv K (.var (.inr i)) :=
   fun _ _ _ hxs => hxs i
@@ -88,7 +89,7 @@ theorem Model.PubTerm.deriv (K : Set A.Msg) : ∀ {N : Tm F n}, A.PubTerm N → 
   | .var (.inr i), _ => A.deriv_var K i
   | .func f ts, h => fun K' hK xs hxs => by
     rw [Term.realize_func]
-    exact MsgAlgebra.app_mem_derive h.1 fun i => Model.PubTerm.deriv K (h.2 i) K' hK xs hxs
+    exact A.app_mem_derive h.1 fun i => Model.PubTerm.deriv K (h.2 i) K' hK xs hxs
 
 theorem Model.PubExpr.derivE (K : Set A.Msg) :
     ∀ {D : Expr F G (ℕ ⊕ Fin n)}, A.PubExpr D → A.DerivE K D
@@ -97,12 +98,10 @@ theorem Model.PubExpr.derivE (K : Set A.Msg) :
   | .ctor f args, h => fun K' hK xs hxs a ha => by
     obtain ⟨ms, hms, ha⟩ := liftFail_eq_some.1 ha
     obtain rfl := Option.some.inj ha
-    exact MsgAlgebra.app_mem_derive h.1 fun i =>
+    exact A.app_mem_derive h.1 fun i =>
       Model.PubExpr.derivE K (h.2 i) K' hK xs hxs _ (hms i)
-  | .dtor g args, h => fun K' hK xs hxs a ha => by
-    have hS : ClosedUnder A.alg.ops (A.alg.derive K') := A.alg.derive.isClosed_closure K'
-    exact hS _ (Or.inr (Set.mem_iUnion.2 ⟨_, g, h.1, rfl⟩)) _
-      (fun i m hm => Model.PubExpr.derivE K (h.2 i) K' hK xs hxs m hm) a ha
+  | .dtor g args, h => fun K' hK xs hxs _ ha =>
+    A.dtorFun_mem_derive h.1 (fun i m hm => Model.PubExpr.derivE K (h.2 i) K' hK xs hxs m hm) ha
   | .fail, _ => fun _ _ _ _ _ h => by cases h
 
 theorem Model.Adversary.advK (K : Set A.Msg) :
@@ -178,11 +177,11 @@ theorem Model.AdvK.inst {K : Set A.Msg} {P : Process F G (n + 1)} (h : A.AdvK K 
 theorem Model.AdvK.step {K : Set A.Msg} {U U' : Finset ℕ} {Ps Ps' : Multiset (Process F G 0)}
     {l : Option (Act A.Msg)} (h : Step A ⟨U, Ps⟩ l ⟨U', Ps'⟩) (hPs : ∀ P ∈ Ps, A.AdvK K P) :
     (l = none ∧ ∀ P ∈ Ps', A.AdvK K P) ∨
-    (∃ c m, l = some (.out c m) ∧ c ∈ A.alg.derive K ∧ m ∈ A.alg.derive K ∧
+    (∃ c m, l = some (.out c m) ∧ c ∈ derive K ∧ m ∈ derive K ∧
       ∀ P ∈ Ps', A.AdvK K P) ∨
-    (∃ c m, l = some (.comm c m) ∧ c ∈ A.alg.derive K ∧ m ∈ A.alg.derive K ∧
+    (∃ c m, l = some (.comm c m) ∧ c ∈ derive K ∧ m ∈ derive K ∧
       ∀ P ∈ Ps', A.AdvK K P) ∨
-    (∃ c m, l = some (.inp c m) ∧ c ∈ A.alg.derive K ∧ ∀ P ∈ Ps', A.AdvK (insert m K) P) ∨
+    (∃ c m, l = some (.inp c m) ∧ c ∈ derive K ∧ ∀ P ∈ Ps', A.AdvK (insert m K) P) ∨
     (∃ k, l = some (.new k) ∧ ∀ P ∈ Ps', A.AdvK (insert (Theory.Msg.name k) K) P) := by
   cases h with
   | nil => exact Or.inl ⟨rfl, (Multiset.forall_mem_cons.1 hPs).2⟩
@@ -197,7 +196,7 @@ theorem Model.AdvK.step {K : Set A.Msg} {U U' : Finset ℕ} {Ps Ps' : Multiset (
     refine Or.inr (Or.inr (Or.inr (Or.inr ⟨k, rfl, Multiset.forall_mem_cons.2
       ⟨(Model.AdvK.mono (Set.subset_insert _ _) hP).inst ?_,
         fun P hP => Model.AdvK.mono (Set.subset_insert _ _) (hrest P hP)⟩⟩)))
-    exact A.deriv_of_msg (A.alg.derive.le_closure _ (Set.mem_insert _ _))
+    exact A.deriv_of_msg (derive.le_closure _ (Set.mem_insert _ _))
   | comm N M Q N' P M' hN hM =>
     obtain ⟨⟨hN', hM', hQ⟩, hrest⟩ := Multiset.forall_mem_cons.1 hPs
     obtain ⟨⟨-, hP⟩, hrest⟩ := Multiset.forall_mem_cons.1 hrest
@@ -227,11 +226,11 @@ theorem Model.AdvK.step {K : Set A.Msg} {U U' : Finset ℕ} {Ps Ps' : Multiset (
     refine Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, rfl, hN.msg, Multiset.forall_mem_cons.2
       ⟨(Model.AdvK.mono (Set.subset_insert _ _) hP).inst ?_,
         fun P hP => Model.AdvK.mono (Set.subset_insert _ _) (hrest P hP)⟩⟩)))
-    exact A.deriv_of_msg (A.alg.derive.le_closure _ (Set.mem_insert _ _))
+    exact A.deriv_of_msg (derive.le_closure _ (Set.mem_insert _ _))
 
 /-- A run of adversaries knowing `K` is a trace of the attacker knowing `K`. -/
 theorem Runs.enemy {c : Config F G} {t : Trace A.Msg} (h : Runs A c t) :
-    ∀ {K : Set A.Msg}, (∀ P ∈ c.procs, A.AdvK K P) → t ∈ Enemy A.alg.derive K := by
+    ∀ {K : Set A.Msg}, (∀ P ∈ c.procs, A.AdvK K P) → t ∈ Enemy K := by
   induction h with
   | nil c => exact fun _ => Enemy.nil
   | @tau c c' t hs _ ih =>
@@ -264,9 +263,9 @@ theorem Runs.enemy {c : Config F G} {t : Trace A.Msg} (h : Runs A c t) :
 
 /-! ## Attacker traces are runs of adversaries -/
 
-theorem derive_subset_of_subset {K S : Set A.Msg} (h : K ⊆ A.alg.derive S) :
-    A.alg.derive K ⊆ A.alg.derive S :=
-  A.alg.derive.closure_min h (A.alg.derive.isClosed_closure S)
+theorem derive_subset_of_subset {K S : Set A.Msg} (h : K ⊆ derive S) :
+    derive K ⊆ derive S :=
+  derive.closure_min h (derive.isClosed_closure S)
 
 theorem range_subset_snoc (xs : Fin n → A.Msg) (a : A.Msg) :
     Set.range xs ⊆ Set.range (Fin.snoc (α := fun _ => A.Msg) xs a) := by
@@ -279,9 +278,9 @@ theorem mem_range_snoc (xs : Fin n → A.Msg) (a : A.Msg) :
 
 /-- A message derivable from the values of the bound variables is the value of a public
 expression. -/
-theorem expr_of_derive {xs : Fin n → A.Msg} {a : A.Msg} (h : a ∈ A.alg.derive (Set.range xs)) :
+theorem expr_of_derive {xs : Fin n → A.Msg} {a : A.Msg} (h : a ∈ derive (Set.range xs)) :
     ∃ D : Expr F G (ℕ ⊕ Fin n), A.PubExpr D ∧ D.denote (env xs) = some a := by
-  refine A.alg.derive.closure_min (y := {a | ∃ D : Expr F G (ℕ ⊕ Fin n),
+  refine derive.closure_min (y := {a | ∃ D : Expr F G (ℕ ⊕ Fin n),
     A.PubExpr D ∧ D.denote (env xs) = some a}) ?_ ?_ h
   · rintro _ ⟨i, rfl⟩
     exact ⟨.term (.var (.inr i)), trivial, rfl⟩
@@ -293,11 +292,23 @@ theorem expr_of_derive {xs : Fin n → A.Msg} {a : A.Msg} (h : a ∈ A.alg.deriv
         · exact hargs i m h
     choose Ds hDs using hD
     have hargs' : (fun i => (Ds i).denote (env xs)) = args := funext fun i => (hDs i).2
-    rcases ho with ho | ho
+    rcases ho with (ho | ho) | (⟨k, rfl⟩ | ⟨⟨k, i⟩, rfl⟩) | rfl | rfl
     · obtain ⟨k, f, hf, rfl⟩ := Set.mem_iUnion.1 ho
-      exact ⟨.ctor f Ds, ⟨hf, fun i => (hDs i).1⟩, by rw [Expr.denote, hargs']; exact hr⟩
+      exact ⟨.ctor (.inl f) Ds, ⟨hf, fun i => (hDs i).1⟩, by rw [Expr.denote, hargs']; exact hr⟩
     · obtain ⟨k, g, hg, rfl⟩ := Set.mem_iUnion.1 ho
-      exact ⟨.dtor g Ds, ⟨hg, fun i => (hDs i).1⟩, by rw [Expr.denote, hargs']; exact hr⟩
+      exact ⟨.dtor (.inl g) Ds, ⟨hg, fun i => (hDs i).1⟩, by rw [Expr.denote, hargs']; exact hr⟩
+    · exact ⟨.ctor (.inr (.tuple k)) Ds, ⟨trivial, fun i => (hDs i).1⟩,
+        by rw [Expr.denote, hargs']; exact hr⟩
+    · exact ⟨.dtor (.inr (.proj k i)) Ds, ⟨trivial, fun i => (hDs i).1⟩,
+        by rw [Expr.denote, hargs', A.dtorFun_proj]; exact hr⟩
+    · obtain rfl := Option.some_injective _ hr
+      refine ⟨.ctor (.inr .tt) Ds, ⟨trivial, fun i => (hDs i).1⟩, ?_⟩
+      rw [Expr.denote, liftFail_zero, Theory.Msg.tt_def]
+      exact congrArg some (congrArg _ (funext fun i => i.elim0))
+    · obtain rfl := Option.some_injective _ hr
+      refine ⟨.ctor (.inr .ff) Ds, ⟨trivial, fun i => (hDs i).1⟩, ?_⟩
+      rw [Expr.denote, liftFail_zero, Theory.Msg.ff_def]
+      exact congrArg some (congrArg _ (funext fun i => i.elim0))
 
 /-! ### Steps of a substituted process -/
 
@@ -348,8 +359,8 @@ theorem Tm.msg_var_inr (σ : Fin (n + 1) → Tm F 0) (i : Fin (n + 1)) :
   simp [Tm.subst, Term.subst, Tm.msg]
 
 /-- An attacker trace is replayed by an adversary process. -/
-theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy A.alg.derive K e) :
-    ∀ {n : ℕ} (xs : Fin n → A.Msg), K ⊆ A.alg.derive (Set.range xs) →
+theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy K e) :
+    ∀ {n : ℕ} (xs : Fin n → A.Msg), K ⊆ derive (Set.range xs) →
       ∃ Q : Process F G n, A.Adversary Q ∧ ∀ σ : Fin n → Tm F 0,
         (fun i => Tm.msg A (σ i)) = xs → ∀ U : Finset ℕ, (∀ k ∈ e.nonces, k ∉ U) →
           Runs A ⟨U, {Q.subst σ}⟩ e := by
@@ -359,8 +370,8 @@ theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy A.alg.derive
     intro n xs hK
     obtain ⟨Dc, hDc, hDcv⟩ := expr_of_derive (G := G) (derive_subset_of_subset hK hc)
     obtain ⟨Q', hQ', hrun⟩ := ih (Fin.snoc (Fin.snoc xs c) m) (Set.insert_subset_iff.2
-      ⟨A.alg.derive.le_closure _ (mem_range_snoc _ _),
-        hK.trans (A.alg.derive.monotone ((range_subset_snoc _ _).trans (range_subset_snoc _ _)))⟩)
+      ⟨derive.le_closure _ (mem_range_snoc _ _),
+        hK.trans (derive.monotone ((range_subset_snoc _ _).trans (range_subset_snoc _ _)))⟩)
     refine ⟨.let_ Dc (.inp (.var (.inr (Fin.last _))) Q') .nil, ?_, ?_⟩
     · dsimp only [Model.Adversary, Model.PubTerm]
       exact ⟨hDc, ⟨trivial, hQ'⟩, trivial⟩
@@ -375,9 +386,9 @@ theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy A.alg.derive
     intro n xs hK
     obtain ⟨Dc, hDc, hDcv⟩ := expr_of_derive (G := G) (derive_subset_of_subset hK hc)
     obtain ⟨Dm, hDm, hDmv⟩ := expr_of_derive (G := G) (xs := Fin.snoc xs c)
-      (derive_subset_of_subset (hK.trans (A.alg.derive.monotone (range_subset_snoc _ _))) hm)
+      (derive_subset_of_subset (hK.trans (derive.monotone (range_subset_snoc _ _))) hm)
     obtain ⟨Q', hQ', hrun⟩ := ih (Fin.snoc (Fin.snoc xs c) m)
-      (hK.trans (A.alg.derive.monotone ((range_subset_snoc _ _).trans (range_subset_snoc _ _))))
+      (hK.trans (derive.monotone ((range_subset_snoc _ _).trans (range_subset_snoc _ _))))
     refine ⟨.let_ Dc (.let_ Dm (.out (.var (.inr (Fin.last n).castSucc))
       (.var (.inr (Fin.last (n + 1)))) Q') .nil) .nil, ?_, ?_⟩
     · dsimp only [Model.Adversary, Model.PubTerm]
@@ -394,9 +405,9 @@ theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy A.alg.derive
     intro n xs hK
     obtain ⟨Dc, hDc, hDcv⟩ := expr_of_derive (G := G) (derive_subset_of_subset hK hc)
     obtain ⟨Dm, hDm, hDmv⟩ := expr_of_derive (G := G) (xs := Fin.snoc xs c)
-      (derive_subset_of_subset (hK.trans (A.alg.derive.monotone (range_subset_snoc _ _))) hm)
+      (derive_subset_of_subset (hK.trans (derive.monotone (range_subset_snoc _ _))) hm)
     obtain ⟨Q', hQ', hrun⟩ := ih (Fin.snoc (Fin.snoc (Fin.snoc xs c) m) m)
-      (hK.trans (A.alg.derive.monotone (((range_subset_snoc _ _).trans
+      (hK.trans (derive.monotone (((range_subset_snoc _ _).trans
         (range_subset_snoc _ _)).trans (range_subset_snoc _ _))))
     refine ⟨.let_ Dc (.let_ Dm (.par (.out (.var (.inr (Fin.last n).castSucc))
       (.var (.inr (Fin.last (n + 1)))) .nil) (.inp (.var (.inr (Fin.last n).castSucc)) Q'))
@@ -432,8 +443,8 @@ theorem Enemy.process {K : Set A.Msg} {e : Trace A.Msg} (he : Enemy A.alg.derive
   | @new K e k hk _ ih =>
     intro n xs hK
     obtain ⟨Q', hQ', hrun⟩ := ih (Fin.snoc xs (Theory.Msg.name k)) (Set.insert_subset_iff.2
-      ⟨A.alg.derive.le_closure _ (mem_range_snoc _ _),
-        hK.trans (A.alg.derive.monotone (range_subset_snoc _ _))⟩)
+      ⟨derive.le_closure _ (mem_range_snoc _ _),
+        hK.trans (derive.monotone (range_subset_snoc _ _))⟩)
     refine ⟨.new Q', hQ', ?_⟩
     intro σ hσ U hU
     refine Runs.new_step (hU k (by simp [Trace.nonces])) ?_
@@ -514,9 +525,9 @@ def enemyK (K : Set A.Msg) : Trace A.Msg → Set A.Msg
   | _ :: e => enemyK K e
 
 /-- The attacker can end by outputting anything it knows to itself. -/
-theorem Enemy.append_comm {K : Set A.Msg} {e : Trace A.Msg} (h : Enemy A.alg.derive K e)
-    {c m : A.Msg} (hc : c ∈ A.alg.derive (enemyK K e)) (hm : m ∈ A.alg.derive (enemyK K e)) :
-    Enemy A.alg.derive K (e ++ [.comm c m]) := by
+theorem Enemy.append_comm {K : Set A.Msg} {e : Trace A.Msg} (h : Enemy K e)
+    {c m : A.Msg} (hc : c ∈ derive (enemyK K e)) (hm : m ∈ derive (enemyK K e)) :
+    Enemy K (e ++ [.comm c m]) := by
   induction h with
   | nil => exact Enemy.comm c m hc hm Enemy.nil
   | inp c' m' hc' _ ih => exact Enemy.inp c' m' hc' (ih hc hm)
@@ -546,51 +557,53 @@ theorem proj_cons_one_zero {M : Type} (a : Act M) (s : TaggedTrace (Fin 2) M) :
     TaggedTrace.proj ((1, a) :: s) 0 = s.proj 0 := by simp
 
 /-- The attacker knowing more can do the same. -/
-theorem Enemy.mono {K : Set A.Msg} {e : Trace A.Msg} (h : Enemy A.alg.derive K e) :
-    ∀ {K' : Set A.Msg}, K ⊆ K' → Enemy A.alg.derive K' e := by
+theorem Enemy.mono {K : Set A.Msg} {e : Trace A.Msg} (h : Enemy K e) :
+    ∀ {K' : Set A.Msg}, K ⊆ K' → Enemy K' e := by
   induction h with
   | nil => exact fun _ => Enemy.nil
   | inp c m hc _ ih =>
-    exact fun hK => Enemy.inp c m (A.alg.derive.monotone hK hc) (ih (Set.insert_subset_insert hK))
+    exact fun hK => Enemy.inp c m (derive.monotone hK hc) (ih (Set.insert_subset_insert hK))
   | out c m hc hm _ ih =>
-    exact fun hK => Enemy.out c m (A.alg.derive.monotone hK hc) (A.alg.derive.monotone hK hm) (ih hK)
+    exact fun hK => Enemy.out c m (derive.monotone hK hc) (derive.monotone hK hm) (ih hK)
   | comm c m hc hm _ ih =>
-    exact fun hK => Enemy.comm c m (A.alg.derive.monotone hK hc) (A.alg.derive.monotone hK hm) (ih hK)
+    exact fun hK => Enemy.comm c m (derive.monotone hK hc) (derive.monotone hK hm) (ih hK)
   | new k hk _ ih => exact fun hK => Enemy.new k hk (ih (Set.insert_subset_insert hK))
 
-theorem learn_subset {K K' : Set A.Msg} {a : Act A.Msg} (hK : K ⊆ A.alg.derive K')
-    (ha : ∀ c m, a = .comm c m → c ∈ K → m ∈ A.alg.derive K') :
-    A.alg.derive (K ∪ {m | ∃ c, a = .comm c m ∧ c ∈ K}) ⊆ A.alg.derive K' :=
+theorem learn_subset {K K' : Set A.Msg} {a : Act A.Msg} (hK : K ⊆ derive K')
+    (ha : ∀ c m, a = .comm c m → c ∈ K → m ∈ derive K') :
+    derive (K ∪ {m | ∃ c, a = .comm c m ∧ c ∈ K}) ⊆ derive K' :=
   derive_subset_of_subset (Set.union_subset hK fun _ ⟨c, h, hc⟩ => ha c _ h hc)
 
 theorem subset_attackerKnowledge (K : Set A.Msg) :
-    ∀ t : Trace A.Msg, K ⊆ t.attackerKnowledge A.alg.derive K
+    ∀ t : Trace A.Msg, K ⊆ t.attackerKnowledge K
   | [] => subset_rfl
-  | _ :: t => (Set.subset_union_left.trans (A.alg.derive.le_closure _)).trans
+  | _ :: t => (Set.subset_union_left.trans (derive.le_closure _)).trans
       (subset_attackerKnowledge _ t)
 
 /-- A message communicated on a known channel becomes known. -/
 theorem mem_attackerKnowledge_of_comm {c m : A.Msg} :
     ∀ {t : Trace A.Msg} {K : Set A.Msg}, c ∈ K → Act.comm c m ∈ t →
-      m ∈ t.attackerKnowledge A.alg.derive K
+      m ∈ t.attackerKnowledge K
   | [], _, _, h => (List.not_mem_nil h).elim
   | a :: t, K, hc, h => by
     rcases List.mem_cons.1 h with rfl | h
-    · exact subset_attackerKnowledge _ t
-        (A.alg.derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩))
+    · exact subset_attackerKnowledge
+        (derive (K ∪ {m' | ∃ c', Act.comm c m = .comm c' m' ∧ c' ∈ K})) t
+        (derive.le_closure _ (Set.mem_union_right _ ⟨c, rfl, hc⟩))
     · exact mem_attackerKnowledge_of_comm (t := t)
-        (Set.subset_union_left.trans (A.alg.derive.le_closure _) hc) h
+        (K := derive (K ∪ {m | ∃ c, a = .comm c m ∧ c ∈ K}))
+        (Set.subset_union_left.trans (derive.le_closure _) hc) h
 
 /-- An attack is observed by an attack in which the attacker received every message
 communicated on a channel it knew, so that it knows what the trace semantics says it
 knows; the protocol's trace changes only by splitting communications. -/
 theorem intercept {s : TaggedTrace (Fin 2) A.Msg} {t : Trace A.Msg} (hc : s.Comms t) :
     ∀ {K Ka : Set A.Msg} (p e : Trace A.Msg), s.proj 0 = p → s.proj 1 = e → t.Closed →
-      Enemy A.alg.derive K e → Ka ⊆ A.alg.derive K →
+      Enemy K e → Ka ⊆ derive K →
       ∃ (s' : TaggedTrace (Fin 2) A.Msg) (t' : Trace A.Msg), s'.Comms t' ∧ t'.Closed ∧
-        CommSplit p (s'.proj 0) ∧ Enemy A.alg.derive K (s'.proj 1) ∧
+        CommSplit p (s'.proj 0) ∧ Enemy K (s'.proj 1) ∧
         (s'.proj 1).nonces = e.nonces ∧ obs t' = obs t ∧ t'.nonces = t.nonces ∧
-        t.attackerKnowledge A.alg.derive Ka ⊆ A.alg.derive (enemyK K (s'.proj 1)) := by
+        t.attackerKnowledge Ka ⊆ derive (enemyK K (s'.proj 1)) := by
   induction hc with
   | nil =>
     rintro K Ka p e rfl rfl _ _ hKa
@@ -611,9 +624,9 @@ theorem intercept {s : TaggedTrace (Fin 2) A.Msg} {t : Trace A.Msg} (hc : s.Comm
         · obtain ⟨s', t', hc', hcl', hsp, hen', hnon, hobs, hnonces, hknow⟩ :=
             ih _ _ rfl rfl hcl' (Enemy.mono hen (Set.subset_insert m K))
               (learn_subset (K' := insert m K) (a := .comm c m)
-                (hKa.trans (A.alg.derive.monotone (Set.subset_insert _ _))) fun c' m' h _ => by
+                (hKa.trans (derive.monotone (Set.subset_insert _ _))) fun c' m' h _ => by
                   obtain ⟨rfl, rfl⟩ := Act.comm.inj h
-                  exact A.alg.derive.le_closure _ (Set.mem_insert _ _))
+                  exact derive.le_closure _ (Set.mem_insert _ _))
           refine ⟨(0, .out c m) :: (1, .inp c m) :: (1, .out c m) :: (0, .inp c m) :: s',
             .comm c m :: .comm c m :: t',
             (hc'.pair (by decide : (1 : Fin 2) ≠ 0) c m).pair (by decide : (0 : Fin 2) ≠ 1) c m,
@@ -623,8 +636,8 @@ theorem intercept {s : TaggedTrace (Fin 2) A.Msg} {t : Trace A.Msg} (hc : s.Comm
             exact .split c m hsp
           · rw [proj_cons_zero_one, proj_cons_self, proj_cons_self, proj_cons_zero_one]
             exact Enemy.inp c m (hKa hcKa) (Enemy.out c m
-              (A.alg.derive.monotone (Set.subset_insert _ _) (hKa hcKa))
-              (A.alg.derive.le_closure _ (Set.mem_insert _ _)) hen')
+              (derive.monotone (Set.subset_insert _ _) (hKa hcKa))
+              (derive.le_closure _ (Set.mem_insert _ _)) hen')
           · rw [proj_cons_zero_one, proj_cons_self, proj_cons_self, proj_cons_zero_one]
             simpa [Trace.nonces] using hnon
           · simpa [obs_comm] using hobs
@@ -706,7 +719,7 @@ theorem intercept {s : TaggedTrace (Fin 2) A.Msg} {t : Trace A.Msg} (hc : s.Comm
       | new k hk hen' =>
         obtain ⟨s', t', hc', hcl', hsp, hen'', hnon, hobs, hnonces, hknow⟩ :=
           ih _ _ rfl rfl hcl' hen' (learn_subset (K' := insert (Theory.Msg.name k) K)
-            (a := .new k) (hKa.trans (A.alg.derive.monotone (Set.subset_insert _ _)))
+            (a := .new k) (hKa.trans (derive.monotone (Set.subset_insert _ _)))
             fun _ _ h _ => nomatch h)
         refine ⟨(1, .new k) :: s', .new k :: t', hc'.cons 1 _,
           List.forall_mem_cons.2 ⟨nofun, hcl'⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -731,9 +744,9 @@ theorem intercept {s : TaggedTrace (Fin 2) A.Msg} {t : Trace A.Msg} (hc : s.Comm
       | inp _ _ hcK hen' =>
         obtain ⟨s', t', hc', hcl', hsp, hen'', hnon, hobs, hnonces, hknow⟩ :=
           ih _ _ rfl rfl hcl' hen' (learn_subset (K' := insert m K) (a := .comm c m)
-            (hKa.trans (A.alg.derive.monotone (Set.subset_insert _ _))) fun c' m' h _ => by
+            (hKa.trans (derive.monotone (Set.subset_insert _ _))) fun c' m' h _ => by
               obtain ⟨rfl, rfl⟩ := Act.comm.inj h
-              exact A.alg.derive.le_closure _ (Set.mem_insert _ _))
+              exact derive.le_closure _ (Set.mem_insert _ _))
         refine ⟨(0, .out c m) :: (1, .inp c m) :: s', .comm c m :: t',
           hc'.pair (by decide : (0 : Fin 2) ≠ 1) c m,
           List.forall_mem_cons.2 ⟨nofun, hcl'⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩

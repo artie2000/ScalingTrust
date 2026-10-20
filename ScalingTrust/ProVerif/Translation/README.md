@@ -1,8 +1,8 @@
 # Translating ProVerif models to Lean
 
 A translator from a fragment of ProVerif's input language to Lean source over
-`../TraceSemantics/`: the declarations of a model become a message algebra, its
-process a `do` block and its queries the security properties they check,
+`../TraceSemantics/`: the declarations of a model become a type of messages with
+its attacker, its process a `do` block and its queries the security properties they check,
 following the recipe below. A translated model is ordinary Lean, written against
 the API of the trace semantics, so that its security properties are proved as
 ordinary Lean theorems; the translator does not go through the syntax of
@@ -52,19 +52,22 @@ options `private`, `data` and `typeConverter`, `reduc` and `fun … reduc …
 otherwise …` with may-fail variables and the constant `fail`, `equation`,
 `event`, `let` process macros, `letfun` function macros and `query`; the
 processes `0`, `P | Q`, `!P`, `new`, `in` and `out`, `event`, macro calls,
-`let x = D in P else Q` and `if D = D' then P else Q` or
-`if D <> D' then P else Q`; and the queries `F`, `F ==> false` and `F ==> H` for
-single facts `F` and `H`, `attacker(M)` or an event, possibly in parentheses,
-with variables declared before them. Terms are identifiers and applications,
-`(M)` is `M`, and in a process position also the enriched terms of the manual's
-§4.1.4: `new a; M`, `event e(M…); M`, `if M = N then M' else M''` or with `<>`,
-and `let x = M in M' else M''`, an absent `else` being `fail`.
+`let pat = D in P else Q` and `if D then P else Q`; and the queries `F`,
+`F ==> false` and `F ==> H` for single facts `F` and `H`, `attacker(M)` or an
+event, possibly in parentheses, with variables declared before them. Terms are
+identifiers, applications, tuples `(M₁, …, Mₙ)` with `(M)` being `M`, the
+booleans `true` and `false`, the comparisons `M = N` and `M <> N` and the
+connectives `M && N`, `M || N` and `not(M)`, which bind as in the manual, and in
+a process position also the enriched terms of the manual's §4.1.4: `new a; M`,
+`event e(M…); M`, `if D then M' else M''` and `let pat = M in M' else M''`, an
+absent `else` being `fail`. A pattern is a variable, an equality test `=M`, a
+tuple of patterns or a `[data]` constructor applied to patterns.
 
-Not translated: tuples and numerals, patterns other than a variable in `in` and
-`let`, booleans and the boolean operators as terms (an `if`, in a process or in
-a term, has to compare), may-fail parameters of macros, `let` in equations and
-rules, tables, predicates, phases, and queries other than the three above, so
-none with `&&`, `||`, `inj-event`, nested correspondences or `secret`.
+Not translated: numerals, tuples and booleans in equations, tuple patterns in
+rewrite rules, `=D` patterns with a destructor in `D`, may-fail parameters of
+macros, `let` in equations and rules, tables, predicates, phases, and queries
+other than the three above, so none with `&&`, `||`, `inj-event`, nested
+correspondences or `secret`.
 
 The lexer reads identifiers, numerals and symbols, the longest symbol first, and
 skips comments, which may nest. ProVerif's reserved words are not identifiers,
@@ -87,15 +90,29 @@ its docstring.
    reserved for the nonces that `new` creates.
 2. **Constructors** (`fun`, `const`) become the symbols of a signature
    `Fun : ℕ → Type`, and each the function `f (x₀ … : T.Msg) : T.Msg` applying
-   it. **Events** are constructors of `Fun` too, private, so that `event e(M)`
-   is `Proc.emit (e M)` and the facts of queries are messages. A
-   `[typeConverter]` is the identity, as under ProVerif's default
-   `ignoreTypes = true`, and gets no symbol.
-3. **Equations** (`equation`) become a `Theory Fun` named `T`: the set `E` of
+   it, as the symbol `.inl f` of `Sig.withData Fun`. **Events** are constructors
+   of `Fun` too, private, so that `event e(M)` is `Proc.emit (e M)` and the
+   facts of queries are messages. A `[typeConverter]` is the identity, as under
+   ProVerif's default `ignoreTypes = true`, and gets no symbol. A `[data]`
+   constructor `f` of arity `n` gets the projections `f₁, …, fₙ`, destructors
+   with the rule `fᵢ(f(y₁, …, yₙ)) → yᵢ`, public when `f` is (manual §4.1.2).
+   The data symbols of the trace semantics stand for the tuples and the
+   booleans: a tuple `(M₁, …, Mₙ)` is the product `(m₁, …, mₙ) : T.Msg`, a
+   message through the coercion of `Tuple`, `true` and `false` are
+   `(true : T.Msg)` and `(false : T.Msg)`, and the comparisons and connectives
+   are the destructors ProVerif represents them by internally (manual, Appendix
+   B), added to the model for the operators it uses: `equal(x, x) → true;
+   equal(x, y) → false`, `not(true) → false; not(x) → true`, `and(true, u) → u;
+   and(x, u) → false` and `or(true, u) → true; or(x, u) → u`, with `u` may-fail,
+   so that `false && fail` is `false`; `M <> N` is `not(equal(M, N))`. They are
+   not public, since each result is a boolean or an argument, which the attacker
+   has.
+3. **Equations** (`equation`) become a `Theory Fun` named `T₀`: the set `E` of
    pairs of raw terms, the variables of each `forall` numbered in order, and
    `free`, true of every symbol at the root of no equation; `heads` is proved by
-   `simp`. `T.Msg`, terms modulo `E`, is the message type, and Lean's `=` on it
-   is the survey's `=_E`.
+   `simp`. `T := T₀.withData` adds the data symbols, the tuples and the
+   booleans, and `T.Msg`, terms modulo `E`, is the message type, with its
+   `StdOps` instance; Lean's `=` on it is the survey's `=_E`.
 4. **Destructors** (`reduc`) become functions to `Option T.Msg`, `none` being
    `fail`. A rule is compiled against the arguments: its top-level variables are
    bound first; then each structured pattern becomes a `match` on
@@ -107,16 +124,20 @@ its docstring.
    patterns do not match and `some r` when they do, and the destructor is the
    rules in order chained with `<|>` and flattened by `Option.join`, so that the
    first rule that matches decides, even when its result is `fail`. A pattern
-   may only match on a free symbol. A destructor whose rules have neither a
+   may only match on a free symbol; `true` and `false` are constant patterns,
+   tested by equality, and a tuple pattern in a rule is not translated. A
+   destructor whose rules have neither a
    may-fail variable nor the pattern `fail` is written on messages and lifted by
    `liftFail` in the algebra; one whose rules match `fail` takes
    `u₀ … : Option T.Msg` directly, and each rule first matches them against
    `some xᵢ`, against `none` for the pattern `fail`, or binds a may-fail
    variable to one.
-5. **Public and private** declarations complete `alg : MsgAlgebra Fun`: `pubFun`
-   is everything, or `{f | pub n f}` for the predicate `pub`, false of the
-   private free names and constructors and of the events; `pubDtors` holds the
-   public destructors.
+5. **Public and private** declarations give the attacker, the instance
+   `Attacker T.Msg := .ofDecls pubFun pubDtors`: `pubFun` is everything, or
+   `{f | pub n f}` for the predicate `pub`, false of the private free names and
+   constructors and of the events; `pubDtors` holds the public destructors; the
+   standard operations, the tuples, their projections and the booleans, come
+   with `Attacker.ofDecls`.
 6. **The process** becomes `system : Proc T.Msg`, the `Proc.run` of a `do` block
    in `Cont (Proc T.Msg) Unit`, and each `let` macro a function of its parameters
    to such a block: `out` is `Proc.send`, `in` is `Proc.recv`, `new` is
@@ -128,14 +149,32 @@ its docstring.
    on `D`, `some x` running `P` and `none` running `Q`. A destructor inside the
    terms of `out`, `in`, `event`, a macro call or a condition may fail, and a
    failing term takes no branch (survey §2.5.2), so the term is matched first,
-   `t₀`, with `Proc.stop` for `none`, and `if M = N then P else Q` is then a Lean
-   `if` on the equation of messages. Variables keep their names, prefixed with
-   `_` when nothing uses them. The process never uses `Theory.Msg.name`.
+   `t₀`, with `Proc.stop` for `none`. A condition `if D then P else Q` is a Lean
+   `if` on a proposition when it can be: `M = N` and `M <> N` are the equality
+   of messages and its negation, `&&`, `||` and `not` are `∧`, `∨` and `¬`,
+   `true` and `false` are `True` and `False`, and another term `M`, a boolean,
+   is `M = true`; the terms of a comparison are matched first, which is the
+   failure of the condition, but the operands of `&&` and `||` must be messages
+   with neither effects nor failure, since `false && fail` is `false`, and a
+   condition with such a connective is otherwise computed as a boolean term,
+   by the destructors `and` and `or`, and tested against `true`. The graph
+   theorems of `equal`, `not`, `and` and `or` are what justify reading a
+   condition as a proposition. A pattern
+   other than a variable, in `in` or `let`, is matched by nested `match`es and
+   `if`s: a tuple is read with `Tuple.ofMsg` into the binders of its
+   components, a `[data]` constructor through its projections, one `match`
+   each, and `=M` is an `if` on the equality; `P` runs where every test passes
+   and `Q`, or `Proc.stop` after an `in`, where one fails, `Q` bound first as a
+   block `q₀` since the pattern can fail at several points. The pattern is not
+   matched in an `Option` `do` block, which `aesop` cannot normalise. Variables
+   keep their names, prefixed with `_` when nothing uses them. The process never
+   uses `Theory.Msg.name`.
 7. **Terms with effects**, the enriched terms, are emitted as the elements of
    the enclosing block that perform their effects, followed by their value,
    which the process then uses as in item 6: `new a; M` is `Proc.fresh`,
-   `event e(M…); M` is `Proc.emit`, and `let x = M in M'` with an `M` that
-   cannot fail is a Lean `let`. The order and the failure rules are those of
+   `event e(M…); M` is `Proc.emit`, `let x = M in M'` with an `M` that
+   cannot fail is a Lean `let`, and a pattern is matched as in item 6. The order
+   and the failure rules are those of
    the manual's Appendix B (Figure B.1), which `../Specification/` does not yet
    cover: the effects of every argument of an application run, left to right,
    before a failure propagates, and so do those of the channel of an output
@@ -154,15 +193,15 @@ its docstring.
 8. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
    with `attacker(M)` as `Fact.knows M` and `event(e(M))` as `Fact.event (e M)`.
    `query F` and `query F ==> false` both ask that `F` never holds: for
-   `attacker(M)` this is `system.Secret alg.derive M`, and for an event it is
-   written out, `∀ t₀ ∈ system.Attacks alg.derive, ¬ F.Holds alg.derive t₀`;
-   `query F ==> H` is `system.Corr alg.derive F H`, the survey's Def. 3.5. The
+   `attacker(M)` this is `system.Secret M`, and for an event it is
+   written out, `∀ t₀ ∈ system.Attacks, ¬ F.Holds t₀`;
+   `query F ==> H` is `system.Corr F H`, the survey's Def. 3.5. The
    facts are functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
    variables, the inductive type `Varsᵢ`, and a never-holds query with variables
    is quantified over `σ`.
 9. **Theorems**, with generated proofs:
    * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
-     instantiating `Theory.satisfies_msg` at the raw equation and evaluating
+     instantiating `T₀.withData_satisfies` at the raw equation and evaluating
      both sides with `Term.realize_func_comp`, `comp_vecCons` and
      `comp_vecEmpty`, the lemmas of `TraceSemantics/Term.lean` for this;
    * the graph of each destructor, `g_eq_some : g x₀ … = some m₀ ↔ D₁ ∨ D₂ ∨ …`,
@@ -180,8 +219,12 @@ its docstring.
      `Theory.Msg.eq_app_of_view'`, and refutes each earlier rule by computing;
      backwards it substitutes and computes, with a lemma per earlier rule that
      it matches only as its disjunct says;
-   * `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)`, by `aesop`
-     unfolding the function macros, the process macros and `system`.
+   * `p_mem_tree : Proc.run (p x …) ∈ Descriptive.tree (Act T.Msg)` for each
+     process macro `p`, by `aesop` unfolding the function macros and `p` and
+     using the lemmas of the macros declared before it, and then
+     `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)` the same way from
+     `system` and the macros' lemmas: a macro call ends a block, so a macro
+     always runs with the final continuation, as `Proc.run` does.
 
 Every binder the translation introduces carries a subscript, `x₀`, `a₀`, `t₀`,
 `u₀`, `σ`, and in proofs `h₀`, `hv₀`, `e₀`, `f₀`, `i₀`, `n₀`, which no ProVerif

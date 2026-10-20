@@ -11,10 +11,14 @@ The write-up's Definition "Translation" and its Lemma "Evaluation".
 * A destructor denotes the function of the write-up's Definition "Destructors from
   rewrite rules", `Model.dtorFun`: the right-hand side of the first rule with a
   matching, or `fail`.  Two matchings against a rule give the same right-hand side
-  (`Rule.Matching.eval_eq`), so the matching chosen does not matter.
-* `Model.alg` is the message algebra of the model, with which the trace semantics
-  defines the attacker: the public constructors and the functions of the public
-  destructors.
+  (`Rule.Matching.eval_eq`), so the matching chosen does not matter.  A projection
+  denotes the standard operation of the trace semantics, `Model.dtorFun_proj`, and a
+  boolean destructor yields `true`, `false` or an argument, `Model.dtorFun_bool`.
+* The attacker of the model is the `Attacker` instance of its messages, built by
+  `Attacker.ofDecls` from the public constructors and the functions of the public
+  declared destructors; so its operations are the standard ones besides, which
+  `Model.Public` and `Model.PublicDt` count as public, as they do the boolean
+  destructors, which add nothing to what it derives (`Model.dtorFun_mem_derive`).
 * An expression under `n` binders is evaluated in an environment `env xs` with
   `xs : Fin n → A.Msg`, the created name `ν_k` being the nonce `Theory.Msg.name k`;
   `eval_iff` is the Evaluation lemma, that the survey's evaluation of a closed
@@ -46,73 +50,84 @@ theorem realize_eq_of_varFinset {α M : Type} [F.lang.Structure M] [DecidableEq 
     simp only [Term.varFinset, Finset.mem_biUnion, Finset.mem_univ, true_and]
     exact ⟨i, hx⟩
 
-/-- Two matchings of `u` against a pattern over the free symbols agree on its
-variables. -/
-theorem Pat.Matching.eq_of_mem {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option A.Msg} :
-    ∀ {p : Pat F} {u : Option A.Msg}, p.Free A.toTheory → p.Matching θ μ u →
-      p.Matching θ' μ' u → (∀ x ∈ p.vars, θ x = θ' x) ∧ ∀ v ∈ p.mvars, μ v = μ' v
-  | .var x, _, _, h, h' => by
-    refine ⟨fun y hy => ?_, by simp [Pat.mvars]⟩
-    rw [Pat.vars, Finset.mem_singleton] at hy
+/-- Two valuations under which a term over the free symbols has the same value agree on
+its variables: free constructors are injective on messages. -/
+theorem Term.Free.realize_inj {θ θ' : ℕ → A.Msg} :
+    ∀ {M : Term F.withData}, Term.Free A.withData M → M.realize θ = M.realize θ' →
+      ∀ x ∈ M.varFinset, θ x = θ' x
+  | .var x, _, h, y, hy => by
+    simp only [Term.varFinset, Finset.mem_singleton] at hy
     subst hy
-    exact Option.some_injective _ (h.symm.trans h')
-  | .mvar v, _, _, h, h' => by
-    refine ⟨by simp [Pat.vars], fun w hw => ?_⟩
-    rw [Pat.mvars, Finset.mem_singleton] at hw
-    subst hw
-    exact h.symm.trans h'
-  | .fail, _, _, _, _ => ⟨by simp [Pat.vars], by simp [Pat.mvars]⟩
-  | .app f args, u, hf, ⟨ms, hu, h⟩, ⟨ms', hu', h'⟩ => by
-    obtain rfl : ms = ms' := by
-      have := congrArg Theory.Msg.view (Option.some_injective _ (hu.symm.trans hu'))
-      simpa [hf.1] using this
-    simp only [Pat.vars, Pat.mvars, Finset.mem_biUnion, Finset.mem_univ, true_and]
-    exact ⟨fun x ⟨i, hi⟩ => (Pat.Matching.eq_of_mem (hf.2 i) (h i) (h' i)).1 x hi,
-      fun v ⟨i, hi⟩ => (Pat.Matching.eq_of_mem (hf.2 i) (h i) (h' i)).2 v hi⟩
+    simpa using h
+  | .func f ts, hf, h, x, hx => by
+    rw [Term.realize_func, Term.realize_func] at h
+    have hts : (fun i => (ts i).realize θ) = fun i => (ts i).realize θ' := by
+      have := congrArg Theory.Msg.view h
+      simp only [Theory.Msg.view_app, hf.1, if_true] at this
+      simpa using this
+    simp only [Term.varFinset, Finset.mem_biUnion, Finset.mem_univ, true_and] at hx
+    obtain ⟨i, hi⟩ := hx
+    exact Term.Free.realize_inj (hf.2 i) (congrFun hts i) x hi
 
-/-- Two matchings against the patterns of a rule give the same right-hand side. -/
-theorem Rule.Matching.eval_eq {r : Rule A.toTheory n} {us : Fin n → Option A.Msg}
+/-- Two pairs of valuations giving a may-fail term over the free symbols the same value
+agree on its variables. -/
+theorem MayFail.Free.eval_inj {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option A.Msg} :
+    ∀ {U : MayFail F.withData}, U.Free A.withData → U.eval θ μ = U.eval θ' μ' →
+      (∀ x ∈ U.vars, θ x = θ' x) ∧ ∀ v ∈ U.mvars, μ v = μ' v
+  | .term _, hM, h =>
+    ⟨Term.Free.realize_inj hM (Option.some_injective _ h), by simp [MayFail.mvars]⟩
+  | .mvar v, _, h => by
+    refine ⟨by simp [MayFail.vars], fun w hw => ?_⟩
+    rw [MayFail.mvars, Finset.mem_singleton] at hw
+    subst hw
+    exact h
+  | .fail, _, _ => ⟨by simp [MayFail.vars], by simp [MayFail.mvars]⟩
+
+/-- Two matchings against the arguments of a rule give the same right-hand side. -/
+theorem Rule.Matching.eval_eq {r : Rule A.withData n} {us : Fin n → Option A.Msg}
     {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option A.Msg} (h : r.Matching θ μ us)
     (h' : r.Matching θ' μ' us) : r.rhs.eval θ μ = r.rhs.eval θ' μ' := by
+  have agree := fun i => MayFail.Free.eval_inj (r.free i) ((h i).trans (h' i).symm)
   cases hr : r.rhs with
   | fail => rfl
   | mvar v =>
-    have hv : v ∈ r.rhs.mvars := by simp [hr, Rhs.mvars]
+    have hv : v ∈ r.rhs.mvars := by simp [hr, MayFail.mvars]
     obtain ⟨i, -, hi⟩ := Finset.mem_biUnion.1 (r.mvars hv)
-    exact (Pat.Matching.eq_of_mem (r.free i) (h i) (h' i)).2 v hi
+    exact (agree i).2 v hi
   | term M =>
-    simp only [Rhs.eval]
+    simp only [MayFail.eval]
     congr 1
     refine realize_eq_of_varFinset fun x hx => ?_
-    have hx : x ∈ r.rhs.vars := by simp [hr, Rhs.vars, hx]
+    have hx : x ∈ r.rhs.vars := by simp [hr, MayFail.vars, hx]
     obtain ⟨i, -, hi⟩ := Finset.mem_biUnion.1 (r.vars hx)
-    exact (Pat.Matching.eq_of_mem (r.free i) (h i) (h' i)).1 x hi
+    exact (agree i).1 x hi
 
 open Classical in
 /-- The right-hand side under a matching of the arguments against the rule, if there is
 one. -/
-noncomputable def Rule.apply (r : Rule A.toTheory n) (us : Fin n → Option A.Msg) :
+noncomputable def Rule.apply (r : Rule A.withData n) (us : Fin n → Option A.Msg) :
     Option (Option A.Msg) :=
   if h : ∃ θ μ, r.Matching θ μ us then some (r.rhs.eval h.choose h.choose_spec.choose) else none
 
-theorem Rule.apply_eq_some {r : Rule A.toTheory n} {us : Fin n → Option A.Msg}
+theorem Rule.apply_eq_some {r : Rule A.withData n} {us : Fin n → Option A.Msg}
     {θ : ℕ → A.Msg} {μ : ℕ → Option A.Msg} (h : r.Matching θ μ us) :
     r.apply us = some (r.rhs.eval θ μ) := by
   have h' : ∃ θ μ, r.Matching θ μ us := ⟨θ, μ, h⟩
   rw [Rule.apply, dif_pos h']
   exact congrArg some (Rule.Matching.eval_eq h'.choose_spec.choose_spec h)
 
-theorem Rule.apply_eq_none {r : Rule A.toTheory n} {us : Fin n → Option A.Msg}
+theorem Rule.apply_eq_none {r : Rule A.withData n} {us : Fin n → Option A.Msg}
     (h : ¬ ∃ θ μ, r.Matching θ μ us) : r.apply us = none := by
   rw [Rule.apply, dif_neg h]
 
 /-- The destructor the rules of `g` define: the first rule with a matching decides, and
 the result is `fail` when none has one. -/
-noncomputable def Model.dtorFun (g : G n) (us : Fin n → Option A.Msg) : Option A.Msg :=
-  ((A.dtor g).findSome? (·.apply us)).join
+noncomputable def Model.dtorFun (g : Sig.withBuiltin G n) (us : Fin n → Option A.Msg) :
+    Option A.Msg :=
+  ((A.rules g).findSome? (·.apply us)).join
 
 /-- The rules rewrite to the value of the destructor they define. -/
-theorem rewrites_iff {rs : List (Rule A.toTheory n)} {us : Fin n → Option A.Msg}
+theorem rewrites_iff {rs : List (Rule A.withData n)} {us : Fin n → Option A.Msg}
     {v : Option A.Msg} : Rewrites rs us v ↔ (rs.findSome? (·.apply us)).join = v := by
   constructor
   · intro h
@@ -129,13 +144,121 @@ theorem rewrites_iff {rs : List (Rule A.toTheory n)} {us : Fin n → Option A.Ms
         simpa [Rule.apply_eq_some hm] using Rewrites.head (rs := rs) hm
       · simpa [Rule.apply_eq_none h] using Rewrites.tail h ih
 
-/-- The message algebra of the model: its theory, its public constructors, and the
-functions of its public destructors. -/
-noncomputable abbrev Model.alg (A : Model F G) : MsgAlgebra F where
-  toTheory := A.toTheory
-  pubFun := A.pubFun
-  pubDtors := ⋃ n, (fun g : G n => (⟨n, A.dtorFun g⟩ :
-    Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubDtor n
+/-- A projection denotes the standard operation: the `i`-th component of a `k`-tuple. -/
+theorem Model.dtorFun_proj (k : ℕ) (i : Fin k) (us : Fin 1 → Option A.Msg) :
+    A.dtorFun (.inr (.proj k i)) us =
+      liftFail (fun a => (StdOps.untuple k (a 0)).map (· i)) us := by
+  have hrhs (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
+      (projRule A.toTheory k i).rhs.eval θ μ = some (θ i) := rfl
+  have harg (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
+      ((projRule A.toTheory k i).args 0).eval θ μ =
+        some (StdOps.tuple k fun j => θ j) := rfl
+  simp only [Model.dtorFun, Model.rules, Builtin.rules, List.findSome?_cons, List.findSome?_nil]
+  rcases h0 : us 0 with _ | m
+  · rw [Rule.apply_eq_none, liftFail]
+    · rw [dif_neg]
+      · rfl
+      · exact fun h => by simpa [h0] using h 0
+    · rintro ⟨θ, μ, hm⟩
+      have := hm 0
+      rw [harg, h0] at this
+      cases this
+  · rcases hu : StdOps.untuple k m with _ | a
+    · rw [Rule.apply_eq_none, liftFail]
+      · rw [dif_pos fun j => by rw [Subsingleton.elim j 0, h0]; rfl]
+        simp [h0, hu]
+      · rintro ⟨θ, μ, hm⟩
+        have := hm 0
+        rw [harg, h0] at this
+        rw [← Option.some_injective _ this, StdOps.untuple_tuple] at hu
+        cases hu
+    · obtain rfl := StdOps.tuple_untuple hu
+      have hm : (projRule A.toTheory k i).Matching
+          (fun n => if h : n < k then a ⟨n, h⟩ else a i) (fun _ => none) us := fun j => by
+        rw [Subsingleton.elim j 0, harg, h0]
+        congr 2
+        funext j
+        simp
+      rw [Rule.apply_eq_some hm, hrhs, liftFail]
+      rw [dif_pos fun j => by rw [Subsingleton.elim j 0, h0]; rfl]
+      simp [h0, hu]
+
+/-- The attacker of the model, `Attacker.ofDecls` from its public declarations: its
+public constructors and free names, the functions of its public destructors, and the
+standard operations. -/
+noncomputable instance Model.attacker (A : Model F G) : Attacker A.Msg :=
+  Attacker.ofDecls A.pubFun (⋃ n, (fun g : G n => (⟨n, A.dtorFun (.inl g)⟩ :
+    Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubDtor n)
+
+/-- A public constructor applied to derivable messages is derivable; a data symbol is
+public. -/
+theorem Model.app_mem_derive {f : F.withData n} (hf : A.Public f) {S : Set A.Msg}
+    {ms : Fin n → A.Msg} (hms : ∀ i, ms i ∈ Attacker.derive S) :
+    Theory.Msg.app f ms ∈ Attacker.derive S := by
+  have hS : ClosedUnder Attacker.ops (Attacker.derive S) := Attacker.derive.isClosed_closure S
+  rcases f with f | d
+  · exact Attacker.app_mem_derive (Attacker.ofDecls_mem hf) hms
+  cases d with
+  | tuple _ =>
+    exact hS _ (Or.inr (Or.inl (Or.inl ⟨n, rfl⟩))) (fun i => some (ms i))
+      (fun i m h => Option.some_injective _ h ▸ hms i) _
+      ((liftFail_eq_some (f := fun a => some (StdOps.tuple n a))).2 ⟨ms, fun _ => rfl, rfl⟩)
+  | tt =>
+    rw [show ms = ![] from funext fun i => i.elim0]
+    exact hS _ (Or.inr (Or.inr (Or.inl rfl))) (fun i => i.elim0) (fun i => i.elim0) _ rfl
+  | ff =>
+    rw [show ms = ![] from funext fun i => i.elim0]
+    exact hS _ (Or.inr (Or.inr (Or.inr rfl))) (fun i => i.elim0) (fun i => i.elim0) _ rfl
+
+/-- A destructor yields `some r` by the right-hand side of one of its rules under a
+matching of the arguments. -/
+theorem Model.dtorFun_eq_some {g : Sig.withBuiltin G n} {us : Fin n → Option A.Msg} {r : A.Msg}
+    (h : A.dtorFun g us = some r) :
+    ∃ ρ ∈ A.rules g, ∃ θ μ, ρ.Matching θ μ us ∧ ρ.rhs.eval θ μ = some r := by
+  have hrw : Rewrites (A.rules g) us (some r) := rewrites_iff.2 h
+  clear h
+  generalize hv : some r = v at hrw
+  generalize A.rules g = rs at hrw ⊢
+  induction hrw with
+  | nil => cases hv
+  | head hm => exact ⟨_, List.mem_cons.2 (Or.inl rfl), _, _, hm, rfl⟩
+  | tail _ _ ih =>
+    obtain ⟨ρ, hρ, θ, μ, hm, he⟩ := ih hv
+    exact ⟨ρ, List.mem_cons.2 (Or.inr hρ), θ, μ, hm, he⟩
+
+/-- A boolean destructor yields `true`, `false` or one of its arguments. -/
+theorem Model.dtorFun_bool {b : Builtin n} (hb : b.IsBool) {us : Fin n → Option A.Msg}
+    {r : A.Msg} (h : A.dtorFun (.inr b) us = some r) :
+    r = StdOps.tt ∨ r = StdOps.ff ∨ ∃ i, us i = some r := by
+  obtain ⟨ρ, hρ, θ, μ, hm, he⟩ := A.dtorFun_eq_some h
+  rcases Builtin.rhs_of_mem_rules hb hρ with h' | h' | ⟨u, h', i, hi⟩
+  · rw [h', MayFail.eval_tt] at he
+    exact Or.inl (Option.some_injective _ he).symm
+  · rw [h', MayFail.eval_ff] at he
+    exact Or.inr (Or.inl (Option.some_injective _ he).symm)
+  · rw [h'] at he
+    exact Or.inr (Or.inr ⟨i, by rw [← hm i, hi]; exact he⟩)
+
+/-- A public destructor applied to derivable arguments yields a derivable message: the
+function of a public declared destructor is among the attacker's operations, a projection
+is the standard projection, and a boolean destructor yields `true`, `false` or an
+argument, so that the attacker needs no operation for it. -/
+theorem Model.dtorFun_mem_derive {g : Sig.withBuiltin G n} (hg : A.PublicDt g) {S : Set A.Msg}
+    {us : Fin n → Option A.Msg} (hus : ∀ i m, us i = some m → m ∈ Attacker.derive S)
+    {r : A.Msg} (hr : A.dtorFun g us = some r) : r ∈ Attacker.derive S := by
+  have hS : ClosedUnder Attacker.ops (Attacker.derive S) := Attacker.derive.isClosed_closure S
+  rcases g with g | b
+  · exact hS _ (Or.inl (Or.inr (Set.mem_iUnion.2 ⟨n, g, hg, rfl⟩))) us hus r hr
+  rcases b with ⟨k, i⟩ | _ | _ | _ | _
+  · refine hS ⟨1, A.dtorFun (.inr (.proj k i))⟩ (Or.inr (Or.inl (Or.inr ⟨⟨k, i⟩, ?_⟩))) us hus r hr
+    exact congrArg _ (funext fun us => (A.dtorFun_proj k i us).symm)
+  all_goals
+    rcases A.dtorFun_bool (by trivial) hr with rfl | rfl | ⟨i, hi⟩
+    · rw [Theory.Msg.tt_def]
+      exact A.app_mem_derive (by trivial) fun i => i.elim0
+    · rw [Theory.Msg.ff_def]
+      exact A.app_mem_derive (by trivial) fun i => i.elim0
+    · exact hus i r hi
 
 /-! ## Expressions -/
 
@@ -191,7 +314,7 @@ noncomputable def Process.denote : {n : ℕ} → Process F G n → (Fin n → A.
     | some a => P.denote (Fin.snoc xs a)
     | none => Q.denote xs
   | _, .ite M P Q, xs =>
-    if M.realize (env xs) = Theory.Msg.app A.tt ![] then P.denote xs else Q.denote xs
+    if M.realize (env xs) = StdOps.tt then P.denote xs else Q.denote xs
   | _, .event M P, xs => Proc.event (M.realize (env xs)) (P.denote xs)
 
 /-! ## Substitution -/

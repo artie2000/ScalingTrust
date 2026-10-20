@@ -14,19 +14,36 @@ identifiers.  `Parser.parse` reads a model off the text of a file.
 
 namespace ProVerif.Translation
 
-/-- A term: an identifier, which is a variable, a free name or a constant; an
-application; `fail`, in rewrite rules; or one of the enriched terms of the manual's
-§4.1.4, which evaluate with effects: a restriction, a conditional comparing two
-terms, a term evaluation and an event.  An absent `else` is `fail` (Appendix B). -/
+mutual
+
+/-- A term: an identifier, which is a variable, a free name, a constant or `true` or
+`false`; an application; a tuple `(M₁, …, Mₙ)`, never of one term; `fail`, in rewrite
+rules; or one of the enriched terms of the manual's §4.1.4, which evaluate with effects: a
+restriction, a conditional on a boolean term, a term evaluation with a pattern and an
+event.  An absent `else` is `fail` (Appendix B).  The comparisons `M = N` and `M <> N`
+and the connectives `M && N`, `M || N` and `not(M)` are applications of `"="`, `"<>"`,
+`"&&"`, `"||"` and `"not"`, which are not identifiers. -/
 inductive Term where
   | ident (x : String)
   | app (f : String) (args : Array Term)
+  | tuple (args : Array Term)
   | fail
   | new (x : String) (M : Term)
-  | ite (l : Term) (eq : Bool) (r : Term) (N : Term) (N' : Option Term)
-  | «let» (x : String) (d : Term) (N : Term) (N' : Option Term)
+  | ite (c : Term) (N : Term) (N' : Option Term)
+  | «let» (p : Pat) (d : Term) (N : Term) (N' : Option Term)
   | event (e : String) (args : Array Term) (M : Term)
   deriving Inhabited, Repr
+
+/-- A pattern of `in` and `let` (manual §4.1.3): a variable, an equality test `=M`, a
+tuple of patterns, or a data constructor applied to patterns. -/
+inductive Pat where
+  | var (x : String)
+  | eq (M : Term)
+  | tuple (ps : Array Pat)
+  | app (f : String) (ps : Array Pat)
+  deriving Inhabited, Repr
+
+end
 
 /-- `fun f(t₁, …, tₙ) : t` or `const c : t`, with its options. -/
 structure Ctor where
@@ -35,6 +52,9 @@ structure Ctor where
   pub : Bool
   /-- `[typeConverter]`: the identity, as under ProVerif's default `ignoreTypes = true`. -/
   converter : Bool
+  /-- `[data]`: patterns may match on it, and its projections are destructors, public when
+  it is (manual §4.1.2). -/
+  data : Bool
   deriving Repr
 
 /-- A rewrite rule `forall x₁ : t₁ [or fail], …; g(p₁, …, pₙ) = r`: its variables,
@@ -62,18 +82,18 @@ structure Equation where
   rhs : Term
   deriving Repr
 
-/-- A process of the fragment.  An `if` compares two terms, with `=` or `<>`; an
-absent `else` and an absent `in` are `0`. -/
+/-- A process of the fragment.  An `if` tests a boolean term; `in` and `let` bind a
+pattern; an absent `else` and an absent `in` are `0`. -/
 inductive Proc where
   | nil
   | call (p : String) (args : Array Term)
   | par (P Q : Proc)
   | repl (P : Proc)
   | new (x : String) (P : Proc)
-  | ite (l : Term) (eq : Bool) (r : Term) (P Q : Proc)
-  | inp (c : Term) (x : String) (P : Proc)
+  | ite (c : Term) (P Q : Proc)
+  | inp (c : Term) (p : Pat) (P : Proc)
   | out (c m : Term) (P : Proc)
-  | «let» (x : String) (d : Term) (P Q : Proc)
+  | «let» (p : Pat) (d : Term) (P Q : Proc)
   | event (e : String) (args : Array Term) (P : Proc)
   deriving Inhabited, Repr
 
@@ -133,20 +153,43 @@ def Term.enriched : Term → Bool
   | .new .. | .ite .. | .let .. | .event .. => true
   | _ => false
 
+/-- Whether a term is an infix comparison or connective, printed in parentheses as an
+argument. -/
+def Term.infix : Term → Bool
+  | .app "=" _ | .app "<>" _ | .app "&&" _ | .app "||" _ => true
+  | _ => false
+
+mutual
+
 partial def Term.print : Term → String
   | .ident x => x
-  | .app f args => s!"{f}({", ".intercalate (args.map arg).toList})"
+  | .app "=" #[l, r] => s!"{l.arg} = {r.arg}"
+  | .app "<>" #[l, r] => s!"{l.arg} <> {r.arg}"
+  | .app "&&" #[l, r] => s!"{l.arg} && {r.arg}"
+  | .app "||" #[l, r] => s!"{l.arg} || {r.arg}"
+  | .app f args => s!"{f}({", ".intercalate (args.map Term.arg).toList})"
+  | .tuple args => s!"({", ".intercalate (args.map Term.print).toList})"
   | .fail => "fail"
   | .new x M => s!"new {x}; {M.print}"
-  | .ite l eq r N N' =>
-    s!"if {l.print} {if eq then "=" else "<>"} {r.print} then {N.print}{orElse N'}"
-  | .let x d N N' => s!"let {x} = {d.print} in {N.print}{orElse N'}"
-  | .event e args M => s!"event {printApp e (args.map arg)}; {M.print}"
-where
-  arg (t : Term) : String := if t.enriched then s!"({t.print})" else t.print
-  orElse : Option Term → String
-    | none => ""
-    | some N' => s!" else {N'.print}"
+  | .ite c N N' => s!"if {c.print} then {N.print}{Term.orElse N'}"
+  | .let p d N N' => s!"let {p.print} = {d.print} in {N.print}{Term.orElse N'}"
+  | .event e args M => s!"event {printApp e (args.map Term.arg)}; {M.print}"
+
+/-- A term as an argument or an operand. -/
+partial def Term.arg (t : Term) : String :=
+  if t.enriched || t.infix then s!"({t.print})" else t.print
+
+partial def Term.orElse : Option Term → String
+  | none => ""
+  | some N' => s!" else {N'.print}"
+
+partial def Pat.print : Pat → String
+  | .var x => x
+  | .eq M => s!"={M.arg}"
+  | .tuple ps => s!"({", ".intercalate (ps.map Pat.print).toList})"
+  | .app f ps => printApp f (ps.map Pat.print)
+
+end
 
 def Fn.print (f : Fn) : String :=
   s!"{printApp f.name f.params} = {f.body.print}"
@@ -167,15 +210,38 @@ def Rule.print (g : String) (r : Rule) : String :=
 
 /-! ## The identifiers of a model, and renaming them -/
 
-/-- Every identifier of a term: symbols and variables, bound or free. -/
+mutual
+
+/-- Every identifier of a term: symbols, operators and variables, bound or free. -/
 partial def Term.names : Term → Array String
   | .ident x => #[x]
-  | .app f args => #[f] ++ args.flatMap names
+  | .app f args => #[f] ++ args.flatMap Term.names
+  | .tuple args => args.flatMap Term.names
   | .fail => #[]
   | .new x M => #[x] ++ M.names
-  | .ite l _ r N N' => l.names ++ r.names ++ N.names ++ (N'.map names).getD #[]
-  | .let x d N N' => #[x] ++ d.names ++ N.names ++ (N'.map names).getD #[]
-  | .event e args M => #[e] ++ args.flatMap names ++ M.names
+  | .ite c N N' => c.names ++ N.names ++ (N'.map Term.names).getD #[]
+  | .let p d N N' => p.names ++ d.names ++ N.names ++ (N'.map Term.names).getD #[]
+  | .event e args M => #[e] ++ args.flatMap Term.names ++ M.names
+
+partial def Pat.names : Pat → Array String
+  | .var x => #[x]
+  | .eq M => M.names
+  | .tuple ps => ps.flatMap Pat.names
+  | .app f ps => #[f] ++ ps.flatMap Pat.names
+
+end
+
+/-- The variables a pattern binds, in order. -/
+partial def Pat.vars : Pat → Array String
+  | .var x => #[x]
+  | .eq _ => #[]
+  | .tuple ps | .app _ ps => ps.flatMap vars
+
+/-- The terms of the equality tests of a pattern. -/
+partial def Pat.tests : Pat → Array Term
+  | .var _ => #[]
+  | .eq M => #[M]
+  | .tuple ps | .app _ ps => ps.flatMap tests
 
 partial def Proc.names : Proc → Array String
   | .nil => #[]
@@ -183,10 +249,10 @@ partial def Proc.names : Proc → Array String
   | .par P Q => P.names ++ Q.names
   | .repl P => P.names
   | .new x P => #[x] ++ P.names
-  | .ite l _ r P Q => l.names ++ r.names ++ P.names ++ Q.names
-  | .inp c x P => c.names ++ #[x] ++ P.names
+  | .ite c P Q => c.names ++ P.names ++ Q.names
+  | .inp c p P => c.names ++ p.names ++ P.names
   | .out c m P => c.names ++ m.names ++ P.names
-  | .let x d P Q => #[x] ++ d.names ++ P.names ++ Q.names
+  | .let p d P Q => p.names ++ d.names ++ P.names ++ Q.names
   | .event e args P => #[e] ++ args.flatMap Term.names ++ P.names
 
 def Fact.names : Fact → Array String
@@ -207,14 +273,25 @@ def Model.names (m : Model) : Array String :=
       q.vars ++ q.premise.names ++ (q.conclusion.map Fact.names).getD #[])
     ++ m.main.names
 
+mutual
+
 partial def Term.rename (σ : String → String) : Term → Term
   | .ident x => .ident (σ x)
-  | .app f args => .app (σ f) (args.map (rename σ))
+  | .app f args => .app (σ f) (args.map (Term.rename σ))
+  | .tuple args => .tuple (args.map (Term.rename σ))
   | .fail => .fail
   | .new x M => .new (σ x) (M.rename σ)
-  | .ite l eq r N N' => .ite (l.rename σ) eq (r.rename σ) (N.rename σ) (N'.map (rename σ))
-  | .let x d N N' => .let (σ x) (d.rename σ) (N.rename σ) (N'.map (rename σ))
-  | .event e args M => .event (σ e) (args.map (rename σ)) (M.rename σ)
+  | .ite c N N' => .ite (c.rename σ) (N.rename σ) (N'.map (Term.rename σ))
+  | .let p d N N' => .let (p.rename σ) (d.rename σ) (N.rename σ) (N'.map (Term.rename σ))
+  | .event e args M => .event (σ e) (args.map (Term.rename σ)) (M.rename σ)
+
+partial def Pat.rename (σ : String → String) : Pat → Pat
+  | .var x => .var (σ x)
+  | .eq M => .eq (M.rename σ)
+  | .tuple ps => .tuple (ps.map (Pat.rename σ))
+  | .app f ps => .app (σ f) (ps.map (Pat.rename σ))
+
+end
 
 partial def Proc.rename (σ : String → String) : Proc → Proc
   | .nil => .nil
@@ -222,10 +299,10 @@ partial def Proc.rename (σ : String → String) : Proc → Proc
   | .par P Q => .par (P.rename σ) (Q.rename σ)
   | .repl P => .repl (P.rename σ)
   | .new x P => .new (σ x) (P.rename σ)
-  | .ite l eq r P Q => .ite (l.rename σ) eq (r.rename σ) (P.rename σ) (Q.rename σ)
-  | .inp c x P => .inp (c.rename σ) (σ x) (P.rename σ)
+  | .ite c P Q => .ite (c.rename σ) (P.rename σ) (Q.rename σ)
+  | .inp c p P => .inp (c.rename σ) (p.rename σ) (P.rename σ)
   | .out c m P => .out (c.rename σ) (m.rename σ) (P.rename σ)
-  | .let x d P Q => .let (σ x) (d.rename σ) (P.rename σ) (Q.rename σ)
+  | .let p d P Q => .let (p.rename σ) (d.rename σ) (P.rename σ) (Q.rename σ)
   | .event e args P => .event (σ e) (args.map (Term.rename σ)) (P.rename σ)
 
 def Fact.rename (σ : String → String) : Fact → Fact

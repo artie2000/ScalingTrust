@@ -27,7 +27,7 @@ namespace ProVerif.Translation
 
 open Lean PrettyPrinter
 
-/-- What a name of the model denotes. -/
+/-- What a name of the model denotes; `true` and `false` are the booleans. -/
 inductive Sym where
   | free (pub : Bool)
   | ctor (c : Ctor)
@@ -35,6 +35,7 @@ inductive Sym where
   | dtor (d : Dtor) (mayFail : Bool)
   | fn (f : Fn)
   | proc (m : Macro)
+  | bool (b : Bool)
 
 /-- The model and its symbol table. -/
 structure Ctx where
@@ -76,11 +77,12 @@ def resetSt : EmitM Unit := modify fun st => { fns := st.fns }
 model would shadow: its own definitions, and those of Lean, Mathlib and the trace
 semantics that the generated code and proofs mention. -/
 def reserved : List String :=
-  ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "alg", "system", "system_mem_tree", "Option",
-   "some", "none", "pure", "Set", "Term", "Theory", "MsgAlgebra", "liftFail", "Cont", "Proc", "Unit",
-   "Prop", "Type", "Bool", "true", "false", "Fact", "True", "False", "Classical", "Fin",
-   "Descriptive", "Act", "FirstOrder", "Or", "rfl", "trivial", "congrArg", "comp_vecCons",
-   "comp_vecEmpty", "join_eq_some", "orElse_eq_some"]
+  ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "system", "system_mem_tree", "Option",
+   "some", "none", "pure", "Set", "Term", "Theory", "Sig", "Data", "StdOps", "Tuple",
+   "Attacker", "equal", "and",
+   "liftFail", "Cont", "Proc", "Unit", "Prop", "Type", "Bool", "Fact", "True", "False",
+   "Classical", "Fin", "Descriptive", "Act", "FirstOrder", "Or", "rfl", "trivial", "congrArg",
+   "comp_vecCons", "comp_vecEmpty", "join_eq_some", "orElse_eq_some"]
 
 /-- `m` with each of its identifiers in `reserved` renamed by appending primes until the
 name is neither reserved nor another identifier of the model, and the renamings, new name
@@ -124,6 +126,7 @@ def mkCtx (m : Model) (renamed : Std.HashMap String String) : Except String Ctx 
     if syms.contains x then throw s!"`{x}` is declared twice"
     return syms.insert x s
   let mut syms : Std.HashMap String Sym := {}
+  syms := (syms.insert "true" (.bool true)).insert "false" (.bool false)
   for (x, pub) in m.frees do syms ← add syms x (.free pub)
   for c in m.ctors do syms ← add syms c.name (.ctor c)
   for (e, n) in m.events do syms ← add syms e (.event n)
@@ -145,6 +148,60 @@ def subscript (n : Nat) : String :=
 
 /-- `base` with the subscript `n`. -/
 def sub (base : String) (n : Nat) : Ident := ident (base ++ subscript n)
+
+/-- The projections of the data constructors: for `f` of arity `n`, the destructors
+`f₁, …, fₙ`, each with the rule `fᵢ(f(y₁, …, yₙ)) → yᵢ`, public when `f` is (manual §4.1.2);
+a pattern on `f` matches through them. -/
+def Model.withProjections (m : Model) : Model :=
+  let projs := m.ctors.flatMap fun c =>
+    if !c.data || c.converter || c.arity == 0 then #[] else
+    let ys := (Array.range c.arity).map fun j => "y" ++ subscript (j + 1)
+    (Array.range c.arity).map fun i =>
+      let rule : Rule :=
+        { vars := ys.map (·, false), lhs := #[.app c.name (ys.map .ident)],
+          rhs := .ident ys[i]! }
+      { name := c.name ++ subscript (i + 1), arity := 1, pub := c.pub, rules := #[rule] }
+  { m with dtors := m.dtors ++ projs }
+
+/-- The comparisons and connectives the model uses, as the destructors ProVerif represents
+them by (manual, Appendix B; survey §2.1): `equal(x, x) → true; equal(x, y) → false`,
+`not(true) → false; not(x) → true`, `and(true, u) → u; and(x, u) → false` and
+`or(true, u) → true; or(x, u) → u`, with `u` may-fail, so that `false && fail` is `false`;
+`M <> N` is `not(equal(M, N))`.  They are not public: the attacker gains nothing from them,
+each result being a boolean or an argument. -/
+def Model.withBooleans (m : Model) : Model :=
+  let used := m.names
+  let x : Term := .ident "x"
+  let y : Term := .ident "y"
+  let u : Term := .ident "u"
+  let tt : Term := .ident "true"
+  let ff : Term := .ident "false"
+  let rule (vars : Array (String × Bool)) (lhs : Array Term) (rhs : Term) : Rule :=
+    { vars, lhs, rhs }
+  let dtor (name : String) (arity : Nat) (rules : Array Rule) : Dtor :=
+    { name, arity, pub := false, rules }
+  let bools : Array (Bool × Dtor) := #[
+    (used.contains "=" || used.contains "<>",
+      dtor "equal" 2 #[rule #[("x", false)] #[x, x] tt,
+        rule #[("x", false), ("y", false)] #[x, y] ff]),
+    (used.contains "<>" || used.contains "not",
+      dtor "not" 1 #[rule #[] #[tt] ff, rule #[("x", false)] #[x] tt]),
+    (used.contains "&&",
+      dtor "and" 2 #[rule #[("u", true)] #[tt, u] u,
+        rule #[("x", false), ("u", true)] #[x, u] ff]),
+    (used.contains "||",
+      dtor "or" 2 #[rule #[("u", true)] #[tt, u] tt,
+        rule #[("x", false), ("u", true)] #[x, u] u])]
+  { m with dtors := m.dtors ++ (bools.filter (·.1)).map (·.2) }
+
+/-- Whether a term of the output is an identifier. -/
+def isIdentTerm (e : Lean.Term) : Bool := e.raw.isIdent
+
+/-- `(e₀, e₁, …)` -/
+def mkTuple (es : Array Lean.Term) : EmitM Lean.Term := do
+  let hd := es[0]!
+  let tl := es[1:].toArray
+  `(($hd, $tl,*))
 
 /-- `.x`, resolved by the expected type. -/
 def dot (s : String) : Lean.Term := ⟨mkNode ``Parser.Term.dotIdent #[mkAtom ".", ident s]⟩
@@ -194,10 +251,12 @@ def pp (c : Command) : EmitM String := do
 partial def Term.vars : Term → Array String
   | .ident x => #[x]
   | .app _ args => args.flatMap vars
+  | .tuple args => args.flatMap vars
   | .fail => #[]
   | .new x M => M.vars.filter (· != x)
-  | .ite l _ r N N' => l.vars ++ r.vars ++ N.vars ++ (N'.map vars).getD #[]
-  | .let x d N N' => d.vars ++ N.vars.filter (· != x) ++ (N'.map vars).getD #[]
+  | .ite c N N' => c.vars ++ N.vars ++ (N'.map vars).getD #[]
+  | .let p d N N' =>
+    d.vars ++ p.tests.flatMap vars ++ N.vars.filter (!p.vars.contains ·) ++ (N'.map vars).getD #[]
   | .event _ args M => args.flatMap vars ++ M.vars
 
 /-- A message, or a term that may fail, of type `Option T.Msg`. -/
@@ -209,6 +268,18 @@ inductive Msg where
 def Msg.term : Msg → Lean.Term
   | .pure e | .may e => e
 
+/-- A term that may fail of the form `x >>= fun t => … >>= fun t' => some v`, as its binds
+and its value `v`; `none` for any other form.  Reading a bind chain back keeps the chains
+the translation builds flat, `x >>= fun t => r` rather than `(x >>= f) >>= g`, which the
+proofs of prefix-closure need. -/
+partial def flattenMay (e : Lean.Term) : Option (Array (Ident × Lean.Term) × Lean.Term) :=
+  match e with
+  | `($x >>= fun $t:ident => $rest) =>
+    match rest with
+    | `(some $v) => some (#[(t, x)], v)
+    | _ => (flattenMay rest).map fun (bs, v) => (#[(t, x)] ++ bs, v)
+  | _ => none
+
 /-- Bind the terms that may fail, in order, around a body of type `Option _`. -/
 def bindMay (ms : Array Msg) (body : Array Lean.Term → EmitM Lean.Term) : EmitM Lean.Term := do
   let mut args : Array Lean.Term := #[]
@@ -217,9 +288,14 @@ def bindMay (ms : Array Msg) (body : Array Lean.Term → EmitM Lean.Term) : Emit
     match m with
     | .pure e => args := args.push e
     | .may e =>
-      let t ← fresh "t"
-      args := args.push t
-      binds := binds.push (t, e)
+      match flattenMay e with
+      | some (bs, v) =>
+        binds := binds ++ bs
+        args := args.push v
+      | none =>
+        let t ← fresh "t"
+        args := args.push t
+        binds := binds.push (t, e)
   let mut r ← body args
   for (t, e) in binds.reverse do
     r ← `($e >>= fun $t:ident => $r)
@@ -233,12 +309,22 @@ def emitIdent (env : Std.HashMap String Lean.Term) (x : String) : EmitM Lean.Ter
   | some (.ctor c) =>
     unless c.arity == 0 do throwError "`{x}` takes {c.arity} arguments"
     return ident x
+  | some (.bool true) => `((true : T.Msg))
+  | some (.bool false) => `((false : T.Msg))
   | some _ => throwError "`{x}` is not a term"
   | none => throwError "unknown identifier `{x}`"
+
+/-- The tuple of the messages `ms`: `(m₁, …, mₙ) : T.Msg`, through the coercion of a
+product of messages, or `StdOps.tuple 0 ![]` when there are none. -/
+def tupleTerm (ms : Array Lean.Term) : EmitM Lean.Term := do
+  if ms.isEmpty then `(StdOps.tuple 0 ![])
+  else if ms.size == 1 then pure ms[0]!
+  else `(($(← mkTuple ms) : T.Msg))
 
 /-- A term without destructors or effects as a Lean term, its variables read from `env`. -/
 partial def emitPure (env : Std.HashMap String Lean.Term) : Term → EmitM Lean.Term
   | .ident x => emitIdent env x
+  | .tuple args => do tupleTerm (← args.mapM (emitPure env))
   | .app f args => do
     match ← sym? f with
     | some (.ctor c) =>
@@ -247,10 +333,16 @@ partial def emitPure (env : Std.HashMap String Lean.Term) : Term → EmitM Lean.
         unless c.arity == 1 do throwError "the type converter `{f}` is not unary"
         emitPure env args[0]!
       else app (ident f) (← args.mapM (emitPure env))
+    | some (.free _) | some (.bool _) =>
+      unless args.isEmpty do throwError "`{f}` takes no arguments"
+      emitIdent env f
     | some (.dtor ..) => throwError "the destructor `{f}` in a term"
     | some (.fn _) => throwError "the function macro `{f}` in a term"
     | some _ => throwError "`{f}` is not a function"
-    | none => throwError "unknown function `{f}`"
+    | none =>
+      if ["=", "<>", "&&", "||"].contains f then
+        throwError "the comparison or connective `{(Term.app f args).print}` in a term"
+      throwError "unknown function `{f}`"
   | .fail => throwError "`fail` outside a rewrite rule"
   | t => throwError "the term `{t.print}` has effects"
 
@@ -260,8 +352,10 @@ partial def emitRaw (vars : Array String) : Term → EmitM Lean.Term
     if let some i := vars.findIdx? (· == x) then `(.var $(num i))
     else
       match ← sym? x with
-      | some (.free _) | some (.ctor ⟨_, 0, _, _⟩) => do `(.func $(← funCtor x) ![])
+      | some (.free _) | some (.ctor ⟨_, 0, _, _, _⟩) => do `(.func $(← funCtor x) ![])
+      | some (.bool _) => throwError "the boolean `{x}` in an equation is not translated"
       | _ => throwError "`{x}` in an equation is neither a variable nor a constant"
+  | .tuple _ => throwError "a tuple in an equation is not translated"
   | .app f args => do
     match ← sym? f with
     | some (.ctor c) =>
@@ -305,21 +399,23 @@ def emitFreeSymbols : EmitM Command := do
     alts := alts.push (← `(Parser.Term.matchAltExpr| | _, _ => true))
   `(def free : ∀ n, Fun n → Bool $alts:matchAlt*)
 
-def emitTheory : EmitM Command := do
+/-- The theory of the declarations, `T₀`, and the theory with the data symbols, `T`, whose
+messages are those of the model. -/
+def emitTheory : EmitM (Command × Command) := do
   let proof ← if (← read).model.equations.isEmpty then `(by simp [E])
     else `(by simp [E, Term.Rigid, free])
-  `(def T : Theory Fun where
+  return (← `(def T₀ : Theory Fun where
       E := E
       free := free
-      heads := $proof)
+      heads := $proof), ← `(abbrev T : Theory (Sig.withData Fun) := T₀.withData))
 
 /-- The function applying the symbol `f` of arity `n` to messages. -/
 def emitCtorFun (f : String) (n : Nat) : EmitM Command := do
   let pat ← funCtor f
-  if n == 0 then return ← `(def $(ident f):ident : T.Msg := .app $pat ![])
+  if n == 0 then return ← `(def $(ident f):ident : T.Msg := .app (.inl $pat) ![])
   let xs := Array.range n |>.map (sub "x")
   let args : Array Lean.Term := xs.map (·)
-  `(def $(ident f):ident ($xs* : T.Msg) : T.Msg := .app $pat ![$args,*])
+  `(def $(ident f):ident ($xs* : T.Msg) : T.Msg := .app (.inl $pat) ![$args,*])
 
 /-! ## Destructors
 
@@ -362,6 +458,7 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
     match p with
     | .fail => throwError "`fail` inside a pattern"
     | .new .. | .ite .. | .let .. | .event .. => throwError "the pattern `{p.print}` has effects"
+    | .tuple _ => throwError "the tuple pattern `{p.print}` in a rewrite rule is not translated"
     | .ident x =>
       if rv.isVar x then
         if let some e := env[x]? then matchPats rv rest env (tests.push (s, e)) k
@@ -377,7 +474,7 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
             unless c.arity == 1 do throwError "the type converter `{f}` is not unary"
             return ← matchPats rv ((ps[0]!, s) :: rest) env tests k
           pure c.arity
-        | some (.free _) => pure 0
+        | some (.free _) | some (.bool _) => pure 0
         | _ => throwError "`{f}` in a pattern is not a constructor"
       unless arity == ps.size do throwError "`{f}` takes {arity} arguments, not {ps.size}"
       if (← read).equated.contains f then
@@ -391,8 +488,9 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
         let inner ← matchPats rv (items ++ rest) env tests k
         let binder : Lean.Term ← if ps.any rv.needs then pure a else `(_)
         let view ← `($(s).view)
+        let ctor ← funCtor f
         `(match $view:term with
-          | .app $(← funCtor f) $binder => $inner
+          | .app (.inl $ctor) $binder => $inner
           | _ => none)
 
 /-- One rule as a term, `none` when it does not apply; `wrap` puts its result under
@@ -478,7 +576,8 @@ abbrev Tactic := TSyntax `tactic
 abbrev SimpLemma := TSyntax ``Parser.Tactic.simpLemma
 abbrev RCasesPat := TSyntax ``Parser.Tactic.rcasesPatLo
 
-def simpLemma (x : String) : EmitM SimpLemma := `(Parser.Tactic.simpLemma| $(ident x):ident)
+def simpLemma (x : String) : EmitM SimpLemma :=
+  `(Parser.Tactic.simpLemma| $(ident x):ident)
 
 def mkTacticSeq (ts : Array Tactic) : TSyntax ``Parser.Tactic.tacticSeq :=
   let items := ts.toList.zipIdx.foldl (init := #[]) fun acc (t, i) =>
@@ -486,9 +585,14 @@ def mkTacticSeq (ts : Array Tactic) : TSyntax ``Parser.Tactic.tacticSeq :=
   ⟨mkNode ``Parser.Tactic.tacticSeq
     #[mkNode ``Parser.Tactic.tacticSeq1Indented #[mkNullNode items]]⟩
 
-/-- The constructor functions a term without effects applies, for unfolding. -/
+/-- The constructor functions a pattern of a rule applies, for unfolding; `true` and
+`false` are tested by equality and need none. -/
 partial def Term.symbols (vars : Array String) : Term → EmitM (Array String)
-  | .ident x => return if vars.contains x then #[] else #[x]
+  | .ident x => do
+    if vars.contains x then return #[]
+    match ← sym? x with
+    | some (.bool _) => return #[]
+    | _ => return #[x]
   | .app f args => do
     let inner ← args.flatMapM (Term.symbols vars)
     match ← sym? f with
@@ -654,7 +758,8 @@ def forwardChain (info : RuleInfo) (xs : Array Ident) (mayFail main : Bool) (hX 
     tacs := tacs.push (← `(tactic|
       rcases $hv:ident : $sv:term with _ | ⟨$f:ident, $(v.binder):ident⟩ | _ <;>
         simp [$lemmas,*] at $hX:ident))
-    tacs := tacs.push (← `(tactic| cases $f:ident <;> try simp at $hX:ident))
+    tacs := tacs.push (← `(tactic|
+      rcases $f:ident with $f:ident | $f:ident <;> cases $f:ident <;> try simp at $hX:ident))
     if (← sym? v.symbol) matches some (.free _) then
       tacs := tacs.push (← `(tactic| cases ‹Free› <;> try simp at $hX:ident))
     pending := #[]
@@ -860,7 +965,7 @@ def emitDtor (d : Dtor) : EmitM (String × Command × Command) := do
   let thm ← emitDtorTheorem d alts recs
   return (s!"`{"; ".intercalate (d.rules.map (·.print d.name)).toList}`", cmd, thm)
 
-/-! ## The algebra -/
+/-! ## The attacker -/
 
 /-- The symbols not marked private, and not events. -/
 def hidden (m : Model) : Array String :=
@@ -876,7 +981,9 @@ def emitPub : EmitM (Option Command) := do
     alts := alts.push (← `(Parser.Term.matchAltExpr| | _, _ => True))
   return some (← `(def pub : ∀ n, Fun n → Prop $alts:matchAlt*))
 
-def emitAlg : EmitM Command := do
+/-- The `Attacker` instance of the messages, `Attacker.ofDecls` from the public constructors
+and destructors. -/
+def emitAttacker : EmitM Command := do
   let m := (← read).model
   let pubFun ← if (hidden m).isEmpty then `(fun _ => Set.univ) else `(fun n => {f | pub n f})
   let dtors ← (m.dtors.filter (·.pub)).mapM fun d => do
@@ -886,10 +993,7 @@ def emitAlg : EmitM Command := do
     if d.mayFail then `(⟨$(num d.arity), fun $a:ident => $call⟩)
     else `(⟨$(num d.arity), liftFail fun $a:ident => $call⟩)
   let pubDtors ← if dtors.isEmpty then `(∅) else `({$dtors:term,*})
-  `(abbrev alg : MsgAlgebra Fun where
-      toTheory := T
-      pubFun := $pubFun
-      pubDtors := $pubDtors)
+  `(instance : Attacker T.Msg := .ofDecls $pubFun $pubDtors)
 
 /-! ## Terms with effects
 
@@ -921,11 +1025,17 @@ partial def hoist (onFail : Array DoElem) (ms : List Msg) (acc : Array Lean.Term
   | [] => k acc
   | .pure e :: rest => hoist onFail rest (acc.push e) k
   | .may e :: rest => do
-    let t ← fresh "t"
-    let body ← hoist onFail rest (acc.push t) k
-    return #[← `(doElem| match $e:term with
-      | some $t:ident => $(mkDoSeq body):doSeq
-      | none => $(mkDoSeq onFail):doSeq)]
+    let (binds, v) ← match flattenMay e with
+      | some (bs, v) => pure (bs, v)
+      | none =>
+        let t ← fresh "t"
+        pure (#[(t, e)], (t : Lean.Term))
+    let mut body ← hoist onFail rest (acc.push v) k
+    for (t, x) in binds.reverse do
+      body := #[← `(doElem| match $x:term with
+        | some $t:ident => $(mkDoSeq body):doSeq
+        | none => $(mkDoSeq onFail):doSeq)]
+    return body
 
 /-- The failure of a term: its sub-block returns `none`. -/
 def failBlock : EmitM (Array DoElem) := return #[← `(doElem| pure none)]
@@ -966,10 +1076,125 @@ def binder (x : String) (used : Bool) : EmitM Ident := do
     throwError "the variable `{x}` has the name of a declared symbol"
   return ident (if used then x else "_" ++ x)
 
+/-- Whether a term is a message with neither effects nor failure: a variable, a free name, a
+constant or a boolean, a constructor or a function macro without effects or failure
+applied to such terms, or a tuple of them.  A comparison or connective is not one: it is a
+destructor, an `Option` in Lean. -/
+partial def pureTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Bool
+  | .ident x => do
+    if env.contains x then return true
+    match ← sym? x with
+    | some (.free _) | some (.ctor _) | some (.bool _) => return true
+    | _ => return false
+  | .app f args => do
+    let inner ← args.allM (pureTerm env)
+    match ← sym? f with
+    | some (.ctor _) => return inner
+    | some (.fn _) => return inner && (← get).fns[f]? == some (false, false)
+    | _ => return false
+  | .tuple args => args.allM (pureTerm env)
+  | _ => return false
+
+/-- Whether a condition is a proposition over such messages, as `propOf` reads it: a
+connective of such conditions, a comparison of such messages, or such a message. -/
+partial def pureCond (env : Std.HashMap String Lean.Term) : Term → EmitM Bool
+  | .app "&&" #[a, b] | .app "||" #[a, b] => do return (← pureCond env a) && (← pureCond env b)
+  | .app "not" #[a] => pureCond env a
+  | .app "=" #[l, r] | .app "<>" #[l, r] => do return (← pureTerm env l) && (← pureTerm env r)
+  | t => pureTerm env t
+
+/-- The proposition of a condition whose terms are messages: `=` and `<>` are the equality
+of messages and its negation, `&&`, `||` and `not` are `∧`, `∨` and `¬`, `true` and `false`
+are `True` and `False`, and any other term, a boolean, is `M = true`. -/
+partial def propOf (env : Std.HashMap String Lean.Term) : Term → EmitM Lean.Term
+  | .app "&&" #[a, b] => do `($(← propOf env a) ∧ $(← propOf env b))
+  | .app "||" #[a, b] => do `($(← propOf env a) ∨ $(← propOf env b))
+  | .app "not" #[a] => do `(¬ $(← propOf env a))
+  | .app "=" #[l, r] => do `($(← emitPure env l) = $(← emitPure env r))
+  | .app "<>" #[l, r] => do `($(← emitPure env l) ≠ $(← emitPure env r))
+  | .ident "true" => `(True)
+  | .ident "false" => `(False)
+  | t => do `($(← emitPure env t) = (true : T.Msg))
+
+/-- How the matches of a pattern are built: as the elements of a `do` block, or as a term. -/
+structure MatchBuilder (α : Type) where
+  /-- `if s = m then a else b` -/
+  ite (s m : Lean.Term) (a b : α) : EmitM α
+  /-- `match e with | some pat => a | none => b` -/
+  matchOpt (e pat : Lean.Term) (a b : α) : EmitM α
+  /-- `let x := s`, then `a` -/
+  letIn (x : Ident) (s : Lean.Term) (a : α) : EmitM α
+
+def doBuilder : MatchBuilder (Array DoElem) where
+  ite s m a b :=
+    return #[← `(doElem| if $s = $m then $(mkDoSeq a):doSeq else $(mkDoSeq b):doSeq)]
+  matchOpt e pat a b := return #[← `(doElem| match $e:term with
+    | some $pat:term => $(mkDoSeq a):doSeq
+    | none => $(mkDoSeq b):doSeq)]
+  letIn x s a := return #[← `(doElem| let $x:ident := $s)] ++ a
+
+def termBuilder : MatchBuilder Lean.Term where
+  ite s m a b := `(if $s = $m then $a else $b)
+  matchOpt e pat a b := `(match $e:term with
+    | some $pat:term => $a
+    | none => $b)
+  letIn x s a := `(let $x:ident := $s; $a)
+
+/-- `T.Msg × ⋯ × T.Msg`, `n` times. -/
+partial def prodType (n : Nat) : EmitM Lean.Term :=
+  if n ≤ 1 then `(T.Msg) else do `(T.Msg × $(← prodType (n - 1)))
+
+/-- The binders of the variables of a pattern, `_x` for one that nothing in `used`
+mentions, and the environment extended by them. -/
+def patBinders (env : Std.HashMap String Lean.Term) (p : Pat) (used : Array String) :
+    EmitM ((String → Ident) × Std.HashMap String Lean.Term) := do
+  let mut bs : Std.HashMap String Ident := {}
+  let mut env := env
+  for x in p.vars do
+    let b ← binder x (used.contains x)
+    bs := bs.insert x b
+    env := env.insert x b
+  return (fun x => bs.getD x (ident x), env)
+
+/-- Run `k` on the scrutinee of a pattern: a value that may fail is matched first, `onFail`
+on `none`, and one that is not an identifier is bound to a name. -/
+def withScrutinee {α : Type} (B : MatchBuilder α) (d : Msg) (onFail : α)
+    (k : Lean.Term → EmitM α) : EmitM α := do
+  match d with
+  | .pure e =>
+    if isIdentTerm e then k e
+    else
+      let t ← fresh "t"
+      B.letIn t e (← k t)
+  | .may e =>
+    let t ← fresh "t"
+    B.matchOpt e t (← k t) onFail
+
+/-- The failure branch `q` of a pattern match, bound to a name of type `ty` unless it is
+`trivial`, a `0` or a `fail`, since a pattern may fail at several points: the elements
+binding it, and the branch itself. -/
+def failCont (q : Array DoElem) (trivial : Bool) (ty : Lean.Term) :
+    EmitM (Array DoElem × Array DoElem) := do
+  if trivial then return (#[], q)
+  let n ← fresh "q"
+  return (#[← `(doElem| let $n:ident : $ty := do $(mkDoSeq q):doSeq)], #[← `(doElem| $n:term)])
+
+mutual
+
 /-- A term in a process position, its variables read from `env`. -/
 partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
   | .fail => return { value := .may (← `(none)) }
   | .ident x => return { value := .pure (← emitIdent env x) }
+  | .tuple args => do
+    let cs ← args.mapM (emitTerm env)
+    let ms := cs.map (·.value)
+    let value ← if ms.all (· matches .pure _) then .pure <$> tupleTerm (ms.map Msg.term)
+      else .may <$> bindMay ms fun as => do `(some $(← tupleTerm as))
+    return { elems := cs.flatMap (·.elems), value }
+  | .app "=" #[l, r] => emitTerm env (.app "equal" #[l, r])
+  | .app "<>" #[l, r] => emitTerm env (.app "not" #[.app "equal" #[l, r]])
+  | .app "&&" #[l, r] => emitTerm env (.app "and" #[l, r])
+  | .app "||" #[l, r] => emitTerm env (.app "or" #[l, r])
   | .app f args => do
     let cs ← args.mapM (emitTerm env)
     let elems := cs.flatMap (·.elems)
@@ -1019,27 +1244,23 @@ partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
     let body ← hoist (← failBlock) ms.toList #[] fun as =>
       return #[← `(doElem| .emit $(← app (ident e) as))] ++ (← blockOf cM true)
     return { elems := elems.push (← letArrow t body), value := .may t }
-  | .ite l eq r N N' => do
-    let cl ← emitTerm env l
-    let cr ← emitTerm env r
+  | .ite c N N' => do
+    let (elems, mays, mk) ← emitProp env c
     let cN ← emitTerm env N
     let cN' ← emitTerm env (N'.getD .fail)
-    let elems := cl.elems ++ cr.elems
-    let opt := [cl, cr, cN, cN'].any (·.value matches .may _)
-    let cond (as : Array Lean.Term) : EmitM Lean.Term :=
-      if eq then `($(as[0]!) = $(as[1]!)) else `($(as[0]!) ≠ $(as[1]!))
+    let opt := mays.any (· matches .may _) || cN.value matches .may _ || cN'.value matches .may _
     if cN.elems.isEmpty && cN'.elems.isEmpty then
       let v ← optVal cN.value opt
       let v' ← optVal cN'.value opt
-      let e ← bindMay #[cl.value, cr.value] fun as => do `(if $(← cond as) then $v else $v')
+      let e ← bindMay mays fun as => do `(if $(← mk as) then $v else $v')
       return { elems, value := if opt then .may e else .pure e }
     let t ← fresh "t"
-    let body ← hoist (← failBlock) [cl.value, cr.value] #[] fun as => do
+    let body ← hoist (← failBlock) mays.toList #[] fun as => do
       let p := mkDoSeq (← blockOf cN opt)
       let q := mkDoSeq (← blockOf cN' opt)
-      return #[← `(doElem| if $(← cond as) then $p:doSeq else $q:doSeq)]
+      return #[← `(doElem| if $(← mk as) then $p:doSeq else $q:doSeq)]
     return { elems := elems.push (← letArrow t body), value := if opt then .may t else .pure t }
-  | .let x d N N' => do
+  | .let (.var x) d N N' => do
     let cd ← emitTerm env d
     let b ← binder x (N.vars.contains x)
     let cN ← emitTerm (env.insert x b) N
@@ -1065,6 +1286,132 @@ partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
         | none => $q:doSeq)
       let elem ← letArrow t #[body]
       return { elems := cd.elems.push elem, value := if opt then .may t else .pure t }
+  | .let p d N N' => do
+    let cd ← emitTerm env d
+    let (bind, env') ← patBinders env p (N.vars ++ (N'.map Term.vars).getD #[])
+    let cN ← emitTerm env' N
+    let cN' ← emitTerm env (N'.getD .fail)
+    let opt := cN.value matches .may _ || cN'.value matches .may _
+    if cN.elems.isEmpty && cN'.elems.isEmpty then
+      let v ← optVal cN.value opt
+      let v' ← optVal cN'.value opt
+      let m ← withScrutinee termBuilder cd.value v' fun s =>
+        matchPat termBuilder bind v' env p s fun _ => pure v
+      return { elems := cd.elems, value := if opt then .may m else .pure m }
+    let t ← fresh "t"
+    let ty ← if opt then `(Cont (Proc T.Msg) (Option T.Msg)) else `(Cont (Proc T.Msg) T.Msg)
+    let (pre, onFail) ← failCont (← blockOf cN' opt) N'.isNone ty
+    let body ← withScrutinee doBuilder cd.value onFail fun s =>
+      matchPat doBuilder bind onFail env p s fun _ => blockOf cN opt
+    let elem ← letArrow t (pre ++ body)
+    return { elems := cd.elems.push elem, value := if opt then .may t else .pure t }
+
+/-- A condition `c` as a proposition: the elements running the effects of its terms, the
+terms to match first, whose failure is the condition's, and the proposition from their
+values, as `propOf` reads it.  The operands of `&&` and `||` must be messages with neither
+effects nor failure, since `false && fail` is `false` and not a failure; otherwise the
+condition is the boolean term `c`, computed by the destructors `and` and `or`, whose second
+argument may fail, and tested against `true`. -/
+partial def emitProp (env : Std.HashMap String Lean.Term) (c : Term) :
+    EmitM (Array DoElem × Array Msg × (Array Lean.Term → EmitM Lean.Term)) := do
+  let asTerm : EmitM (Array DoElem × Array Msg × (Array Lean.Term → EmitM Lean.Term)) := do
+    let cc ← emitTerm env c
+    return (cc.elems, #[cc.value], fun as => `($(as[0]!) = (true : T.Msg)))
+  match c with
+  | .app "&&" #[a, b] | .app "||" #[a, b] =>
+    if (← pureCond env a) && (← pureCond env b) then
+      let prop ← propOf env c
+      return (#[], #[], fun _ => pure prop)
+    asTerm
+  | .app "not" #[a] =>
+    match a with
+    | .app "&&" _ | .app "||" _ =>
+      if ← pureCond env a then
+        let prop ← propOf env c
+        return (#[], #[], fun _ => pure prop)
+      asTerm
+    | _ =>
+      let (elems, mays, mk) ← emitProp env a
+      return (elems, mays, fun as => do `(¬ $(← mk as)))
+  | .app "=" #[l, r] =>
+    let cl ← emitTerm env l
+    let cr ← emitTerm env r
+    return (cl.elems ++ cr.elems, #[cl.value, cr.value], fun as => `($(as[0]!) = $(as[1]!)))
+  | .app "<>" #[l, r] =>
+    let cl ← emitTerm env l
+    let cr ← emitTerm env r
+    return (cl.elems ++ cr.elems, #[cl.value, cr.value], fun as => `($(as[0]!) ≠ $(as[1]!)))
+  | .ident "true" => return (#[], #[], fun _ => `(True))
+  | .ident "false" => return (#[], #[], fun _ => `(False))
+  | _ => asTerm
+
+/-- Match the message `s` against the pattern `p`, built with `B` as elements of a `do`
+block or as a term: on success, `k` runs with the environment extended by the variables of
+`p`, bound through `bind`; on failure, `onFail`.  A tuple is a `match` on `Tuple.ofMsg`, a
+data constructor a `match` on each of its projections, and `=M` an `if`. -/
+partial def matchPat {α : Type} (B : MatchBuilder α) (bind : String → Ident) (onFail : α)
+    (env : Std.HashMap String Lean.Term) (p : Pat) (s : Lean.Term)
+    (k : Std.HashMap String Lean.Term → EmitM α) : EmitM α := do
+  match p with
+  | .var x =>
+    let b := bind x
+    B.letIn b s (← k (env.insert x b))
+  | .eq M => B.ite s (← emitPure env M) (← k env) onFail
+  | .tuple ps =>
+    if ps.isEmpty then return ← B.ite s (← `(StdOps.tuple 0 ![])) (← k env) onFail
+    let mut pats : Array Lean.Term := #[]
+    let mut subs : Array (Pat × Lean.Term) := #[]
+    let mut env := env
+    for q in ps do
+      match q with
+      | .var x =>
+        let b := bind x
+        pats := pats.push b
+        env := env.insert x b
+      | _ =>
+        let t ← fresh "t"
+        pats := pats.push t
+        subs := subs.push (q, t)
+    let inner ← matchSeq B bind onFail env subs.toList k
+    let pat ← if pats.size == 1 then pure pats[0]! else mkTuple pats
+    B.matchOpt (← `(Tuple.ofMsg $(← prodType ps.size) $s)) pat inner onFail
+  | .app f ps =>
+    match ← sym? f with
+    | some (.ctor c) =>
+      unless c.arity == ps.size do throwError "`{f}` takes {c.arity} arguments, not {ps.size}"
+      if c.converter then return ← matchPat B bind onFail env ps[0]! s k
+      unless c.data do
+        throwError "the pattern `{p.print}` matches on `{f}`, which is not declared `[data]`"
+      if ps.isEmpty then return ← B.ite s (ident f) (← k env) onFail
+      matchProj B bind onFail env f s ps.toList 0 k
+    | _ => throwError "`{f}` in a pattern is not a data constructor"
+
+/-- Match each scrutinee against its pattern in turn. -/
+partial def matchSeq {α : Type} (B : MatchBuilder α) (bind : String → Ident) (onFail : α)
+    (env : Std.HashMap String Lean.Term) : List (Pat × Lean.Term) →
+      (Std.HashMap String Lean.Term → EmitM α) → EmitM α
+  | [], k => k env
+  | (q, t) :: rest, k =>
+    matchPat B bind onFail env q t fun env' => matchSeq B bind onFail env' rest k
+
+/-- Match the components of `s`, an application of the data constructor `f`, through its
+projections `f₁ s, f₂ s, …`, from the `i`-th. -/
+partial def matchProj {α : Type} (B : MatchBuilder α) (bind : String → Ident) (onFail : α)
+    (env : Std.HashMap String Lean.Term) (f : String) (s : Lean.Term) : List Pat → Nat →
+      (Std.HashMap String Lean.Term → EmitM α) → EmitM α
+  | [], _, k => k env
+  | q :: rest, i, k => do
+    let call ← `($(ident (f ++ subscript (i + 1))) $s)
+    match q with
+    | .var x =>
+      let b := bind x
+      B.matchOpt call b (← matchProj B bind onFail (env.insert x b) f s rest (i + 1) k) onFail
+    | _ =>
+      let t ← fresh "t"
+      B.matchOpt call t (← matchPat B bind onFail env q t fun env' =>
+        matchProj B bind onFail env' f s rest (i + 1) k) onFail
+
+end
 
 /-- A function macro: a function of its parameters to its value when it has no effects,
 and to a block in the process monad otherwise, returning `Option T.Msg` when it may
@@ -1100,10 +1447,10 @@ partial def Proc.idents : Proc → Array String
   | .par P Q => P.idents ++ Q.idents
   | .repl P => P.idents
   | .new _ P => P.idents
-  | .ite l _ r P Q => l.vars ++ r.vars ++ P.idents ++ Q.idents
-  | .inp c _ P => c.vars ++ P.idents
+  | .ite c P Q => c.vars ++ P.idents ++ Q.idents
+  | .inp c p P => c.vars ++ p.tests.flatMap Term.vars ++ P.idents
   | .out c m P => c.vars ++ m.vars ++ P.idents
-  | .let _ d P Q => d.vars ++ P.idents ++ Q.idents
+  | .let p d P Q => d.vars ++ p.tests.flatMap Term.vars ++ P.idents ++ Q.idents
   | .event _ args P => args.flatMap Term.vars ++ P.idents
 
 /-- A process as the elements of a block: the effects of its terms come first, then a
@@ -1139,22 +1486,28 @@ partial def emitProc (env : Std.HashMap String Lean.Term) : Proc → EmitM (Arra
   | .new x P => do
     let b ← binder x (P.idents.contains x)
     return #[← `(doElem| let $b:ident ← .fresh)] ++ (← emitProc (env.insert x b) P)
-  | .ite l eq r P Q => do
-    let cl ← emitTerm env l
-    let cr ← emitTerm env r
-    let rest ← hoist (← stopBlock) [cl.value, cr.value] #[] fun as => do
-      let c ← if eq then `($(as[0]!) = $(as[1]!)) else `($(as[0]!) ≠ $(as[1]!))
+  | .ite c P Q => do
+    let (elems, mays, mk) ← emitProp env c
+    let rest ← hoist (← stopBlock) mays.toList #[] fun as => do
       let p ← emitProc env P
       let q ← emitProc env Q
-      return #[← `(doElem| if $c then $(mkDoSeq p):doSeq else $(mkDoSeq q):doSeq)]
-    return cl.elems ++ cr.elems ++ rest
-  | .inp c x P => do
+      return #[← `(doElem| if $(← mk as) then $(mkDoSeq p):doSeq else $(mkDoSeq q):doSeq)]
+    return elems ++ rest
+  | .inp c (.var x) P => do
     let cc ← emitTerm env c
     let rest ← hoist (← stopBlock) [cc.value] #[] fun as => do
       let b ← binder x (P.idents.contains x)
       return #[← `(doElem| let $b:ident ← .recv $(as[0]!))] ++ (← emitProc (env.insert x b) P)
     return cc.elems ++ rest
-  | .let x d P Q => do
+  | .inp c p P => do
+    let cc ← emitTerm env c
+    let rest ← hoist (← stopBlock) [cc.value] #[] fun as => do
+      let t ← fresh "t"
+      let (bind, _) ← patBinders env p P.idents
+      let body ← matchPat doBuilder bind (← stopBlock) env p t fun env' => emitProc env' P
+      return #[← `(doElem| let $t:ident ← .recv $(as[0]!))] ++ body
+    return cc.elems ++ rest
+  | .let (.var x) d P Q => do
     let b ← binder x (P.idents.contains x)
     let cd ← emitTerm env d
     match cd.value with
@@ -1166,6 +1519,13 @@ partial def emitProc (env : Std.HashMap String Lean.Term) : Proc → EmitM (Arra
       return cd.elems.push (← `(doElem| match $e:term with
         | some $b:ident => $(mkDoSeq p):doSeq
         | none => $(mkDoSeq q):doSeq))
+  | .let p d P Q => do
+    let cd ← emitTerm env d
+    let (bind, _) ← patBinders env p P.idents
+    let (pre, onFail) ← failCont (← emitProc env Q) (Q matches .nil) (← `(Cont (Proc T.Msg) Unit))
+    let body ← withScrutinee doBuilder cd.value onFail fun s =>
+      matchPat doBuilder bind onFail env p s fun env' => emitProc env' P
+    return cd.elems ++ pre ++ body
 where
   /-- The rest of the block after an action: nothing, when it is `0`. -/
   cont (env : Std.HashMap String Lean.Term) : Proc → EmitM (Array DoElem)
@@ -1210,7 +1570,7 @@ def emitEquationTheorem (i : Nat) (e : Equation) : EmitM Command := do
   let unfold ← ((← e.lhs.symbols e.vars) ++ (← e.rhs.symbols e.vars)).toList.eraseDups.toArray.mapM
     simpLemma
   let proof ← `(by
-    have h₀ := T.satisfies_msg ($lraw, $rraw) (by simp [T, E]) fun $n:ident => $val
+    have h₀ := T₀.withData_satisfies ($lraw, $rraw) (by simp [T₀, E]) fun $n:ident => $val
     simp only [Term.realize_func_comp, comp_vecCons, comp_vecEmpty,
       FirstOrder.Language.Term.realize_var] at h₀
     simpa [$unfold,*] using h₀)
@@ -1220,10 +1580,30 @@ def emitEquationTheorem (i : Nat) (e : Equation) : EmitM Command := do
     let xs := e.vars.map ident
     `(theorem $name:ident ($xs* : T.Msg) : $l = $r := $proof)
 
-/-- The main process is prefix-closed, by `aesop` as in `ProVerif.TraceSemantics.Examples`. -/
-def emitTree : EmitM Command := do
+/-- The process macro `p` is prefix-closed, by `aesop` unfolding the function macros and
+`p` and using the lemmas `lemmas` of the macros declared before it, which it may call.  A
+macro call ends a block, so a macro always runs with the final continuation, as
+`Proc.run` does. -/
+def emitMacroTheorem (p : Macro) (lemmas : Array String) : EmitM (String × Command) := do
   let m := (← read).model
-  let names := m.fns.map (·.name) ++ m.macros.map (·.name) |>.push "system"
+  let name := p.name ++ "_mem_tree"
+  if (← read).syms.contains name then
+    throwError "`{name}` is a name the translation uses; rename it"
+  let rules ← (m.fns.map (·.name) ++ lemmas ++ #[p.name]).mapM fun n =>
+    `(Aesop.rule_expr| $(ident n):ident)
+  let ps := p.params.map ident
+  let call ← app (ident p.name) (ps.map (·))
+  let stmt ← `(Proc.run $call ∈ Descriptive.tree (Act T.Msg))
+  let proof ← `(by aesop (add norm simp [$rules,*]))
+  let cmd ← if ps.isEmpty then `(theorem $(ident name):ident : $stmt := $proof)
+    else `(theorem $(ident name):ident ($ps* : T.Msg) : $stmt := $proof)
+  return (name, cmd)
+
+/-- The main process is prefix-closed, by `aesop` unfolding the function macros and
+`system` and using the lemmas of the process macros. -/
+def emitTree (lemmas : Array String) : EmitM Command := do
+  let m := (← read).model
+  let names := m.fns.map (·.name) ++ lemmas |>.push "system"
   let rules ← names.mapM fun n => `(Aesop.rule_expr| $(ident n):ident)
   `(theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
       aesop (add norm simp [$rules,*]))
@@ -1257,17 +1637,16 @@ def emitQuery (i : Nat) (q : Query) : EmitM (Array (String × Command)) := do
       match q.premise with
       | .attacker m =>
         let m ← emitPure env m
-        if q.vars.isEmpty then `(system.Secret alg.derive $m)
-        else `(∀ $σ:ident : $vars → T.Msg, system.Secret alg.derive $m)
+        if q.vars.isEmpty then `(system.Secret $m)
+        else `(∀ $σ:ident : $vars → T.Msg, system.Secret $m)
       | .event .. =>
         let f ← emitFact env q.premise
-        if q.vars.isEmpty then `(∀ t₀ ∈ system.Attacks alg.derive, ¬ ($f).Holds alg.derive t₀)
-        else `(∀ $σ:ident : $vars → T.Msg, ∀ t₀ ∈ system.Attacks alg.derive,
-          ¬ ($f).Holds alg.derive t₀)
+        if q.vars.isEmpty then `(∀ t₀ ∈ system.Attacks, ¬ ($f).Holds t₀)
+        else `(∀ $σ:ident : $vars → T.Msg, ∀ t₀ ∈ system.Attacks, ¬ ($f).Holds t₀)
     | some h =>
       let f ← emitFact env q.premise
       let g ← emitFact env h
-      `(system.Corr alg.derive (fun $σb:ident : $vars → T.Msg => $f) fun $σb:ident => $g)
+      `(system.Corr (fun $σb:ident : $vars → T.Msg => $f) fun $σb:ident => $g)
   return out.push (s!"`{q.print}`", ← `(def $(sub "query" i):ident : Prop := $prop))
 
 /-! ## The file -/
@@ -1317,9 +1696,11 @@ def emitFile (ns src : String) : EmitM String := do
   out ← push out (if m.equations.isEmpty then "No equations." else s!"The equations: `{eqs}`.")
     (← emitEquations)
   out ← push out "The free symbols: those at the root of no equation." (← emitFreeSymbols)
-  out ← push out "The theory." (← emitTheory)
+  let (t₀, t) ← emitTheory
+  out ← push out "The theory of the declarations." t₀
+  out ← push out "The theory, with the data symbols: its messages are those of the model." t
   out ← push out none
-    (← `(@[simp] theorem free_eq {n : ℕ} (f : Fun n) : T.free n f = free n f := rfl))
+    (← `(@[simp] theorem free_eq {n : ℕ} (f : Fun n) : T₀.free n f = free n f := rfl))
   out := out ++ "\n/-! ## Constructors -/\n"
   for (a, _) in m.frees do out ← push out (← docOf a none) (← emitCtorFun a 0)
   for c in m.ctors do
@@ -1340,19 +1721,24 @@ def emitFile (ns src : String) : EmitM String := do
       thms := thms.push thm
     out := out ++ "\n/-! ### The destructors' graphs are their rules -/\n"
     for t in thms do out ← push out none t
-  out := out ++ "\n/-! ## The message algebra -/\n"
+  out := out ++ "\n/-! ## The attacker -/\n"
   if let some c ← emitPub then
     out ← push out "The public symbols: all but the private free names and constructors, and the events." c
   out ← push out
-    "The public constructors, including the public free names, and the public destructors."
-    (← emitAlg)
+    "The attacker: the public constructors, including the public free names, the public destructors, and the standard operations."
+    (← emitAttacker)
   unless m.fns.isEmpty do
     out := out ++ "\n/-! ## Function macros -/\n"
     for f in m.fns do out ← push out (← docOf f.name s!"`{f.print}`") (← emitFn f)
   out := out ++ "\n/-! ## The process -/\n"
-  for p in m.macros do out ← push out (← docOf p.name none) (← emitMacro p)
+  let mut lemmas : Array String := #[]
+  for p in m.macros do
+    out ← push out (← docOf p.name none) (← emitMacro p)
+    let (name, thm) ← emitMacroTheorem p lemmas
+    out ← push out s!"`{p.name}` is prefix-closed." thm
+    lemmas := lemmas.push name
   out ← push out "The main process." (← emitMain)
-  out ← push out "The main process is prefix-closed." (← emitTree)
+  out ← push out "The main process is prefix-closed." (← emitTree lemmas)
   unless m.queries.isEmpty do
     out := out ++ "\n/-! ## Queries -/\n"
     for (q, i) in m.queries.toList.zipIdx do
@@ -1367,6 +1753,7 @@ def translate (env : Environment) (src text ns : String) : IO (Except String Str
   | .error e => return .error s!"{src}:{e}"
   | .ok m =>
     let (m, renamed) := m.safe
+    let m := m.withProjections.withBooleans
     match mkCtx m renamed with
     | .error e => return .error s!"{src}: {e}"
     | .ok ctx =>

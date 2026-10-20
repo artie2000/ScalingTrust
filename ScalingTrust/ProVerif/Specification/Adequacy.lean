@@ -190,8 +190,8 @@ def StepOf (U : Finset ℕ) (l : Option (Act A.Msg)) (c' : Config F G) : Process
   | .new P => ∃ k, k ∉ U ∧ l = some (.new k) ∧ c' = ⟨insert k U, {P.inst (.var (.inl k))}⟩
   | .let_ D P Q => (∃ M, Eval A D (some (Tm.msg A M)) ∧ l = none ∧ c' = ⟨U, {P.inst M}⟩) ∨
       (Eval A D none ∧ l = none ∧ c' = ⟨U, {Q}⟩)
-  | .ite M P Q => (Tm.msg A M = Theory.Msg.app A.tt ![] ∧ l = none ∧ c' = ⟨U, {P}⟩) ∨
-      (Tm.msg A M ≠ Theory.Msg.app A.tt ![] ∧ l = none ∧ c' = ⟨U, {Q}⟩)
+  | .ite M P Q => (Tm.msg A M = StdOps.tt ∧ l = none ∧ c' = ⟨U, {P}⟩) ∨
+      (Tm.msg A M ≠ StdOps.tt ∧ l = none ∧ c' = ⟨U, {Q}⟩)
   | .event M P => l = some (.event (Tm.msg A M)) ∧ c' = ⟨U, {P}⟩
 
 theorem Step.singleton {c c' : Config F G} {l : Option (Act A.Msg)} (h : Step A c l c')

@@ -5,11 +5,11 @@ semantics of `../TraceSemantics/` to be measured against: its syntax, the
 operational semantics of its processes, the meaning of its queries, and the
 theorems that the trace semantics gets them right.
 
-The reference is `../Writeup/Semantics.tex`: its §1.3 for the syntax and the
-denotation, its §2 for the semantics and the theorems. The write-up restates
-the semantics of Blanchet's survey (§2.4, §2.5.1 and §3.1–3.3 of
-`../Reference/BlanchetFnTPS16.pdf`) and says where it departs from it, as in
-reading the survey's definitions modulo `=_E`. The modules follow the write-up
+The reference is `../Writeup/Semantics.tex`: its §2 for the syntax and the
+semantics, its §3.1 for the denotation and its §3.2 for the theorems. The
+write-up restates the syntax and semantics of Blanchet's survey (§2.1, §2.4,
+§2.5.1 and §3.1–3.3 of `../Reference/BlanchetFnTPS16.pdf`) and says where it
+departs from it, as in reading the survey's definitions modulo `=_E`. The modules follow the write-up
 and record every further deviation in their docstrings; the ones that shape the
 design are listed below. The ProVerif manual gives its own semantics of the full
 input language, Appendix B of `../Reference/proverif-manual.pdf`, with tables,
@@ -23,7 +23,7 @@ move to it is a question to return to.
 | `ProVerif.Specification.Syntax` | Terms, expressions and processes of the write-up's Definition "Source syntax"; rewrite rules of destructors; a `Model`; substitution for the bound variables |
 | `ProVerif.Specification.Semantics` | Matching and rewriting by rules, evaluation `D ⇓ U`, configurations and the labelled step relation, weak traces; steps and runs of processes beside others; the survey's Definitions 3.1–3.5 and the write-up's "Satisfaction" and "Correspondences between facts" |
 | `ProVerif.Specification.Invariance` | Equality modulo `E` of terms, expressions and processes, and the invariance of runs under it: a step on a term `M' =_E M` counts as a step on `M` |
-| `ProVerif.Specification.Denotation` | Destructors as functions and the model's `MsgAlgebra`; the denotation of expressions and processes in `TraceSemantics`; the Evaluation lemma; substitution commutes with denotation |
+| `ProVerif.Specification.Denotation` | Destructors as functions, the projections denoting the standard operations and the boolean destructors yielding a boolean or an argument, and the model's `Attacker` instance; the denotation of expressions and processes in `TraceSemantics`; the Evaluation lemma; substitution commutes with denotation |
 | `ProVerif.Specification.Adequacy` | The write-up's Theorem "Adequacy": a closed process denotes its weak traces, and the weak traces of a union of multisets are the parallel composition of those of the parts |
 | `ProVerif.Specification.Attacks` | Runs of `N_pub`-adversaries are attacker traces; attacker traces are replayed by adversary processes; an adversary intercepting the protocol's communications |
 | `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences" |
@@ -39,6 +39,23 @@ Everything is proved; nothing is admitted.
   name `ν_k`, a variable `.var (.inl k)` of the term. Free names are nullary
   constructors, as in the trace semantics, and `N_pub` is the set of public
   ones.
+* **Data symbols built in.** A model's theory is over its declared constructors
+  `F`, but the terms of the calculus are over `F.withData`, the declared
+  constructors with the tuples and the booleans, and its destructors over
+  `Sig.withBuiltin G`, the declared ones with the built-in ones: the
+  projections of tuples, each with the rule `proj k i (tuple k (x₀, …)) → xᵢ`,
+  and the boolean destructors `equal`, `not`, `and` and `or` with the survey's
+  rules (`Builtin.rules`), which ProVerif's `=`, `<>`, `not`, `&&` and `||`
+  stand for. So `true` is `StdOps.tt`, the messages `A.Msg` are
+  `A.withData.Msg` of the trace semantics with their `StdOps` instance, and
+  the attacker is `Attacker.ofDecls`, as a translated model declares it. The
+  data symbols and the built-in destructors are public (`Model.Public`,
+  `Model.PublicDt`): the Attacks theorem needs every operation of the attacker
+  to be a public expression, and every public expression to evaluate to
+  something the attacker derives. `Model.dtorFun_proj` gives the latter for a
+  projection, which denotes the standard projection, and `Model.dtorFun_bool`
+  for a boolean destructor, whose result is `true`, `false` or an argument, so
+  that it is not among the attacker's operations.
 * **Everything on messages.** The semantics is read on messages, terms modulo
   `E`, as the write-up reads the survey's definitions modulo `=_E`: a closed
   term denotes its class, rules match messages, and the survey's `D ⇓ U` is a
@@ -55,12 +72,15 @@ Everything is proved; nothing is admitted.
   the step labelled `event`; a trace of the survey is a run whose labels are
   closed. The `out` and `inp` steps are the offers of a process to its
   environment, which the survey has no rule for.
-* **Rules with explicit variables.** A rule's ordinary and may-fail variables
-  are indexed by `ℕ`, its patterns are over the free symbols (the write-up's
-  (R2)) and every variable of its right-hand side occurs in its patterns, the
-  write-up's Definition "Destructors from rewrite rules". Two matchings against
-  a rule give the same right-hand side, so the destructor it defines is a
-  function.
+* **Rules with explicit variables.** A rule is the write-up's Definition
+  "Rewrite rules": its arguments and its right-hand side are may-fail terms,
+  its ordinary and may-fail variables are indexed by `ℕ`, its arguments are
+  over the free symbols, which is the write-up's (R2) built into the type, and
+  every variable of its right-hand side occurs in an argument. Matching is
+  equality of values, so a term accepts only a message, `fail` only `fail` and
+  a may-fail variable anything. Two matchings against a rule give the same
+  right-hand side, so the function of the write-up's Definition "Destructors
+  from rewrite rules" that a destructor denotes is well defined.
 * **Queries with single facts.** `Model.Satisfies` is the write-up's
   Definition "Correspondences between facts" for one fact on each side, which
   is what `Proc.Corr` of the trace semantics checks.

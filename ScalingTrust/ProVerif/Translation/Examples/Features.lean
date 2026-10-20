@@ -44,63 +44,67 @@ def E : Set (Term Fun × Term Fun) :=
 /-- The free symbols: those at the root of no equation. -/
 def free : ∀ n, Fun n → Bool := fun _ _ => true
 
-/-- The theory. -/
-def T : Theory Fun where
+/-- The theory of the declarations. -/
+def T₀ : Theory Fun where
   E := E
   free := free
   heads := by simp [E]
 
+/-- The theory, with the data symbols: its messages are those of the model. -/
+abbrev T : Theory (Sig.withData Fun) :=
+  T₀.withData
+
 @[simp]
-theorem free_eq {n : ℕ} (f : Fun n) : T.free n f = free n f :=
+theorem free_eq {n : ℕ} (f : Fun n) : T₀.free n f = free n f :=
   rfl
 
 /-! ## Constructors -/
 
 def c : T.Msg :=
-  .app (.const .c) ![]
+  .app (.inl (.const .c)) ![]
 
 def d : T.Msg :=
-  .app (.const .d) ![]
+  .app (.inl (.const .d)) ![]
 
 /-- The model's `T`, renamed since the translation uses that name. -/
 def T' : T.Msg :=
-  .app (.const .T') ![]
+  .app (.inl (.const .T')) ![]
 
 def empty : T.Msg :=
-  .app .empty ![]
+  .app (.inl .empty) ![]
 
 def yes : T.Msg :=
-  .app .yes ![]
+  .app (.inl .yes) ![]
 
 def no : T.Msg :=
-  .app .no ![]
+  .app (.inl .no) ![]
 
 def pair (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .pair ![x₀, x₁]
+  .app (.inl .pair) ![x₀, x₁]
 
 def senc (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .senc ![x₀, x₁]
+  .app (.inl .senc) ![x₀, x₁]
 
 def tag (x₀ : T.Msg) : T.Msg :=
-  .app .tag ![x₀]
+  .app (.inl .tag) ![x₀]
 
 /-! ## Events -/
 
 def Sent (x₀ : T.Msg) : T.Msg :=
-  .app .Sent ![x₀]
+  .app (.inl .Sent) ![x₀]
 
 def Received (x₀ : T.Msg) : T.Msg :=
-  .app .Received ![x₀]
+  .app (.inl .Received) ![x₀]
 
 def Stamped (x₀ : T.Msg) : T.Msg :=
-  .app .Stamped ![x₀]
+  .app (.inl .Stamped) ![x₀]
 
 /-! ## Destructors -/
 
 /-- `sdec(senc(x, k), k) → x` -/
 def sdec (x₀ x₁ : T.Msg) : Option T.Msg :=
   match x₀.view with
-  | .app .senc a₀ => if a₀ 1 = x₁ then some (a₀ 0) else none
+  | .app (.inl .senc) a₀ => if a₀ 1 = x₁ then some (a₀ 0) else none
   | _ => none
 
 /-- `eq(x, x) → yes; eq(x, y) → no` -/
@@ -136,12 +140,61 @@ def catchfail (u₀ : Option T.Msg) : Option T.Msg :=
       | none => some (some empty)
       | some _ => none)
 
+/-- `unpair(pair(x, y)) → (x, y)` -/
+def unpair (x₀ : T.Msg) : Option T.Msg :=
+  match x₀.view with
+  | .app (.inl .pair) a₀ => some ((a₀ 0, a₀ 1) : T.Msg)
+  | _ => none
+
+/-- `pair₁(pair(y₁, y₂)) → y₁` -/
+def pair₁ (x₀ : T.Msg) : Option T.Msg :=
+  match x₀.view with
+  | .app (.inl .pair) a₀ => some (a₀ 0)
+  | _ => none
+
+/-- `pair₂(pair(y₁, y₂)) → y₂` -/
+def pair₂ (x₀ : T.Msg) : Option T.Msg :=
+  match x₀.view with
+  | .app (.inl .pair) a₀ => some (a₀ 1)
+  | _ => none
+
+/-- `equal(x, x) → true; equal(x, y) → false` -/
+def equal (x₀ x₁ : T.Msg) : Option T.Msg :=
+  Option.join
+    ((if x₁ = x₀ then some (some (true : T.Msg)) else none) <|> some (some (false : T.Msg)))
+
+/-- `not(true) → false; not(x) → true` -/
+def not (x₀ : T.Msg) : Option T.Msg :=
+  Option.join
+    ((if x₀ = (true : T.Msg) then some (some (false : T.Msg)) else none) <|>
+      some (some (true : T.Msg)))
+
+/-- `and(true, u) → u; and(x, u) → false` -/
+def and (u₀ u₁ : Option T.Msg) : Option T.Msg :=
+  Option.join
+    ((match u₀ with
+      | some x₀ => if x₀ = (true : T.Msg) then some u₁ else none
+      | none => none) <|>
+      match u₀ with
+      | some _ => some (some (false : T.Msg))
+      | none => none)
+
+/-- `or(true, u) → true; or(x, u) → u` -/
+def or (u₀ u₁ : Option T.Msg) : Option T.Msg :=
+  Option.join
+    ((match u₀ with
+      | some x₀ => if x₀ = (true : T.Msg) then some (some (true : T.Msg)) else none
+      | none => none) <|>
+      match u₀ with
+      | some _ => some u₁
+      | none => none)
+
 /-! ### The destructors' graphs are their rules -/
 
 theorem sdec_eq_some {x₀ x₁ m₀ : T.Msg} : sdec x₀ x₁ = some m₀ ↔ x₀ = senc m₀ x₁ :=
   ⟨fun h₀ => by
     rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [sdec, hv₀] at h₀
-    cases f₀ <;> try simp at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
     rcases h₀ with ⟨h₁, h₂⟩
     subst h₂
     have e₀ : x₀ = senc (a₀ 0) x₁ :=
@@ -286,7 +339,221 @@ theorem catchfail_eq_some {u₀ : Option T.Msg} {m₀ : T.Msg} :
         exact n₀ (r₀ o₀ ho₀)
       · simp⟩
 
-/-! ## The message algebra -/
+theorem unpair_eq_some {x₀ m₀ : T.Msg} :
+    unpair x₀ = some m₀ ↔ ∃ x, ∃ y, x₀ = pair x y ∧ m₀ = ((x, y) : T.Msg) :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [unpair, hv₀] at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
+    subst h₀
+    have e₀ : x₀ = pair (a₀ 0) (a₀ 1) :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact rfl)
+    exact ⟨a₀ 0, a₀ 1, e₀, rfl⟩, fun h₀ =>
+    by
+    rcases h₀ with ⟨x, y, rfl, rfl⟩
+    simp [unpair, pair, free]⟩
+
+theorem pair₁_eq_some {x₀ m₀ : T.Msg} : pair₁ x₀ = some m₀ ↔ ∃ y₂, x₀ = pair m₀ y₂ :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [pair₁, hv₀] at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
+    subst h₀
+    have e₀ : x₀ = pair (a₀ 0) (a₀ 1) :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact rfl)
+    exact ⟨a₀ 1, e₀⟩, fun h₀ => by
+    rcases h₀ with ⟨y₂, rfl⟩
+    simp [pair₁, pair, free]⟩
+
+theorem pair₂_eq_some {x₀ m₀ : T.Msg} : pair₂ x₀ = some m₀ ↔ ∃ y₁, x₀ = pair y₁ m₀ :=
+  ⟨fun h₀ => by
+    rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [pair₂, hv₀] at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
+    subst h₀
+    have e₀ : x₀ = pair (a₀ 0) (a₀ 1) :=
+      x₀.eq_app_of_view' hv₀
+        (by
+          intro i₀
+          fin_cases i₀
+          · exact rfl
+          · exact rfl)
+    exact ⟨a₀ 0, e₀⟩, fun h₀ => by
+    rcases h₀ with ⟨y₁, rfl⟩
+    simp [pair₂, pair, free]⟩
+
+theorem equal_eq_some {x₀ x₁ m₀ : T.Msg} :
+    equal x₀ x₁ = some m₀ ↔ x₁ = x₀ ∧ m₀ = (true : T.Msg) ∨ ¬x₁ = x₀ ∧ m₀ = (false : T.Msg) :=
+  ⟨fun h₀ => by
+    rw [equal.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨h₁, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with rfl
+        simp at n₀
+      · simp at h₀
+        subst h₀
+        exact rfl, fun h₀ =>
+    by
+    have r₀ : ∀ o, (if x₁ = x₀ then some (some (true : T.Msg)) else none) = some o → x₁ = x₀ :=
+      fun o₀ ho₀ => by
+      simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact h₁
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨rfl, rfl⟩
+      rw [equal.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, rfl⟩
+      rw [equal.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+theorem not_eq_some {x₀ m₀ : T.Msg} :
+    not x₀ = some m₀ ↔
+      x₀ = (true : T.Msg) ∧ m₀ = (false : T.Msg) ∨ ¬x₀ = (true : T.Msg) ∧ m₀ = (true : T.Msg) :=
+  ⟨fun h₀ => by
+    rw [not.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨h₁, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with rfl
+        simp at n₀
+      · simp at h₀
+        subst h₀
+        exact rfl, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (if x₀ = (true : T.Msg) then some (some (false : T.Msg)) else none) = some o →
+          x₀ = (true : T.Msg) :=
+      fun o₀ ho₀ => by
+      simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact h₁
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨rfl, rfl⟩
+      rw [not.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, rfl⟩
+      rw [not.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+theorem and_eq_some {u₀ u₁ : Option T.Msg} {m₀ : T.Msg} :
+    and u₀ u₁ = some m₀ ↔
+      u₀ = some (true : T.Msg) ∧ u₁ = some m₀ ∨
+        ¬u₀ = some (true : T.Msg) ∧ ∃ x, u₀ = some x ∧ m₀ = (false : T.Msg) :=
+  ⟨fun h₀ => by
+    rw [and.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      rcases u₀ with _ | x₀ <;> simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨congrArg some h₁, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with rfl
+        simp at n₀
+      · rcases u₀ with _ | x₀ <;> simp at h₀
+        subst h₀
+        exact ⟨x₀, rfl, rfl⟩, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (match u₀ with
+            | some x₀ => if x₀ = (true : T.Msg) then some u₁ else none
+            | none => none) =
+            some o →
+          u₀ = some (true : T.Msg) :=
+      fun o₀ ho₀ => by
+      rcases u₀ with _ | x₀ <;> simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact congrArg some h₁
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨rfl, rfl⟩
+      rw [and.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, x, rfl, rfl⟩
+      rw [and.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+theorem or_eq_some {u₀ u₁ : Option T.Msg} {m₀ : T.Msg} :
+    or u₀ u₁ = some m₀ ↔
+      u₀ = some (true : T.Msg) ∧ m₀ = (true : T.Msg) ∨
+        ¬u₀ = some (true : T.Msg) ∧ ∃ x, u₀ = some x ∧ u₁ = some m₀ :=
+  ⟨fun h₀ => by
+    rw [or.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      rcases u₀ with _ | x₀ <;> simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      exact ⟨congrArg some h₁, rfl⟩
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with rfl
+        simp at n₀
+      · rcases u₀ with _ | x₀ <;> simp at h₀
+        subst h₀
+        exact ⟨x₀, rfl, rfl⟩, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (match u₀ with
+            | some x₀ => if x₀ = (true : T.Msg) then some (some (true : T.Msg)) else none
+            | none => none) =
+            some o →
+          u₀ = some (true : T.Msg) :=
+      fun o₀ ho₀ => by
+      rcases u₀ with _ | x₀ <;> simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      exact congrArg some h₁
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with ⟨rfl, rfl⟩
+      rw [or.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp
+    · rcases d₁ with ⟨n₀, x, rfl, rfl⟩
+      rw [or.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp⟩
+
+/-! ## The attacker -/
 
 /-- The public symbols: all but the private free names and constructors, and the events. -/
 def pub : ∀ n, Fun n → Prop
@@ -297,13 +564,13 @@ def pub : ∀ n, Fun n → Prop
   | _, .Stamped => False
   | _, _ => True
 
-/-- The public constructors, including the public free names, and the public destructors. -/
-abbrev alg : MsgAlgebra Fun where
-  toTheory := T
-  pubFun := fun n => {f | pub n f}
-  pubDtors :=
+/-- The attacker: the public constructors, including the public free names, the public destructors, and the standard operations. -/
+instance : Attacker T.Msg :=
+  .ofDecls (fun n => {f | pub n f})
     {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => eq (a 0) (a 1)⟩,
-      ⟨3, fun a => test (a 0) (a 1) (a 2)⟩, ⟨1, fun a => catchfail (a 0)⟩}
+      ⟨3, fun a => test (a 0) (a 1) (a 2)⟩, ⟨1, fun a => catchfail (a 0)⟩,
+      ⟨1, liftFail fun a => unpair (a 0)⟩, ⟨1, liftFail fun a => pair₁ (a 0)⟩,
+      ⟨1, liftFail fun a => pair₂ (a 0)⟩}
 
 /-! ## Function macros -/
 
@@ -326,6 +593,10 @@ def sender (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   .send c m
   .send d (tag n)
 
+/-- `sender` is prefix-closed. -/
+theorem sender_mem_tree (k : T.Msg) : Proc.run (sender k) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [stamp, wrap, sender])
+
 def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let x ← .recv c
   match sdec x k with
@@ -333,6 +604,10 @@ def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
     .emit (Received n)
   | none =>
     .send c (pair empty T')
+
+/-- `receiver` is prefix-closed. -/
+theorem receiver_mem_tree (k : T.Msg) : Proc.run (receiver k) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver])
 
 def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let y ← .recv c
@@ -358,6 +633,62 @@ def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
     | none =>
       .send c y
 
+/-- `relay` is prefix-closed. -/
+theorem relay_mem_tree (k : T.Msg) : Proc.run (relay k) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay])
+
+def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
+  let t₀ ← .recv c
+  match Tuple.ofMsg (T.Msg × T.Msg) t₀ with
+  | some (x, t₁) =>
+    if t₁ = empty then
+      let q₅ : Cont (Proc T.Msg) Unit := do
+        match and (sdec x k >>= fun t₂ => equal t₂ empty) (equal x x) with
+        | some t₃ =>
+          if t₃ = (true : T.Msg) then
+            match equal x x with
+            | some t₄ =>
+              .send c t₄
+            | none =>
+              .stop
+          else
+            .stop
+        | none =>
+          .stop
+      match unpair x with
+      | some t₆ =>
+        match Tuple.ofMsg (T.Msg × T.Msg) t₆ with
+        | some (a, b) =>
+          let t₇ := pair b a
+          match pair₁ t₇ with
+          | some a' =>
+            match pair₂ t₇ with
+            | some b' =>
+              match equal a a' with
+              | some flag =>
+                if flag = (true : T.Msg) ∧ ¬b = empty ∨ True then
+                  .send c ((a', b', flag) : T.Msg)
+                else
+                  .send c (StdOps.tuple 0 ![])
+              | none =>
+                .stop
+            | none =>
+              .stop
+          | none =>
+            .stop
+        | none =>
+          q₅
+      | none =>
+        q₅
+    else
+      .stop
+  | none =>
+    .stop
+
+/-- `tupler` is prefix-closed. -/
+theorem tupler_mem_tree (k : T.Msg) : Proc.run (tupler k) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay_mem_tree, tupler])
+
 /-- The main process. -/
 def system : Proc T.Msg :=
   .run
@@ -368,14 +699,18 @@ def system : Proc T.Msg :=
           if ← .fork then
             if ← .fork then
               if ← .fork then
-                .repl
-                sender k
+                if ← .fork then
+                  .repl
+                  sender k
+                else
+                  .repl
+                  receiver k
               else
                 .repl
-                receiver k
+                relay k
             else
               .repl
-              relay k
+              tupler k
           else
             let y ← .recv d
             match catchfail (test (eq y empty) (some y) (some empty)) with
@@ -402,7 +737,11 @@ def system : Proc T.Msg :=
 
 /-- The main process is prefix-closed. -/
 theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, sender, receiver, relay, system])
+  aesop
+     (add
+      norm
+        simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay_mem_tree, tupler_mem_tree,
+          system])
 
 /-! ## Queries -/
 
@@ -412,7 +751,7 @@ inductive Vars₁
 
 /-- `query n; event(Received(n)) ==> event(Sent(n))` -/
 def query₁ : Prop :=
-  system.Corr alg.derive (fun σ : Vars₁ → T.Msg => Fact.event (Received (σ .n))) fun σ =>
+  system.Corr (fun σ : Vars₁ → T.Msg => Fact.event (Received (σ .n))) fun σ =>
     Fact.event (Sent (σ .n))
 
 /-- The variables of `query n; attacker(tag(n)) ==> event(Sent(n))`. -/
@@ -421,12 +760,11 @@ inductive Vars₂
 
 /-- `query n; attacker(tag(n)) ==> event(Sent(n))` -/
 def query₂ : Prop :=
-  system.Corr alg.derive (fun σ : Vars₂ → T.Msg => Fact.knows (tag (σ .n))) fun σ =>
-    Fact.event (Sent (σ .n))
+  system.Corr (fun σ : Vars₂ → T.Msg => Fact.knows (tag (σ .n))) fun σ => Fact.event (Sent (σ .n))
 
 /-- `query attacker(empty)` -/
 def query₃ : Prop :=
-  system.Secret alg.derive empty
+  system.Secret empty
 
 /-- The variables of `query n; attacker(tag(n))`. -/
 inductive Vars₄
@@ -434,7 +772,7 @@ inductive Vars₄
 
 /-- `query n; attacker(tag(n))` -/
 def query₄ : Prop :=
-  ∀ σ : Vars₄ → T.Msg, system.Secret alg.derive (tag (σ .n))
+  ∀ σ : Vars₄ → T.Msg, system.Secret (tag (σ .n))
 
 /-- The variables of `query n; event(Sent(n))`. -/
 inductive Vars₅
@@ -442,8 +780,7 @@ inductive Vars₅
 
 /-- `query n; event(Sent(n))` -/
 def query₅ : Prop :=
-  ∀ σ : Vars₅ → T.Msg,
-    ∀ t₀ ∈ system.Attacks alg.derive, ¬(Fact.event (Sent (σ .n))).Holds alg.derive t₀
+  ∀ σ : Vars₅ → T.Msg, ∀ t₀ ∈ system.Attacks, ¬(Fact.event (Sent (σ .n))).Holds t₀
 
 /-- The variables of `query x; event(Stamped(x)) ==> attacker(x)`. -/
 inductive Vars₆
@@ -451,8 +788,11 @@ inductive Vars₆
 
 /-- `query x; event(Stamped(x)) ==> attacker(x)` -/
 def query₆ : Prop :=
-  system.Corr alg.derive (fun σ : Vars₆ → T.Msg => Fact.event (Stamped (σ .x))) fun σ =>
-    Fact.knows (σ .x)
+  system.Corr (fun σ : Vars₆ → T.Msg => Fact.event (Stamped (σ .x))) fun σ => Fact.knows (σ .x)
+
+/-- `query attacker((empty, T'))` -/
+def query₇ : Prop :=
+  system.Secret ((empty, T') : T.Msg)
 
 end Features
 

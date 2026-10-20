@@ -58,9 +58,9 @@ theorem liftSubst_eqv {σ σ' : Fin n → Tm F m} (hσ : ∀ i, Tm.Eqv A (σ i) 
 /-- Expressions equal modulo `E`: the same shape, with terms equal modulo `E`. -/
 inductive Expr.Eqv (A : Model F G) : Expr F G (ℕ ⊕ Fin n) → Expr F G (ℕ ⊕ Fin n) → Prop
   | term {M M'} : Tm.Eqv A M M' → Eqv A (.term M) (.term M')
-  | ctor {k : ℕ} (f : F k) {args args'} : (∀ i, Eqv A (args i) (args' i)) →
+  | ctor {k : ℕ} (f : F.withData k) {args args'} : (∀ i, Eqv A (args i) (args' i)) →
       Eqv A (.ctor f args) (.ctor f args')
-  | dtor {k : ℕ} (g : G k) {args args'} : (∀ i, Eqv A (args i) (args' i)) →
+  | dtor {k : ℕ} (g : Sig.withBuiltin G k) {args args'} : (∀ i, Eqv A (args i) (args' i)) →
       Eqv A (.dtor g args) (.dtor g args')
   | fail : Eqv A .fail .fail
 

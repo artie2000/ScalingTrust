@@ -8,13 +8,15 @@ import ScalingTrust.ProVerif.TraceSemantics.Security
 /-!
 # The operational semantics of ProVerif's calculus
 
-The write-up's §2.1, the semantics of Blanchet's survey (§2.4, §2.5.1, §3.1–3.3)
+The write-up's §2.2, the semantics of Blanchet's survey (§2.4, §2.5.1, §3.1–3.3)
 taken modulo `=_E`, and its Definition "Labelled semantics", as one step relation.
 
-* **Messages.** The definitions are read on messages, `A.Msg`, terms modulo `E`: a
-  closed term `M` denotes `Tm.msg A M`, and every `=_E` of the survey is an equality of
-  messages.  In particular a rule's patterns are matched against messages, and a
-  substitution `σ` with `σ p =_E u` is a `Pat.Matching` on messages.
+* **Messages.** The definitions are read on messages, `A.Msg`, terms over the declared
+  constructors and the data symbols modulo `E`: a closed term `M` denotes `Tm.msg A M`,
+  and every `=_E` of the survey is an equality of messages; `true` is `StdOps.tt`.  In
+  particular a rule's arguments are matched against may-fail messages: a substitution `σ`
+  with `σ U =_E u` is a pair of valuations under which `U` has the value `u`,
+  `Rule.Matching`.
 * **Evaluation** `Eval A D u` of a closed expression to a may-fail message, `none` being
   `fail`: a destructor rewrites by the first of its rules that matches, and fails when
   none does, the survey's final rule `h(u⃗) → fail`.
@@ -77,29 +79,35 @@ variable {A : Model F G} {n : ℕ}
 
 /-! ## Destructors -/
 
-/-- `θ, μ` is a matching of the may-fail message `u` against the pattern: ordinary
-variables are sent to messages and may-fail variables to may-fail messages, and a
-constructor pattern matches a message with that constructor at its root. -/
-def Pat.Matching (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) : Pat F → Option A.Msg → Prop
-  | .var x, u => u = some (θ x)
-  | .mvar v, u => u = μ v
-  | .fail, u => u = none
-  | .app f args, u => ∃ ms, u = some (Theory.Msg.app f ms) ∧ ∀ i, (args i).Matching θ μ (some (ms i))
-
-/-- A right-hand side under a matching. -/
-def Rhs.eval (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) : Rhs F → Option A.Msg
-  | .fail => none
-  | .mvar u => μ u
+/-- The value of a may-fail term under a valuation `θ` of the ordinary variables, into
+messages, and `μ` of the may-fail variables, into may-fail messages: the write-up's `Uθ`. -/
+def MayFail.eval (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) : MayFail F.withData → Option A.Msg
   | .term M => some (M.realize θ)
+  | .mvar u => μ u
+  | .fail => none
 
-/-- A matching of the arguments against the patterns of a rule. -/
-def Rule.Matching (r : Rule A.toTheory n) (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg)
+theorem MayFail.eval_tt (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
+    MayFail.eval θ μ .tt = some StdOps.tt := by
+  rw [MayFail.tt, MayFail.eval, Theory.Msg.tt_def, Term.realize_func]
+  exact congrArg (fun v : Fin 0 → A.Msg =>
+    some (Structure.funMap (L := F.withData.lang) (Sum.inr Data.tt) v)) (funext fun i => i.elim0)
+
+theorem MayFail.eval_ff (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
+    MayFail.eval θ μ .ff = some StdOps.ff := by
+  rw [MayFail.ff, MayFail.eval, Theory.Msg.ff_def, Term.realize_func]
+  exact congrArg (fun v : Fin 0 → A.Msg =>
+    some (Structure.funMap (L := F.withData.lang) (Sum.inr Data.ff) v)) (funext fun i => i.elim0)
+
+/-- `θ, μ` match the arguments `us` against the rule: each argument of the rule has the
+value given.  So a term accepts only a message, `fail` only `fail`, and a may-fail variable
+anything. -/
+def Rule.Matching (r : Rule A.withData n) (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg)
     (us : Fin n → Option A.Msg) : Prop :=
-  ∀ i, (r.pats i).Matching θ μ (us i)
+  ∀ i, (r.args i).eval θ μ = us i
 
 /-- The rules rewrite the arguments to `v`: the first rule that matches decides, and
 the result is `fail` when none does. -/
-inductive Rewrites : List (Rule A.toTheory n) → (Fin n → Option A.Msg) → Option A.Msg → Prop
+inductive Rewrites : List (Rule A.withData n) → (Fin n → Option A.Msg) → Option A.Msg → Prop
   | nil (us) : Rewrites [] us none
   | head {r rs us θ μ} : r.Matching θ μ us → Rewrites (r :: rs) us (r.rhs.eval θ μ)
   | tail {r rs us v} : (¬ ∃ θ μ, r.Matching θ μ us) → Rewrites rs us v → Rewrites (r :: rs) us v
@@ -112,10 +120,10 @@ variable (A)
 inductive Eval : Expr F G (ℕ ⊕ Fin 0) → Option A.Msg → Prop
   | term (M) : Eval (.term M) (some (Tm.msg A M))
   | fail : Eval .fail none
-  | ctor {m : ℕ} (f : F m) {args us} : (∀ i, Eval (args i) (us i)) →
+  | ctor {m : ℕ} (f : F.withData m) {args us} : (∀ i, Eval (args i) (us i)) →
       Eval (.ctor f args) (liftFail (fun ms => some (Theory.Msg.app f ms)) us)
-  | dtor {m : ℕ} (g : G m) {args us v} : (∀ i, Eval (args i) (us i)) →
-      Rewrites (A.dtor g) us v → Eval (.dtor g args) v
+  | dtor {m : ℕ} (g : Sig.withBuiltin G m) {args us v} : (∀ i, Eval (args i) (us i)) →
+      Rewrites (A.rules g) us v → Eval (.dtor g args) v
 
 /-! ## Reduction -/
 
@@ -147,10 +155,10 @@ inductive Step : Config F G → Option (Act A.Msg) → Config F G → Prop
   /-- (Red Eval 2) -/
   | eval₂ {U Ps} (D P Q) : Eval A D none → Step ⟨U, .let_ D P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
   /-- (Red Cond 1') -/
-  | cond₁ {U Ps} (M P Q) : Tm.msg A M = Theory.Msg.app A.tt ![] →
+  | cond₁ {U Ps} (M P Q) : Tm.msg A M = StdOps.tt →
       Step ⟨U, .ite M P Q ::ₘ Ps⟩ none ⟨U, P ::ₘ Ps⟩
   /-- (Red Cond 2') -/
-  | cond₂ {U Ps} (M P Q) : Tm.msg A M ≠ Theory.Msg.app A.tt ![] →
+  | cond₂ {U Ps} (M P Q) : Tm.msg A M ≠ StdOps.tt →
       Step ⟨U, .ite M P Q ::ₘ Ps⟩ none ⟨U, Q ::ₘ Ps⟩
   /-- (Red Event) -/
   | event {U Ps} (M P) : Step ⟨U, .event M P ::ₘ Ps⟩ (some (.event (Tm.msg A M))) ⟨U, P ::ₘ Ps⟩
@@ -559,17 +567,27 @@ variable (A)
 /-- The public names: the public nullary constructors. -/
 def Model.Npub : Set (F 0) := A.pubFun 0
 
+/-- A constructor of the calculus is public: a public declared one, or a data symbol. -/
+def Model.Public : ∀ {n : ℕ}, F.withData n → Prop
+  | _, .inl f => f ∈ A.pubFun _
+  | _, .inr _ => True
+
+/-- A destructor of the calculus is public: a public declared one, or a built-in one. -/
+def Model.PublicDt : ∀ {n : ℕ}, Sig.withBuiltin G n → Prop
+  | _, .inl g => g ∈ A.pubDtor _
+  | _, .inr _ => True
+
 /-- Every symbol of the term is public, and no created name occurs. -/
 def Model.PubTerm : Tm F n → Prop
   | .var (.inl _) => False
   | .var (.inr _) => True
-  | .func f ts => f ∈ A.pubFun _ ∧ ∀ i, Model.PubTerm (ts i)
+  | .func f ts => A.Public f ∧ ∀ i, Model.PubTerm (ts i)
 
 /-- Every symbol of the expression is public, and no created name occurs. -/
 def Model.PubExpr : Expr F G (ℕ ⊕ Fin n) → Prop
   | .term M => A.PubTerm M
-  | .ctor f args => f ∈ A.pubFun _ ∧ ∀ i, Model.PubExpr (args i)
-  | .dtor g args => g ∈ A.pubDtor _ ∧ ∀ i, Model.PubExpr (args i)
+  | .ctor f args => A.Public f ∧ ∀ i, Model.PubExpr (args i)
+  | .dtor g args => A.PublicDt g ∧ ∀ i, Model.PubExpr (args i)
   | .fail => True
 
 /-- An `N_pub`-adversary, the survey's Definition 3.1: its names and symbols are public
@@ -595,7 +613,7 @@ def Model.SurveyTrace (c : Config F G) (t : Trace A.Msg) : Prop := Runs A c t �
 /-- The trace outputs `m` publicly, the survey's Definition 3.2: a communication on a
 public name carries it. -/
 def Model.OutputsPublicly (t : Trace A.Msg) (m : A.Msg) : Prop :=
-  ∃ a ∈ A.Npub, Act.comm (Theory.Msg.app a ![]) m ∈ t
+  ∃ a ∈ A.Npub, Act.comm (Theory.Msg.app (.inl a) ![]) m ∈ t
 
 /-- `P₀` preserves the secrecy of the closed term `M` from `N_pub`, the survey's
 Definition 3.3. -/
@@ -605,8 +623,8 @@ def Model.Preserves (P₀ : Process F G 0) (M : Tm F 0) : Prop :=
 /-- A query fact over the variables `X`: `event(M)` or `attacker(M)` with `M` a term
 over constructors, free names and `X`. -/
 inductive QueryFact (F : Sig) (X : Type) : Type
-  | event (M : F.lang.Term X)
-  | attacker (M : F.lang.Term X)
+  | event (M : F.withData.lang.Term X)
+  | attacker (M : F.withData.lang.Term X)
 
 /-- The trace satisfies the instance of the query fact under `σ`, the write-up's
 Definition "Satisfaction". -/

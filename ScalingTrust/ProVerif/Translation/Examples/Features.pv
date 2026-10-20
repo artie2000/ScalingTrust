@@ -5,8 +5,12 @@
    variables, queries that a fact never holds, and terms with effects (§4.1.4):
    function macros that create a name and emit an event, a conditional term whose
    condition may fail, an event in an argument after a sibling that fails, and a
-   restriction and a term evaluation inside an output; and a free name, T, whose
-   name the translation uses, so that it is renamed. *)
+   restriction and a term evaluation inside an output; a free name, T, whose
+   name the translation uses, so that it is renamed; and tuples and booleans: a
+   tuple as a message, in a rewrite rule and in a query, tuple patterns with an
+   equality test in an input and a term evaluation, a pattern on a data
+   constructor, the booleans as values, and conditions with the connectives,
+   with and without a destructor in them. *)
 
 type key.
 type nonce.
@@ -37,6 +41,8 @@ fun catchfail(bitstring) : bitstring
 fun n2b(nonce) : bitstring [typeConverter].
 fun tag(nonce) : bitstring [private].
 
+reduc forall x : bitstring, y : bitstring; unpair(pair(x, y)) = (x, y).
+
 event Sent(nonce).
 event Received(nonce).
 event Stamped(bitstring).
@@ -47,6 +53,7 @@ query attacker(empty).
 query n : nonce; (attacker(tag(n))) ==> (false).
 query n : nonce; event(Sent(n)).
 query x : bitstring; event(Stamped(x)) ==> attacker(x).
+query attacker((empty, T)).
 
 letfun stamp(x : bitstring) = event Stamped(x); x.
 letfun wrap(x : bitstring, k : key) = new r : nonce; senc(pair(x, n2b(r)), k).
@@ -72,11 +79,24 @@ let relay(k : key) =
   else
     let w = pair(sdec(y, k), stamp(y)) in out(c, w) else out(c, y).
 
+let tupler(k : key) =
+  in(c, (x : bitstring, =empty));
+  let (a : bitstring, b : bitstring) = unpair(x) in
+    (let pair(a' : bitstring, b' : bitstring) = pair(b, a) in
+     let flag = (a = a') in
+     if flag && not(b = empty) || true then
+       out(c, (a', b', flag))
+     else
+       out(c, ()))
+  else
+    if sdec(x, k) = empty && x = x then out(c, (x = x)) else 0.
+
 process
   new k : key;
   ( (!sender(k))
   | (!receiver(k))
   | (!relay(k))
+  | (!tupler(k))
   | (in(d, y : bitstring);
      if catchfail(test(eq(y, empty), y, empty)) <> empty then out(c, y) else 0)
   | (in(c, z : bitstring); out(c, sdec(z, k)))

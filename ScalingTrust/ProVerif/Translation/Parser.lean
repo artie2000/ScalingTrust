@@ -224,15 +224,32 @@ def sepBy {α : Type} (p : P α) (s close : String) : P (Array α) := do
 def optElse {α : Type} (p : P α) : P (Option α) := do
   if ← optKeyword "else" then some <$> p else return none
 
-/-! ## Terms (Figure A.1)
+/-! ## Terms (Figure A.1) and patterns
 
 An identifier is a variable, a free name or a constant; `fail` occurs in rewrite rules.
-A parenthesised list is a tuple, which the translation rejects unless it has one element.
-The enriched terms (manual §4.1.4) extend to the right as far as possible. -/
+A parenthesised list is a tuple, `(M)` being `M`.  The infix operators bind as in the
+manual: `||` loosest, then `&&`, then `=` and `<>`, which do not chain.  The enriched terms
+(manual §4.1.4) extend to the right as far as possible. -/
 
 mutual
 
+/-- A term: `atom`s joined by `||`. -/
 partial def term : P Term := do
+  let l ← andTerm
+  if ← optSym "||" then return .app "||" #[l, ← term] else return l
+
+partial def andTerm : P Term := do
+  let l ← cmpTerm
+  if ← optSym "&&" then return .app "&&" #[l, ← andTerm] else return l
+
+partial def cmpTerm : P Term := do
+  let l ← atom
+  if ← optSym "=" then return .app "=" #[l, ← atom]
+  else if ← optSym "<>" then return .app "<>" #[l, ← atom]
+  else return l
+
+/-- A term that is not an infix application. -/
+partial def atom : P Term := do
   match ← peek with
   | .ident "new" =>
     advance
@@ -242,19 +259,18 @@ partial def term : P Term := do
     return .new x (← term)
   | .ident "if" =>
     advance
-    let (l, eq, r) ← condition
+    let c ← term
     keyword "then"
     let n ← term
-    return .ite l eq r n (← optElse term)
+    return .ite c n (← optElse term)
   | .ident "let" =>
     advance
-    let x ← ident
-    skipType
+    let p ← pattern
     sym "="
     let d ← term
     keyword "in"
     let n ← term
-    return .let x d n (← optElse term)
+    return .let p d n (← optElse term)
   | .ident "event" =>
     advance
     let e ← ident
@@ -264,6 +280,12 @@ partial def term : P Term := do
   | .ident "fail" =>
     advance
     return .fail
+  | .ident "not" =>
+    advance
+    sym "("
+    let m ← term
+    sym ")"
+    return .app "not" #[m]
   | .ident s =>
     if keywords.contains s then unexpected "a term"
     else
@@ -273,15 +295,9 @@ partial def term : P Term := do
     advance
     let ts ← sepBy term "," ")"
     sym ")"
-    if ts.size == 1 then return ts[0]! else fail "tuples are not translated"
+    return if ts.size == 1 then ts[0]! else .tuple ts
   | .num _ => fail "numerals are not translated"
   | _ => unexpected "a term"
-
-/-- `M = N` or `M <> N`. -/
-partial def condition : P (Term × Bool × Term) := do
-  let l ← term
-  let eq ← if ← optSym "=" then pure true else do sym "<>"; pure false
-  return (l, eq, ← term)
 
 /-- `(M, …)` -/
 partial def args : P (Array Term) := do
@@ -294,18 +310,35 @@ partial def args : P (Array Term) := do
 partial def optArgs : P (Array Term) := do
   if (← peek) == .sym "(" then args else return #[]
 
+/-- A pattern: a variable with an optional type, `=M`, a tuple of patterns, `(p)` being
+`p`, or a constructor applied to patterns. -/
+partial def pattern : P Pat := do
+  match ← peek with
+  | .sym "(" =>
+    advance
+    let ps ← sepBy pattern "," ")"
+    sym ")"
+    return if ps.size == 1 then ps[0]! else .tuple ps
+  | .sym "=" =>
+    advance
+    return .eq (← atom)
+  | .ident s =>
+    if keywords.contains s then unexpected "a pattern"
+    else
+      advance
+      if (← peek) == .sym "(" then
+        advance
+        let ps ← sepBy pattern "," ")"
+        sym ")"
+        return .app s ps
+      else
+        skipType
+        return .var s
+  | _ => unexpected "a pattern"
+
 end
 
 /-! ## Processes (Figure A.8) -/
-
-/-- A pattern, which the fragment restricts to a variable, with an optional type. -/
-def pattern : P String := do
-  match ← peek with
-  | .sym "(" | .sym "=" => fail "patterns other than a variable are not translated"
-  | _ =>
-    let x ← ident
-    skipType
-    return x
 
 mutual
 
@@ -338,10 +371,10 @@ partial def simple : P Proc := do
     return .new x (← continuation)
   | .ident "if" =>
     advance
-    let (l, eq, r) ← condition
+    let c ← term
     keyword "then"
     let p ← proc
-    return .ite l eq r p (← elseProc)
+    return .ite c p (← elseProc)
   | .ident "in" =>
     advance
     sym "("
@@ -431,7 +464,7 @@ def forallVars : P (Array (String × Bool)) := do
 def rule : P (String × Rule) := do
   let i ← index
   let vars ← forallVars
-  let l ← term
+  let l ← atom
   sym "="
   let r ← term
   let .app g lhs := l | errorAt i "the left-hand side of a rewrite rule applies the destructor"
@@ -446,7 +479,7 @@ def equation : P Equation := do
   let vars ← forallVars
   if let some (x, _) := vars.find? (·.2) then
     errorAt i s!"may-fail variable `{x}` in an equation"
-  let l ← term
+  let l ← atom
   sym "="
   return { vars := vars.map (·.1), lhs := l, rhs := ← term }
 
@@ -567,7 +600,7 @@ def decl (m : Model) : P Model := do
     sym "."
     let cs := xs.map fun name =>
       { name, arity := 0, pub := !opts.contains "private",
-        converter := opts.contains "typeConverter" : Ctor }
+        converter := opts.contains "typeConverter", data := opts.contains "data" : Ctor }
     return { m with ctors := m.ctors ++ cs }
   | .ident "fun" =>
     advance
@@ -582,7 +615,9 @@ def decl (m : Model) : P Model := do
     sym "."
     let pub := !opts.contains "private"
     if rules.isEmpty then
-      let c : Ctor := { name, arity := ts.size, pub, converter := opts.contains "typeConverter" }
+      let c : Ctor :=
+        { name, arity := ts.size, pub, converter := opts.contains "typeConverter",
+          data := opts.contains "data" }
       return { m with ctors := m.ctors.push c }
     let d ← dtor i pub rules
     unless d.name == name do errorAt i s!"the rules of `{name}` are for `{d.name}`"

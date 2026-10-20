@@ -43,44 +43,48 @@ def free : ∀ n, Fun n → Bool
   | _, .exp => false
   | _, _ => true
 
-/-- The theory. -/
-def T : Theory Fun where
+/-- The theory of the declarations. -/
+def T₀ : Theory Fun where
   E := E
   free := free
   heads := by simp [E, Term.Rigid, free]
 
+/-- The theory, with the data symbols: its messages are those of the model. -/
+abbrev T : Theory (Sig.withData Fun) :=
+  T₀.withData
+
 @[simp]
-theorem free_eq {n : ℕ} (f : Fun n) : T.free n f = free n f :=
+theorem free_eq {n : ℕ} (f : Fun n) : T₀.free n f = free n f :=
   rfl
 
 /-! ## Constructors -/
 
 def c : T.Msg :=
-  .app (.const .c) ![]
+  .app (.inl (.const .c)) ![]
 
 def s : T.Msg :=
-  .app (.const .s) ![]
+  .app (.inl (.const .s)) ![]
 
 def g : T.Msg :=
-  .app .g ![]
+  .app (.inl .g) ![]
 
 def pk (x₀ : T.Msg) : T.Msg :=
-  .app .pk ![x₀]
+  .app (.inl .pk) ![x₀]
 
 def hash (x₀ : T.Msg) : T.Msg :=
-  .app .hash ![x₀]
+  .app (.inl .hash) ![x₀]
 
 def senc (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .senc ![x₀, x₁]
+  .app (.inl .senc) ![x₀, x₁]
 
 def aenc (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .aenc ![x₀, x₁]
+  .app (.inl .aenc) ![x₀, x₁]
 
 def sign (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .sign ![x₀, x₁]
+  .app (.inl .sign) ![x₀, x₁]
 
 def exp (x₀ x₁ : T.Msg) : T.Msg :=
-  .app .exp ![x₀, x₁]
+  .app (.inl .exp) ![x₀, x₁]
 
 /-! ## The equations, on messages -/
 
@@ -88,10 +92,10 @@ def exp (x₀ x₁ : T.Msg) : T.Msg :=
 theorem equation₁ (x y : T.Msg) : exp (exp g x) y = exp (exp g y) x :=
   by
   have h₀ :=
-    T.satisfies_msg
+    T₀.withData_satisfies
       (.func .exp ![.func .exp ![.func .g ![], .var 0], .var 1],
         .func .exp ![.func .exp ![.func .g ![], .var 1], .var 0])
-      (by simp [T, E]) fun n₀ => if n₀ = 0 then x else if n₀ = 1 then y else x
+      (by simp [T₀, E]) fun n₀ => if n₀ = 0 then x else if n₀ = 1 then y else x
   simp only [Term.realize_func_comp, comp_vecCons, comp_vecEmpty,
     FirstOrder.Language.Term.realize_var] at h₀
   simpa [exp, g] using h₀
@@ -101,19 +105,19 @@ theorem equation₁ (x y : T.Msg) : exp (exp g x) y = exp (exp g y) x :=
 /-- `sdec(senc(x, y), y) → x` -/
 def sdec (x₀ x₁ : T.Msg) : Option T.Msg :=
   match x₀.view with
-  | .app .senc a₀ => if a₀ 1 = x₁ then some (a₀ 0) else none
+  | .app (.inl .senc) a₀ => if a₀ 1 = x₁ then some (a₀ 0) else none
   | _ => none
 
 /-- `adec(aenc(x, pk(y)), y) → x` -/
 def adec (x₀ x₁ : T.Msg) : Option T.Msg :=
   match x₀.view with
-  | .app .aenc a₀ => if a₀ 1 = pk x₁ then some (a₀ 0) else none
+  | .app (.inl .aenc) a₀ => if a₀ 1 = pk x₁ then some (a₀ 0) else none
   | _ => none
 
 /-- `check(sign(x, y), pk(y)) → x` -/
 def check (x₀ x₁ : T.Msg) : Option T.Msg :=
   match x₀.view with
-  | .app .sign a₀ => if x₁ = pk (a₀ 1) then some (a₀ 0) else none
+  | .app (.inl .sign) a₀ => if x₁ = pk (a₀ 1) then some (a₀ 0) else none
   | _ => none
 
 /-! ### The destructors' graphs are their rules -/
@@ -121,7 +125,7 @@ def check (x₀ x₁ : T.Msg) : Option T.Msg :=
 theorem sdec_eq_some {x₀ x₁ m₀ : T.Msg} : sdec x₀ x₁ = some m₀ ↔ x₀ = senc m₀ x₁ :=
   ⟨fun h₀ => by
     rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [sdec, hv₀] at h₀
-    cases f₀ <;> try simp at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
     rcases h₀ with ⟨h₁, h₂⟩
     subst h₂
     have e₀ : x₀ = senc (a₀ 0) x₁ :=
@@ -138,7 +142,7 @@ theorem sdec_eq_some {x₀ x₁ m₀ : T.Msg} : sdec x₀ x₁ = some m₀ ↔ x
 theorem adec_eq_some {x₀ x₁ m₀ : T.Msg} : adec x₀ x₁ = some m₀ ↔ x₀ = aenc m₀ (pk x₁) :=
   ⟨fun h₀ => by
     rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [adec, hv₀] at h₀
-    cases f₀ <;> try simp at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
     rcases h₀ with ⟨h₁, h₂⟩
     subst h₂
     have e₀ : x₀ = aenc (a₀ 0) (pk x₁) :=
@@ -156,7 +160,7 @@ theorem check_eq_some {x₀ x₁ m₀ : T.Msg} :
     check x₀ x₁ = some m₀ ↔ ∃ y, x₀ = sign m₀ y ∧ x₁ = pk y :=
   ⟨fun h₀ => by
     rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [check, hv₀] at h₀
-    cases f₀ <;> try simp at h₀
+    rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
     rcases h₀ with ⟨h₁, h₂⟩
     subst h₂
     have e₀ : x₀ = sign (a₀ 0) (a₀ 1) :=
@@ -170,18 +174,16 @@ theorem check_eq_some {x₀ x₁ m₀ : T.Msg} :
     rcases h₀ with ⟨y, rfl, rfl⟩
     simp [check, sign, pk, free]⟩
 
-/-! ## The message algebra -/
+/-! ## The attacker -/
 
 /-- The public symbols: all but the private free names and constructors, and the events. -/
 def pub : ∀ n, Fun n → Prop
   | _, .const .s => False
   | _, _ => True
 
-/-- The public constructors, including the public free names, and the public destructors. -/
-abbrev alg : MsgAlgebra Fun where
-  toTheory := T
-  pubFun := fun n => {f | pub n f}
-  pubDtors :=
+/-- The attacker: the public constructors, including the public free names, the public destructors, and the standard operations. -/
+instance : Attacker T.Msg :=
+  .ofDecls (fun n => {f | pub n f})
     {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => adec (a 0) (a 1)⟩,
       ⟨2, liftFail fun a => check (a 0) (a 1)⟩}
 
@@ -198,6 +200,11 @@ def initiator (sskA pkB : T.Msg) : Cont (Proc T.Msg) Unit := do
   | none =>
     .stop
 
+/-- `initiator` is prefix-closed. -/
+theorem initiator_mem_tree (sskA pkB : T.Msg) :
+    Proc.run (initiator sskA pkB) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [initiator])
+
 def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
   .repl
   let y ← .recv c
@@ -210,6 +217,11 @@ def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
       .stop
   | none =>
     .stop
+
+/-- `responder` is prefix-closed. -/
+theorem responder_mem_tree (skB spkA : T.Msg) :
+    Proc.run (responder skB spkA) ∈ Descriptive.tree (Act T.Msg) := by
+  aesop  (add norm simp [initiator_mem_tree, responder])
 
 /-- The main process. -/
 def system : Proc T.Msg :=
@@ -225,13 +237,13 @@ def system : Proc T.Msg :=
 
 /-- The main process is prefix-closed. -/
 theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [initiator, responder, system])
+  aesop  (add norm simp [initiator_mem_tree, responder_mem_tree, system])
 
 /-! ## Queries -/
 
 /-- `query attacker(s)` -/
 def query₁ : Prop :=
-  system.Secret alg.derive s
+  system.Secret s
 
 end DenningSacco
 

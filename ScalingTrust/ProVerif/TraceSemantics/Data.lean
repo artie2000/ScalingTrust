@@ -163,9 +163,12 @@ namespace StdOps
 
 instance : Coe Bool M := ⟨ofBool⟩
 
-@[simp] theorem ofBool_true : (ofBool true : M) = tt := rfl
+/-! Not `simp` lemmas: rewriting `↑true` inside the condition of an `if` leaves it in a form
+that `split`, and so the prefix-closure proofs of translated models, cannot split. -/
 
-@[simp] theorem ofBool_false : (ofBool false : M) = ff := rfl
+theorem ofBool_true : (ofBool true : M) = tt := rfl
+
+theorem ofBool_false : (ofBool false : M) = ff := rfl
 
 end StdOps
 

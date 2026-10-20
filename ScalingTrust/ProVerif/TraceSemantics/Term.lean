@@ -306,4 +306,10 @@ theorem liftFail_eq_some {α β : Type} {n : ℕ} {f : (Fin n → α) → Option
       funext fun i => Option.some_injective _ ((Option.some_get _).trans (hms i))]
   · exact iff_of_false (by simp) fun ⟨ms, hms, _⟩ => h fun i => by rw [hms i]; rfl
 
+/-- A constant has no argument that could fail. -/
+theorem liftFail_zero {α β : Type} (f : (Fin 0 → α) → Option β) (a : Fin 0 → Option α) :
+    liftFail f a = f fun i => i.elim0 := by
+  rw [liftFail, dif_pos fun i => i.elim0]
+  exact congrArg f (funext fun i => i.elim0)
+
 end ProVerif.TraceSemantics
