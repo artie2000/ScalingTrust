@@ -11,7 +11,7 @@ parts, each a subfolder with its own README.
 | Subfolder | What it is |
 | --- | --- |
 | `TraceSemantics/` | A shallow semantics of the calculus: a process is the set of traces it can perform, the attacker is the set of traces the Dolev–Yao rules allow, and secrecy and correspondence are properties of the attacks on a process. Translated models are written in it and proofs about them are proofs in it; `Examples.lean` there proves the secrecy query of the Denning–Sacco model translated in `Translation/Examples/`. |
-| `Specification/` | ProVerif itself, deeply: the syntax and operational semantics of its calculus, with terms with effects, as the write-up restates them from the manual's Appendix B, and the meaning of its queries from the survey; the denotation of a process as a set of traces; and the proofs that the two semantics agree on secrecy and correspondence, the theorems of the write-up. |
+| `Specification/` | ProVerif itself, deeply: the syntax and operational semantics of its calculus, with terms with effects, as the write-up restates them from the manual's Appendix B, and the adversary and the properties of its queries from the survey, to which the manual refers for them; the denotation of a process as a set of traces; and the proofs that the two semantics agree on secrecy and correspondence, the theorems of the write-up. |
 | `Translation/` | A translator from a fragment of ProVerif's input language to Lean source over `TraceSemantics/`, following the recipe its README records: a parser written with `Std.Internal.Parsec` reads the model and Lean's pretty printer writes the translation. `Examples/` there holds two models and their translations, which the build checks. |
 | `Writeup/` | `Semantics.tex`, the mathematical account in three sections: the trace semantics, which `TraceSemantics/` formalises; the calculus of ProVerif with the manual's semantics, which `Specification/` formalises; and the translation of the calculus into the trace semantics with the correspondence theorems, the denotation in `Specification/` and the program in `Translation/`. Its PDF is tracked; rebuild it with `pdflatex` after editing the source. |
 | `OldWriteup/` | A copy of `Writeup/` as it stood at commit `c09a44d`, before the framework was extended to more features, kept to be polished on its own while `Writeup/` follows the extension. Only a task that names it touches it: do not bring it in line with `Writeup/` or with the code, and do not delete it. |
@@ -24,6 +24,29 @@ model in `Translation/Examples/` to prove its query; `Specification/` and
 `Translation/` do not depend on each other: the translator does not go through
 the syntax of `Specification/`, since the point of the shallow embedding is that
 a translated model is ordinary Lean.
+
+## Sources
+
+The folder is built from ProVerif's own documentation and from the papers it
+refers to, by four principles, in order of importance:
+
+1. The semantics of ProVerif's input language given in the ProVerif manual
+   (`Reference/proverif-manual.pdf`, Appendix B) is the ground truth for what
+   ProVerif code means: `Specification/` and §2 of the write-up state it.
+2. Where the manual refers to a paper for a component, that paper is the ground
+   truth for the component. The manual describes the attacker and the
+   properties its queries test informally and refers to Blanchet's survey
+   (`Reference/BlanchetFnTPS16.pdf`) for their definitions, so the adversary,
+   secrecy and correspondences are the survey's Definitions 3.1–3.5.
+3. The attacker is the abstract Dolev–Yao attacker: an adversary process in the
+   specification, and the closure of its knowledge under its operations in the
+   trace semantics. Nothing is taken from ProVerif's resolution process, its
+   Horn clauses and `attacker` predicate, which overstates the attacker's
+   knowledge.
+4. Where a source's semantics has to cover syntax it does not have, as the
+   survey's adversaries do for the manual's terms with effects, it is extended
+   in the natural way, and each nontrivial decision is documented in the code:
+   in the README of its folder or in the docstring nearest it.
 
 ## Building
 

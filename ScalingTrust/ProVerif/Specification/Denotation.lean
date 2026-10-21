@@ -11,9 +11,9 @@ The write-up's Definition "Translation".
 * A destructor denotes the function of the write-up's Definition "Destructors from
   rewrite rules", `Model.dtorFun`: the right-hand side of the first rule with a
   matching, or `fail`.  Two matchings against a rule give the same right-hand side
-  (`Rule.Matching.eval_eq`), so the matching chosen does not matter.  A projection
-  denotes the standard operation of the trace semantics, `Model.dtorFun_proj`, and a
-  boolean destructor yields `true`, `false` or an argument, `Model.dtorFun_bool`.
+  (`Rule.Matching.eval_eq`), by (R2), so the matching chosen does not matter.  A
+  projection denotes the standard operation of the trace semantics, `Model.dtorFun_proj`,
+  and a boolean destructor yields `true`, `false` or an argument, `Model.dtorFun_bool`.
 * The attacker of the model is the `Attacker` instance of its messages, built by
   `Attacker.ofDecls` from the public constructors and the functions of the public
   declared destructors; so its operations are the standard ones besides, which
@@ -22,11 +22,11 @@ The write-up's Definition "Translation".
 * An expression under `n` binders denotes, in an environment `env xs` with
   `xs : Fin n → A.Msg`, a computation in the continuation monad of the trace
   semantics with a may-fail message as its result, `Expr.denote`, as the translator
-  emits it: the arguments of a constructor or destructor are run from left to right
-  (`seqFin`), `new` is `Proc.fresh`, `event` is `Proc.emit` and `if` and `let` are case
-  analyses on the result of their first expression.  A may-fail term denotes `pure` of
-  its value (`Val.denote`), and running the arguments before the `i`-th, which are
-  may-fail terms, reaches the `i`-th (`ctor_run_update`).
+  emits it: the arguments of a constructor, a destructor or an event are run from left to
+  right (`seqFin`), `new` is `Proc.fresh`, `event` is `Proc.emit` of the event message and
+  `if` and `let` are case analyses on the result of their first expression.  A may-fail
+  term denotes `pure` of its value (`Val.denote`), and running the arguments before the
+  `i`-th, which are may-fail terms, reaches the `i`-th (`seqFin_run_update`).
 * A process under `n` binders denotes, for each environment, a process of the trace
   semantics, `Process.denote`, running the computations of its expressions with the
   rest of the process as the continuation, and `Proc.nil` where the manual's rules
@@ -39,7 +39,9 @@ namespace ProVerif.Specification
 
 open FirstOrder FirstOrder.Language ProVerif.TraceSemantics
 
-variable {F G : Sig} {A : Model F G} {n m : ℕ}
+noncomputable section
+
+variable {F G Ev : Sig} {A : Model F G Ev} {n m : ℕ}
 
 /-! ## Destructors as functions -/
 
@@ -59,7 +61,7 @@ theorem realize_eq_of_varFinset {α M : Type} [F.lang.Structure M] [DecidableEq 
 /-- Two valuations under which a term over the free symbols has the same value agree on
 its variables: free constructors are injective on messages. -/
 theorem Term.Free.realize_inj {θ θ' : ℕ → A.Msg} :
-    ∀ {M : Term F.withData}, Term.Free A.withData M → M.realize θ = M.realize θ' →
+    ∀ {M : Term (Sig.cons F Ev)}, Term.Free A.theory.withData M → M.realize θ = M.realize θ' →
       ∀ x ∈ M.varFinset, θ x = θ' x
   | .var x, _, h, y, hy => by
     simp only [Term.varFinset, Finset.mem_singleton] at hy
@@ -78,7 +80,7 @@ theorem Term.Free.realize_inj {θ θ' : ℕ → A.Msg} :
 /-- Two pairs of valuations giving a may-fail term over the free symbols the same value
 agree on its variables. -/
 theorem MayFail.Free.eval_inj {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option A.Msg} :
-    ∀ {U : MayFail F.withData}, U.Free A.withData → U.eval θ μ = U.eval θ' μ' →
+    ∀ {U : MayFail (Sig.cons F Ev)}, U.Free A.theory.withData → U.eval θ μ = U.eval θ' μ' →
       (∀ x ∈ U.vars, θ x = θ' x) ∧ ∀ v ∈ U.mvars, μ v = μ' v
   | .term _, hM, h =>
     ⟨Term.Free.realize_inj hM (Option.some_injective _ h), by simp [MayFail.mvars]⟩
@@ -89,11 +91,13 @@ theorem MayFail.Free.eval_inj {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option 
     exact h
   | .fail, _, _ => ⟨by simp [MayFail.vars], by simp [MayFail.mvars]⟩
 
-/-- Two matchings against the arguments of a rule give the same right-hand side. -/
-theorem Rule.Matching.eval_eq {r : Rule A.withData n} {us : Fin n → Option A.Msg}
+/-- Two matchings against the arguments of a rule whose terms are over the free symbols
+give the same right-hand side. -/
+theorem Rule.Matching.eval_eq {r : Rule (Sig.cons F Ev) n}
+    (hfree : ∀ i, (r.args i).Free A.theory.withData) {us : Fin n → Option A.Msg}
     {θ θ' : ℕ → A.Msg} {μ μ' : ℕ → Option A.Msg} (h : r.Matching θ μ us)
     (h' : r.Matching θ' μ' us) : r.rhs.eval θ μ = r.rhs.eval θ' μ' := by
-  have agree := fun i => MayFail.Free.eval_inj (r.free i) ((h i).trans (h' i).symm)
+  have agree := fun i => MayFail.Free.eval_inj (hfree i) ((h i).trans (h' i).symm)
   cases hr : r.rhs with
   | fail => rfl
   | mvar v =>
@@ -111,54 +115,65 @@ theorem Rule.Matching.eval_eq {r : Rule A.withData n} {us : Fin n → Option A.M
 open Classical in
 /-- The right-hand side under a matching of the arguments against the rule, if there is
 one. -/
-noncomputable def Rule.apply (r : Rule A.withData n) (us : Fin n → Option A.Msg) :
+def Rule.apply (r : Rule (Sig.cons F Ev) n) (us : Fin n → Option A.Msg) :
     Option (Option A.Msg) :=
   if h : ∃ θ μ, r.Matching θ μ us then some (r.rhs.eval h.choose h.choose_spec.choose) else none
 
-theorem Rule.apply_eq_some {r : Rule A.withData n} {us : Fin n → Option A.Msg}
+theorem Rule.apply_eq_some {r : Rule (Sig.cons F Ev) n}
+    (hfree : ∀ i, (r.args i).Free A.theory.withData) {us : Fin n → Option A.Msg}
     {θ : ℕ → A.Msg} {μ : ℕ → Option A.Msg} (h : r.Matching θ μ us) :
     r.apply us = some (r.rhs.eval θ μ) := by
   have h' : ∃ θ μ, r.Matching θ μ us := ⟨θ, μ, h⟩
   rw [Rule.apply, dif_pos h']
-  exact congrArg some (Rule.Matching.eval_eq h'.choose_spec.choose_spec h)
+  exact congrArg some (Rule.Matching.eval_eq hfree h'.choose_spec.choose_spec h)
 
-theorem Rule.apply_eq_none {r : Rule A.withData n} {us : Fin n → Option A.Msg}
+theorem Rule.apply_eq_none {r : Rule (Sig.cons F Ev) n} {us : Fin n → Option A.Msg}
     (h : ¬ ∃ θ μ, r.Matching θ μ us) : r.apply us = none := by
   rw [Rule.apply, dif_neg h]
 
 /-- The destructor the rules of `g` define: the first rule with a matching decides, and
 the result is `fail` when none has one. -/
-noncomputable def Model.dtorFun (g : Sig.withBuiltin G n) (us : Fin n → Option A.Msg) :
-    Option A.Msg :=
+def Model.dtorFun (g : Sig.withBuiltin G n) (us : Fin n → Option A.Msg) : Option A.Msg :=
   ((A.rules g).findSome? (·.apply us)).join
 
-/-- The rules rewrite to the value of the destructor they define. -/
-theorem rewrites_iff {rs : List (Rule A.withData n)} {us : Fin n → Option A.Msg}
+/-- Rules whose terms are over the free symbols rewrite to the value of the destructor they
+define. -/
+theorem rewrites_iff {rs : List (Rule (Sig.cons F Ev) n)}
+    (hrs : ∀ r ∈ rs, ∀ i, (r.args i).Free A.theory.withData) {us : Fin n → Option A.Msg}
     {v : Option A.Msg} : Rewrites rs us v ↔ (rs.findSome? (·.apply us)).join = v := by
   constructor
   · intro h
     induction h with
     | nil => rfl
-    | head hm => simp [Rule.apply_eq_some hm]
-    | tail hn _ ih => simp [Rule.apply_eq_none hn, ih]
+    | head hm => simp [Rule.apply_eq_some (hrs _ (List.mem_cons_self ..)) hm]
+    | tail hn _ ih => simp [Rule.apply_eq_none hn, ih fun r hr => hrs r (List.mem_cons_of_mem _ hr)]
   · rintro rfl
     induction rs with
     | nil => exact .nil us
     | cons r rs ih =>
       by_cases h : ∃ θ μ, r.Matching θ μ us
       · obtain ⟨θ, μ, hm⟩ := h
-        simpa [Rule.apply_eq_some hm] using Rewrites.head (rs := rs) hm
-      · simpa [Rule.apply_eq_none h] using Rewrites.tail h ih
+        simpa [Rule.apply_eq_some (hrs _ (List.mem_cons_self ..)) hm] using
+          Rewrites.head (rs := rs) hm
+      · simpa [Rule.apply_eq_none h] using
+          Rewrites.tail h (ih fun r hr => hrs r (List.mem_cons_of_mem _ hr))
+
+/-- The rules of a destructor of the model rewrite to the value of the destructor's
+function. -/
+theorem Model.rewrites_iff (g : Sig.withBuiltin G n) {us : Fin n → Option A.Msg}
+    {v : Option A.Msg} : Rewrites (A.rules g) us v ↔ A.dtorFun g us = v :=
+  _root_.ProVerif.Specification.rewrites_iff fun _ hr i => A.rules_free g hr i
 
 /-- A projection denotes the standard operation: the `i`-th component of a `k`-tuple. -/
 theorem Model.dtorFun_proj (k : ℕ) (i : Fin k) (us : Fin 1 → Option A.Msg) :
     A.dtorFun (.inr (.proj k i)) us =
       liftFail (fun a => (StdOps.untuple k (a 0)).map (· i)) us := by
   have hrhs (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
-      (projRule A.toTheory k i).rhs.eval θ μ = some (θ i) := rfl
+      (projRule (Sig.withEv F Ev) k i).rhs.eval θ μ = some (θ i) := rfl
   have harg (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
-      ((projRule A.toTheory k i).args 0).eval θ μ =
+      ((projRule (Sig.withEv F Ev) k i).args 0).eval θ μ =
         some (StdOps.tuple k fun j => θ j) := rfl
+  have hfree := Builtin.rules_free A.theory (.proj k i) (List.mem_singleton.2 rfl)
   simp only [Model.dtorFun, Model.rules, Builtin.rules, List.findSome?_cons, List.findSome?_nil]
   rcases h0 : us 0 with _ | m
   · rw [Rule.apply_eq_none, liftFail]
@@ -179,31 +194,34 @@ theorem Model.dtorFun_proj (k : ℕ) (i : Fin k) (us : Fin 1 → Option A.Msg) :
         rw [← Option.some_injective _ this, StdOps.untuple_tuple] at hu
         cases hu
     · obtain rfl := StdOps.tuple_untuple hu
-      have hm : (projRule A.toTheory k i).Matching
+      have hm : (projRule (Sig.withEv F Ev) k i).Matching
           (fun n => if h : n < k then a ⟨n, h⟩ else a i) (fun _ => none) us := fun j => by
         rw [Subsingleton.elim j 0, harg, h0]
         congr 2
         funext j
         simp
-      rw [Rule.apply_eq_some hm, hrhs, liftFail]
+      rw [Rule.apply_eq_some hfree hm, hrhs, liftFail]
       rw [dif_pos fun j => by rw [Subsingleton.elim j 0, h0]; rfl]
       simp [h0, hu]
 
 /-- The attacker of the model, `Attacker.ofDecls` from its public declarations: its
 public constructors and free names, the functions of its public destructors, and the
 standard operations. -/
-noncomputable instance Model.attacker (A : Model F G) : Attacker A.Msg :=
-  Attacker.ofDecls A.pubFun (⋃ n, (fun g : G n => (⟨n, A.dtorFun (.inl g)⟩ :
-    Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubDtor n)
+instance Model.attacker (A : Model F G Ev) : Attacker A.Msg :=
+  Attacker.ofDecls (fun n => Sum.inl '' A.pubFun n)
+    (⋃ n, (fun g : G n => (⟨n, A.dtorFun (.inl g)⟩ :
+      Σ n, (Fin n → Option A.Msg) → Option A.Msg)) '' A.pubDtor n)
 
 /-- A public constructor applied to derivable messages is derivable; a data symbol is
 public. -/
-theorem Model.app_mem_derive {f : F.withData n} (hf : A.Public f) {S : Set A.Msg}
+theorem Model.app_mem_derive {f : Sig.cons F Ev n} (hf : A.Public f) {S : Set A.Msg}
     {ms : Fin n → A.Msg} (hms : ∀ i, ms i ∈ Attacker.derive S) :
     Theory.Msg.app f ms ∈ Attacker.derive S := by
   have hS : ClosedUnder Attacker.ops (Attacker.derive S) := Attacker.derive.isClosed_closure S
-  rcases f with f | d
-  · exact Attacker.app_mem_derive (Attacker.ofDecls_mem hf) hms
+  rcases f with (f | e) | d
+  · exact Attacker.app_mem_derive
+      (Attacker.ofDecls_mem (⟨f, hf, rfl⟩ : Sum.inl f ∈ Sum.inl '' A.pubFun n)) hms
+  · exact hf.elim
   cases d with
   | tuple _ =>
     exact hS _ (Or.inr (Or.inl (Or.inl ⟨n, rfl⟩))) (fun i => some (ms i))
@@ -221,7 +239,7 @@ matching of the arguments. -/
 theorem Model.dtorFun_eq_some {g : Sig.withBuiltin G n} {us : Fin n → Option A.Msg} {r : A.Msg}
     (h : A.dtorFun g us = some r) :
     ∃ ρ ∈ A.rules g, ∃ θ μ, ρ.Matching θ μ us ∧ ρ.rhs.eval θ μ = some r := by
-  have hrw : Rewrites (A.rules g) us (some r) := rewrites_iff.2 h
+  have hrw : Rewrites (A.rules g) us (some r) := (A.rewrites_iff g).2 h
   clear h
   generalize hv : some r = v at hrw
   generalize A.rules g = rs at hrw ⊢
@@ -344,13 +362,18 @@ theorem seqFin_run_update {r α : Type} :
       exact seqFin_run_update (fun j' => cs j'.succ) j
         (fun j' hj' => hv j'.succ (Fin.succ_lt_succ_iff.2 hj')) c fun us => K (Fin.cons u₀ us)
 
+/-- The message of the event `ev(M₁, …, Mₖ)` from the may-fail messages of its arguments:
+`fail` when one of them is `fail`. -/
+def eventMsg (e : Ev n) (us : Fin n → Option A.Msg) : Option A.Msg :=
+  liftFail (fun ms => some (Theory.Msg.app (.inl (.inr e)) ms)) us
+
 open Classical in
 /-- The computation of an expression under `n` binders in the environment `xs`, with a
-may-fail message as its result, `none` being `fail`: the arguments of a constructor or
-destructor run from left to right, `new` is `Proc.fresh`, `event` is `Proc.emit`, and `if`
-and `let` are case analyses on the result of their first expression. -/
-noncomputable def Expr.denote : {n : ℕ} → Expr F G n → (Fin n → A.Msg) →
-    Cont (Proc A.Msg) (Option A.Msg)
+may-fail message as its result, `none` being `fail`: the arguments of a constructor, a
+destructor or an event run from left to right, `new` is `Proc.fresh`, `event` is
+`Proc.emit` of the event message, and `if` and `let` are case analyses on the result of
+their first expression. -/
+def Expr.denote : {n : ℕ} → Expr F G Ev n → (Fin n → A.Msg) → Cont (Proc A.Msg) (Option A.Msg)
   | _, .term M, xs => pure (some (M.realize (env xs)))
   | _, .ctor f args, xs => do
     let us ← seqFin fun i => (args i).denote xs
@@ -370,17 +393,26 @@ noncomputable def Expr.denote : {n : ℕ} → Expr F G n → (Fin n → A.Msg) �
     match ← D.denote xs with
     | some a => D₁.denote (Fin.snoc xs a)
     | none => D₂.denote xs
-  | _, .event M D, xs => do
-    match ← M.denote xs with
-    | some e =>
-      Proc.emit e
+  | _, .event e args D, xs => do
+    let us ← seqFin fun i => (args i).denote xs
+    match eventMsg e us with
+    | some m =>
+      Proc.emit m
       D.denote xs
     | none => pure none
 
 /-- A may-fail term denotes `pure` of its value. -/
-theorem Val.denote {V : Expr F G 0} {u : Option A.Msg} (h : Val A V u) :
+theorem Val.denote {V : Expr F G Ev 0} {u : Option A.Msg} (h : Val A V u) :
     V.denote finZeroElim = pure u := by
-  cases h <;> rfl
+  induction h with
+  | term M => rfl
+  | @ctor k f args ms _ ih =>
+    have hargs : (fun i => (args i).denote finZeroElim) = fun i => pure (some (ms i)) := funext ih
+    simp only [Expr.denote]
+    rw [hargs, seqFin_pure, pure_bind]
+    exact congrArg pure
+      ((liftFail_eq_some (f := fun ms => some (Theory.Msg.app f ms))).2 ⟨_, fun _ => rfl, rfl⟩)
+  | fail => rfl
 
 /-! ## Processes
 
@@ -406,19 +438,20 @@ def letK (P : A.Msg → Proc A.Msg) (Q : Proc A.Msg) : Option A.Msg → Proc A.M
 
 open Classical in
 /-- After the condition of `if`: `P` on `true`, `Q` on another message. -/
-noncomputable def iteK (P Q : Proc A.Msg) : Option A.Msg → Proc A.Msg
+def iteK (P Q : Proc A.Msg) : Option A.Msg → Proc A.Msg
   | some c => if c = StdOps.tt then P else Q
   | none => Proc.nil
 
-/-- After the term of an event: the event, then `P`. -/
-def eventK (P : Proc A.Msg) : Option A.Msg → Proc A.Msg
-  | some e => Proc.event e P
+/-- After the arguments of an event: the event, then `P`. -/
+def eventK (e : Ev n) (P : Proc A.Msg) (us : Fin n → Option A.Msg) : Proc A.Msg :=
+  match eventMsg e us with
+  | some m => Proc.event m P
   | none => Proc.nil
 
 /-- The process of the trace semantics that a process under `n` binders denotes in the
 environment `xs`: the computations of its expressions run with the rest of the process as
 the continuation. -/
-noncomputable def Process.denote : {n : ℕ} → Process F G n → (Fin n → A.Msg) → Proc A.Msg
+def Process.denote : {n : ℕ} → Process F G Ev n → (Fin n → A.Msg) → Proc A.Msg
   | _, .nil, _ => Proc.nil
   | _, .out N M P, xs =>
     Cont.runWith (N.denote xs) fun c => Cont.runWith (M.denote xs) (outK (P.denote xs) c)
@@ -429,12 +462,13 @@ noncomputable def Process.denote : {n : ℕ} → Process F G n → (Fin n → A.
   | _, .let_ D P Q, xs =>
     Cont.runWith (D.denote xs) (letK (fun a => P.denote (Fin.snoc xs a)) (Q.denote xs))
   | _, .ite C P Q, xs => Cont.runWith (C.denote xs) (iteK (P.denote xs) (Q.denote xs))
-  | _, .event M P, xs => Cont.runWith (M.denote xs) (eventK (P.denote xs))
+  | _, .event e args P, xs =>
+    Cont.runWith (seqFin fun i => (args i).denote xs) (eventK e (P.denote xs))
 
 /-! ## Substitution -/
 
 theorem Expr.denote_subst :
-    ∀ {n m : ℕ} (σ : Fin n → Tm F m) (D : Expr F G n) (xs : Fin m → A.Msg),
+    ∀ {n m : ℕ} (σ : Fin n → Tm F Ev m) (D : Expr F G Ev n) (xs : Fin m → A.Msg),
       (D.subst σ).denote xs = D.denote fun i => (σ i).realize (env xs)
   | _, _, σ, .term M, xs => by simp only [Expr.subst, Expr.denote, Tm.realize_subst]
   | _, _, σ, .ctor f args, xs => by
@@ -472,12 +506,15 @@ theorem Expr.denote_subst :
       congr 1
       funext i
       exact realize_liftSubst σ xs a i
-  | _, _, σ, .event M D, xs => by
+  | _, _, σ, .event e args D, xs => by
     simp only [Expr.subst, Expr.denote]
-    rw [Expr.denote_subst σ M xs, Expr.denote_subst σ D xs]
+    rw [Expr.denote_subst σ D xs]
+    congr 2
+    funext i
+    exact Expr.denote_subst σ (args i) xs
 
 /-- `D{M/x}` denotes what `D` denotes in the environment extended by `M`'s message. -/
-theorem Expr.denote_inst (D : Expr F G (n + 1)) (M : Tm F n) (xs : Fin n → A.Msg) :
+theorem Expr.denote_inst (D : Expr F G Ev (n + 1)) (M : Tm F Ev n) (xs : Fin n → A.Msg) :
     (D.inst M).denote xs = D.denote (Fin.snoc xs (M.realize (env xs))) := by
   rw [Expr.inst, Expr.denote_subst]
   congr 1
@@ -487,7 +524,7 @@ theorem Expr.denote_inst (D : Expr F G (n + 1)) (M : Tm F n) (xs : Fin n → A.M
   | cast j => simp
 
 theorem Process.denote_subst :
-    ∀ {n m : ℕ} (σ : Fin n → Tm F m) (P : Process F G n) (xs : Fin m → A.Msg),
+    ∀ {n m : ℕ} (σ : Fin n → Tm F Ev m) (P : Process F G Ev n) (xs : Fin m → A.Msg),
       (P.subst σ).denote xs = P.denote fun i => (σ i).realize (env xs)
   | _, _, _, .nil, _ => rfl
   | _, _, σ, .out N M P, xs => by
@@ -527,11 +564,11 @@ theorem Process.denote_subst :
   | _, _, σ, .ite C P Q, xs => by
     simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ P xs,
       Process.denote_subst σ Q xs]
-  | _, _, σ, .event M P, xs => by
+  | _, _, σ, .event e args P, xs => by
     simp only [Process.subst, Process.denote, Expr.denote_subst, Process.denote_subst σ P xs]
 
 /-- `P{M/x}` denotes what `P` denotes in the environment extended by `M`'s message. -/
-theorem Process.denote_inst (P : Process F G (n + 1)) (M : Tm F n) (xs : Fin n → A.Msg) :
+theorem Process.denote_inst (P : Process F G Ev (n + 1)) (M : Tm F Ev n) (xs : Fin n → A.Msg) :
     (P.inst M).denote xs = P.denote (Fin.snoc xs (M.realize (env xs))) := by
   rw [Process.inst, Process.denote_subst]
   congr 1
@@ -539,5 +576,7 @@ theorem Process.denote_inst (P : Process F G (n + 1)) (M : Tm F n) (xs : Fin n �
   induction i using Fin.lastCases with
   | last => simp
   | cast j => simp
+
+end
 
 end ProVerif.Specification

@@ -8,8 +8,8 @@ import Mathlib.ModelTheory.Quotients
 /-!
 # Message algebras from ProVerif declarations
 
-The survey's messages (§2.1, with equations §2.5.1), built from the declarations of
-a ProVerif model, types erased:
+ProVerif's terms modulo its equational theory (manual, Appendix B; survey §2.1 and
+§2.5.1), built from the declarations of a model, types erased:
 
 * `free a` and `fun`/`const` declarations give a signature `F : Sig`, the free names
   being nullary constructors.  Raw terms are the terms of that first-order language
@@ -17,8 +17,8 @@ a ProVerif model, types erased:
   nonces that `new` creates.
 * `equation` declarations give a `Theory`: the equations `E`, and the symbols
   declared *free*, those at the root of no equation.  Messages `T.Msg` are terms
-  modulo the congruence `Eqv` that `E` generates, so Lean's `=` on messages is the
-  survey's `=_E`, and every instance of an equation is an equality of messages
+  modulo the congruence `Eqv` that `E` generates, so Lean's `=` on messages is
+  ProVerif's `=_E`, and every instance of an equation is an equality of messages
   (`Theory.satisfies_msg`).
 * A `reduc` declaration gives a destructor: a Lean function to `Option T.Msg`,
   `none` being `fail`, that matches on `Theory.Msg.view` with one branch per rewrite rule in
@@ -44,10 +44,10 @@ equations, by the universal property of the quotient.
 
 ## Deviation from the formal semantics
 
-The survey evaluates a destructor by matching its rules against the arguments
-*modulo `E`* (p. 31): a rule applies when some term equal to the argument is an
-instance of its left-hand side, and since several instances may give different
-results, `D ⇓ U` is a relation.  Here a destructor is a function on the quotient,
+The manual's Figure B.1, as the survey (p. 31), applies a rewrite rule when the
+arguments are equal *modulo `E`* to an instance of its left-hand side, and since
+several instances may give different results, rewriting is a relation.  Here a
+destructor is a function on the quotient,
 defined by matching on the view, so it can only inspect the free symbols.  That is
 the survey's condition for pattern-matching on data constructors (p. 35):
 `f(M₁, …, Mₙ) =_E M'` exactly when `M'` is `f(M'₁, …, M'ₙ)` with `Mᵢ =_E M'ᵢ`.  Under
@@ -288,9 +288,9 @@ end Theory.Msg
 /-! ## May-fail arguments -/
 
 /-- A function of `n` arguments, lifted to may-fail arguments: it fails as soon as one
-of them does.  Constructors evaluate this way (p. 26), and so do destructors whose rules
-have neither a may-fail variable nor the pattern `fail`, since `fail` never instantiates
-an ordinary variable (p. 20). -/
+of them does.  Constructors evaluate this way (manual, Figure B.1; survey p. 26), and so
+do destructors whose rules have neither a may-fail variable nor the pattern `fail`, since
+`fail` never instantiates an ordinary variable (survey p. 20). -/
 def liftFail {α β : Type} {n : ℕ} (f : (Fin n → α) → Option β) (a : Fin n → Option α) :
     Option β :=
   if h : ∀ i, (a i).isSome then f fun i => (a i).get (h i) else none

@@ -78,7 +78,8 @@ and nothing else is reserved. The precedences of processes are the manual's
 
 ## The recipe
 
-A model is translated piece by piece, types erased as in the survey's semantics.
+A model is translated piece by piece, types erased as in the manual's semantics
+(Appendix B).
 An identifier of the model that is a name the translation uses unqualified,
 listed in `Emit.reserved`, such as `T` or `pure`, is first renamed by appending
 primes until it is free, `T'`, and the definition of a renamed symbol says so in
@@ -148,7 +149,7 @@ its docstring.
    Lean `let`, and `let x = D in P else Q` for a `D` with a destructor a `match`
    on `D`, `some x` running `P` and `none` running `Q`. A destructor inside the
    terms of `out`, `in`, `event`, a macro call or a condition may fail, and a
-   failing term takes no branch (survey §2.5.2), so the term is matched first,
+   failing term takes no branch (manual, Appendix B), so the term is matched first,
    `t₀`, with `Proc.stop` for `none`. A condition `if D then P else Q` is a Lean
    `if` on a proposition when it can be: `M = N` and `M <> N` are the equality
    of messages and its negation, `&&`, `||` and `not` are `∧`, `∨` and `¬`,
