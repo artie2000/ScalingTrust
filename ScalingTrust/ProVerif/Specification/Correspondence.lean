@@ -9,20 +9,20 @@ import ScalingTrust.ProVerif.Specification.Attacks
 The theorems of the write-up's §3.2 about attacks and queries, for a model `A` and a
 closed process `P₀`; Adequacy is `ProVerif.Specification.Adequacy`.
 
-* **Attacks, as constructed** (`attacks_sound`, `attacks_complete`, `attacks_known`):
-  a trace of the manual's semantics against an adversary is an attack of the trace
-  semantics in which the attacker knows whatever the trace outputs publicly; an attack
-  is a trace of the manual's semantics against some adversary; and whatever the
+* **Attacks** (`attacks_sound`, `attacks_complete`, `attacks_known`), the write-up's
+  Theorem "Attacks": a trace of the manual's semantics against an adversary is an attack
+  of the trace semantics, in which the attacker knows whatever the trace outputs publicly;
+  an attack is a trace of the manual's semantics against some adversary; and whatever the
   attacker knows after an attack, some adversary outputs publicly at the last step of a
-  trace with the same created names and events.
-* **Attacks, as stated** (`events_sound`, `events_complete`, `known_sound`,
-  `known_complete`): the write-up's Theorem "Attacks", weakened from the above to what
-  the query theorems need.  (E): a trace against an adversary and an attack have the
-  same events, and conversely.  (K): a message a trace outputs publicly is known after
-  some attack with the same events, and a message known after an attack is output
-  publicly by some trace with the same events.
+  trace with the same created names and events, given a public name to output it on.
+* **Knowledge** (`Model.knows_iff`): the attacker of the calculus knows a message after a
+  trace exactly when the attacker of the trace semantics does, both starting from nothing
+  and adding what is communicated on a channel they derive; so a trace satisfies a query
+  fact exactly when the fact of the trace semantics holds after it
+  (`QueryFact.satisfied_iff`).
 * **Secrecy** (`secret_iff`) and **Correspondences** (`corr_iff`): the properties of the
-  trace semantics are the survey's, proved from (E) and (K) alone.
+  trace semantics are the survey's secrecy and the write-up's correspondences between
+  facts.
 
 The write-up's hypothesis that `P₀` and the secret mention no created name is not
 needed: a created name is a nonce index that the `new` step and `Proc.new` may both create.
@@ -41,7 +41,7 @@ variable {F G Ev : Sig} (A : Model F G Ev)
 abbrev Model.attacks (P₀ : Process F G Ev 0) : Proc A.Msg :=
   (P₀.denote finZeroElim).Attacks
 
-/-- What the attacker knows after the attack `t`. -/
+/-- What the attacker of the trace semantics knows after the attack `t`. -/
 abbrev Model.known (t : Trace A.Msg) : Set A.Msg :=
   t.attackerKnowledge (derive ∅)
 
@@ -136,100 +136,75 @@ theorem attacks_known (hpub : A.Npub.Nonempty) (P₀ : Process F G Ev 0) {t : Tr
   exact ⟨Q, hQ, _, hsur, by rw [obs_append, hobs, obs_comm]; exact List.append_nil _, a, ha, t',
     rfl⟩
 
-/-! ## The write-up's Theorem "Attacks"
+/-! ## Knowledge -/
 
-The write-up asks only for what the query theorems need: the same events, and an
-inclusion each way between what a trace of the survey outputs publicly and what the
-attacker knows after an attack, over the traces and attacks with the same events.
--/
+/-- The knowledge of the attacker of the calculus after a trace, closed under derivation, is
+the knowledge of the attacker of the trace semantics: both start from nothing and add what
+is communicated on a channel they derive. -/
+theorem Model.derive_knowledge (t : Trace A.Msg) :
+    derive (A.knowledge t) = t.attackerKnowledge (derive ∅) := by
+  suffices h : ∀ S : Set A.Msg,
+      derive (t.foldl (fun K a => K ∪ {m | ∃ c, a = .comm c m ∧ A.Derives K c}) S) =
+        t.attackerKnowledge (derive S) from h ∅
+  induction t with
+  | nil => exact fun _ => rfl
+  | cons a t ih =>
+    intro S
+    have hX : {m | ∃ c, a = Act.comm c m ∧ A.Derives S c} =
+        {m | ∃ c, a = Act.comm c m ∧ c ∈ derive S} :=
+      Set.ext fun _ => by simp only [Set.mem_ofPred_eq, Model.derives_iff_derive]
+    have hS : derive (S ∪ {m | ∃ c, a = Act.comm c m ∧ c ∈ derive S}) =
+        derive (derive S ∪ {m | ∃ c, a = Act.comm c m ∧ c ∈ derive S}) :=
+      le_antisymm (derive.monotone (Set.union_subset_union_left _ (derive.le_closure S)))
+        (derive.closure_min (Set.union_subset (derive.monotone Set.subset_union_left)
+          (Set.subset_union_right.trans (derive.le_closure _))) (derive.isClosed_closure _))
+    simp only [Trace.attackerKnowledge, List.foldl_cons]
+    rw [ih, hX, hS]
+    rfl
 
-/-- `t` and `t'` have the same events. -/
-def SameEvents {M : Type} (t t' : Trace M) : Prop := ∀ e, Act.event e ∈ t ↔ Act.event e ∈ t'
+/-- The attacker of the calculus knows `m` after the trace `t` exactly when the attacker of
+the trace semantics does. -/
+theorem Model.knows_iff (t : Trace A.Msg) (m : A.Msg) :
+    A.Knows t m ↔ (Fact.knows m).Holds t := by
+  rw [Model.Knows, Model.derives_iff_derive, Model.derive_knowledge]
+  exact Iff.rfl
 
-theorem SameEvents.refl {M : Type} (t : Trace M) : SameEvents t t := fun _ => Iff.rfl
-
-theorem sameEvents_of_obs {M : Type} {t t' : Trace M} (h : obs t' = obs t) :
-    SameEvents t t' := fun e => by
-  rw [← event_mem_obs (t := t), ← event_mem_obs (t := t'), h]
-
-/-- (E): a trace of the manual's semantics against an adversary has an attack with the
-same events. -/
-theorem events_sound (P₀ Q : Process F G Ev 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
-    (ht : A.ManualTrace (.against P₀ Q) t) : ∃ t' ∈ A.attacks P₀, SameEvents t t' :=
-  ⟨t, (attacks_sound A P₀ Q hQ ht).1, SameEvents.refl t⟩
-
-/-- (E): an attack has a trace of the manual's semantics against some adversary with the
-same events. -/
-theorem events_complete (P₀ : Process F G Ev 0) {t : Trace A.Msg} (ht : t ∈ A.attacks P₀) :
-    ∃ Q, A.Adversary Q ∧ ∃ t', A.ManualTrace (.against P₀ Q) t' ∧ SameEvents t t' :=
-  let ⟨Q, hQ, h⟩ := attacks_complete A P₀ ht
-  ⟨Q, hQ, t, h, SameEvents.refl t⟩
-
-/-- (K): a message a trace of the manual's semantics outputs publicly is known after
-some attack with the same events.  The write-up assumes `N_pub` nonempty here too; it is
-not needed. -/
-theorem known_sound (P₀ Q : Process F G Ev 0) (hQ : A.Adversary Q) {t : Trace A.Msg}
-    (ht : A.ManualTrace (.against P₀ Q) t) {m : A.Msg} (hm : A.OutputsPublicly t m) :
-    ∃ t' ∈ A.attacks P₀, SameEvents t t' ∧ m ∈ A.known t' :=
-  let ⟨h, hk⟩ := attacks_sound A P₀ Q hQ ht
-  ⟨t, h, SameEvents.refl t, hk m hm⟩
-
-/-- (K): a message known after an attack is output publicly by some trace of the manual's
-semantics against some adversary with the same events. -/
-theorem known_complete (hpub : A.Npub.Nonempty) (P₀ : Process F G Ev 0) {t : Trace A.Msg}
-    (ht : t ∈ A.attacks P₀) {m : A.Msg} (hm : m ∈ A.known t) :
-    ∃ Q, A.Adversary Q ∧ ∃ t', A.ManualTrace (.against P₀ Q) t' ∧ SameEvents t t' ∧
-      A.OutputsPublicly t' m := by
-  obtain ⟨Q, hQ, t', ht', hobs, a, ha, t'', rfl⟩ := attacks_known A hpub P₀ ht hm
-  exact ⟨Q, hQ, _, ht', sameEvents_of_obs hobs, a, ha,
-    List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
+/-- A trace satisfies a query fact exactly when the fact of the trace semantics holds after
+it. -/
+theorem QueryFact.satisfied_iff {X : Type} (t : Trace A.Msg) (σ : X → A.Msg) :
+    ∀ Fq : QueryFact F Ev X, Fq.Satisfied A t σ ↔ (Fq.inst σ).Holds t
+  | .event _ _ => Iff.rfl
+  | .attacker _ => A.knows_iff t _
 
 /-! ## Secrecy and correspondences -/
 
 /-- Secrecy: `query attacker(M)` holds of the denotation exactly when `P₀` preserves
-the secrecy of `M` from `N_pub`. -/
+the secrecy of `M` from `N_pub`, the survey's Definition 3.3. -/
 theorem secret_iff (hpub : A.Npub.Nonempty) (P₀ : Process F G Ev 0) (M : Tm F Ev 0) :
     (P₀.denote finZeroElim).Secret (Tm.msg A M) ↔ A.Preserves P₀ M := by
   constructor
   · intro h Q hQ t ht hout
-    obtain ⟨t', ht', -, hk⟩ := known_sound A P₀ Q hQ ht hout
-    exact h t' ht' hk
+    obtain ⟨ht', hk⟩ := attacks_sound A P₀ Q hQ ht
+    exact h t ht' (hk _ hout)
   · intro h t ht hk
-    obtain ⟨Q, hQ, t', ht', -, hout⟩ := known_complete A hpub P₀ ht hk
-    exact h Q hQ t' ht' hout
+    obtain ⟨Q, hQ, t', ht', -, a, ha, t'', rfl⟩ := attacks_known A hpub P₀ ht hk
+    exact h Q hQ _ ht' ⟨a, ha, List.mem_append_right _ (List.mem_singleton.2 rfl)⟩
 
-/-- Correspondences: `query F ==> event(ev(H₁, …, Hₖ))` holds of the denotation exactly
-when `P₀` satisfies `F ⇝ event(ev(H₁, …, Hₖ))` against `N_pub`-adversaries, `N_pub` being
-nonempty if `F` is an attacker fact. -/
-theorem corr_iff (P₀ : Process F G Ev 0) {X : Type} (Fq : QueryFact F Ev X) {k : ℕ} (e : Ev k)
-    (H : Fin k → (Sig.cons F Ev).lang.Term X) (hpub : (∃ M, Fq = .attacker M) → A.Npub.Nonempty) :
-    A.Satisfies P₀ Fq (.event e H) ↔
-      (P₀.denote (A := A) finZeroElim).Corr (fun σ => Fq.inst σ)
-        fun σ => (QueryFact.event e H).inst σ := by
+/-- Correspondences: `query F ==> H` holds of the denotation exactly when `P₀` satisfies
+`F ⇝ H` against `N_pub`-adversaries: a trace of the manual's semantics against an adversary
+is an attack and conversely, and the query facts are satisfied by a trace exactly when the
+facts of the trace semantics hold after it. -/
+theorem corr_iff (P₀ : Process F G Ev 0) {X : Type} (Fq Hq : QueryFact F Ev X) :
+    A.Satisfies P₀ Fq Hq ↔
+      (P₀.denote (A := A) finZeroElim).Corr (fun σ => Fq.inst σ) fun σ => Hq.inst σ := by
   constructor
   · intro h σ t ht hF
-    obtain ⟨Q, hQ, t', ht', hev, hsat⟩ : ∃ Q, A.Adversary Q ∧ ∃ t',
-        A.ManualTrace (.against P₀ Q) t' ∧ SameEvents t t' ∧ Fq.Satisfied A t' σ := by
-      cases Fq with
-      | event e' args =>
-        obtain ⟨Q, hQ, t', ht', hev⟩ := events_complete A P₀ ht
-        exact ⟨Q, hQ, t', ht', hev, (hev _).1 hF⟩
-      | attacker M =>
-        obtain ⟨Q, hQ, t', ht', hev, hout⟩ := known_complete A (hpub ⟨M, rfl⟩) P₀ ht hF
-        exact ⟨Q, hQ, t', ht', hev, hout⟩
-    obtain ⟨σ', hσ', hH⟩ := h Q hQ t' ht' σ hsat
-    exact ⟨σ', hσ', (hev _).2 hH⟩
+    obtain ⟨Q, hQ, ht'⟩ := attacks_complete A P₀ ht
+    obtain ⟨σ', hσ', hH⟩ := h Q hQ t ht' σ ((QueryFact.satisfied_iff A t σ Fq).2 hF)
+    exact ⟨σ', hσ', (QueryFact.satisfied_iff A t σ' Hq).1 hH⟩
   · intro h Q hQ t ht σ hF
-    obtain ⟨t', ht', hev, hF'⟩ : ∃ t' ∈ A.attacks P₀, SameEvents t t' ∧
-        (Fq.inst σ).Holds t' := by
-      cases Fq with
-      | event e' args =>
-        obtain ⟨t', ht', hev⟩ := events_sound A P₀ Q hQ ht
-        exact ⟨t', ht', hev, (hev _).1 hF⟩
-      | attacker M =>
-        obtain ⟨t', ht', hev, hk⟩ := known_sound A P₀ Q hQ ht hF
-        exact ⟨t', ht', hev, hk⟩
-    obtain ⟨σ', hσ', hH⟩ := h σ t' ht' hF'
-    exact ⟨σ', hσ', (hev _).2 hH⟩
+    obtain ⟨σ', hσ', hH⟩ :=
+      h σ t (attacks_sound A P₀ Q hQ ht).1 ((QueryFact.satisfied_iff A t σ Fq).1 hF)
+    exact ⟨σ', hσ', (QueryFact.satisfied_iff A t σ' Hq).2 hH⟩
 
 end ProVerif.Specification

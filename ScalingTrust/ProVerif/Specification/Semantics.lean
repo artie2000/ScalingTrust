@@ -57,9 +57,12 @@ on process configurations.
   processes (`Runs.ctx`); a run of the arguments of a `k`-ary context, `ArgRuns`, through
   the context (`ArgRuns.lift`, `Runs.argCtx`).
 * **The survey's definitions** 3.1–3.5, to which the manual refers for the adversary and
-  the properties of queries, and the write-up's Definitions "Satisfaction" and
-  "Correspondences between facts", for single query facts, over the manual's semantics:
-  an adversary may use `new`, `if` and `let` inside its terms.
+  the properties of queries, and the write-up's Definitions "Deduction, knowledge",
+  "Satisfaction" and "Correspondences between facts", for single query facts, over the
+  manual's semantics: an adversary may use `new`, `if` and `let` inside its terms, and an
+  attacker fact is satisfied when the attacker knows the term, as the manual reads it
+  (§4.3.1): derives it, by the public constructors and destructors, from what was
+  communicated on channels it could derive.
 -/
 
 namespace ProVerif.Specification
@@ -1100,6 +1103,27 @@ Definition 3.3. -/
 def Model.Preserves (P₀ : Process F G Ev 0) (M : Tm F Ev 0) : Prop :=
   ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ¬ A.OutputsPublicly t (Tm.msg A M)
 
+/-- The attacker derives `m` from the messages `S`: the Dolev–Yao deduction of the write-up's
+Definition "Deduction, knowledge", applying the public constructors and, by the manual's
+rewriting, the public destructors to what it has, as the survey's adversary does (§3.1). -/
+inductive Model.Derives (S : Set A.Msg) : A.Msg → Prop
+  | mem {m : A.Msg} : m ∈ S → Model.Derives S m
+  | ctor {k : ℕ} (f : Sig.cons F Ev k) {ms : Fin k → A.Msg} : A.Public f →
+      (∀ i, Model.Derives S (ms i)) → Model.Derives S (Theory.Msg.app f ms)
+  | dtor {k : ℕ} (g : Sig.withBuiltin G k) {us : Fin k → Option A.Msg} {m : A.Msg} :
+      A.PublicDt g → (∀ i m', us i = some m' → Model.Derives S m') →
+      Rewrites (A.rules g) us (some m) → Model.Derives S m
+
+/-- The attacker's knowledge after the trace `t`: nothing at first, the public names being
+public nullary symbols, and then every message communicated on a channel it could derive at
+the time, since it intercepts every message on a channel it has (survey §3.1), whoever
+received the message. -/
+def Model.knowledge (t : Trace A.Msg) : Set A.Msg :=
+  t.foldl (fun K a => K ∪ {m | ∃ c, a = .comm c m ∧ A.Derives K c}) ∅
+
+/-- The attacker knows `m` after the trace `t`: it derives `m` from its knowledge. -/
+def Model.Knows (t : Trace A.Msg) (m : A.Msg) : Prop := A.Derives (A.knowledge t) m
+
 /-- A query fact over the variables `X`: `event(ev(M₁, …, Mₖ))` or `attacker(M)` with the
 `Mᵢ` and `M` terms over constructors, free names and `X`. -/
 inductive QueryFact (F Ev : Sig) (X : Type) : Type
@@ -1107,11 +1131,13 @@ inductive QueryFact (F Ev : Sig) (X : Type) : Type
   | attacker (M : (Sig.cons F Ev).lang.Term X)
 
 /-- The trace satisfies the instance of the query fact under `σ`, the write-up's
-Definition "Satisfaction". -/
+Definition "Satisfaction": an attacker fact when the attacker knows the term, as the manual
+reads it on either side of a correspondence (§4.3.1), and an event fact when the event is
+executed. -/
 def QueryFact.Satisfied {X : Type} (t : Trace A.Msg) (σ : X → A.Msg) : QueryFact F Ev X → Prop
   | .event e args =>
     Act.event (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ) ∈ t
-  | .attacker M => A.OutputsPublicly t (M.realize σ)
+  | .attacker M => A.Knows t (M.realize σ)
 
 variable {A}
 

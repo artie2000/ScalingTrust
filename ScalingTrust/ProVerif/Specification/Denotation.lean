@@ -18,7 +18,9 @@ The write-up's Definition "Translation".
   `Attacker.ofDecls` from the public constructors and the functions of the public
   declared destructors; so its operations are the standard ones besides, which
   `Model.Public` and `Model.PublicDt` count as public, as they do the boolean
-  destructors, which add nothing to what it derives (`Model.dtorFun_mem_derive`).
+  destructors, which add nothing to what it derives (`Model.dtorFun_mem_derive`).  The
+  deduction of the calculus, `Model.Derives`, is derivation in the trace semantics
+  (`Model.derives_iff_derive`).
 * An expression under `n` binders denotes, in an environment `env xs` with
   `xs : Fin n → A.Msg`, a computation in the continuation monad of the trace
   semantics with a may-fail message as its result, `Expr.denote`, as the translator
@@ -283,6 +285,43 @@ theorem Model.dtorFun_mem_derive {g : Sig.withBuiltin G n} (hg : A.PublicDt g) {
     · rw [Theory.Msg.ff_def]
       exact A.app_mem_derive (by trivial) fun i => i.elim0
     · exact hus i r hi
+
+/-- The attacker's deduction of the calculus is derivation in the trace semantics: the
+public constructors and destructors, the standard operations among them, are the operations
+of `Model.attacker`. -/
+theorem Model.derives_iff_derive {S : Set A.Msg} {m : A.Msg} :
+    A.Derives S m ↔ m ∈ Attacker.derive S := by
+  constructor
+  · intro h
+    induction h with
+    | mem hm => exact Attacker.derive.le_closure S hm
+    | ctor f hf _ ih => exact A.app_mem_derive hf ih
+    | dtor g hg _ hrw ih => exact A.dtorFun_mem_derive hg ih ((A.rewrites_iff g).1 hrw)
+  · intro h
+    refine Attacker.derive.closure_min (fun m hm => Model.Derives.mem hm) ?_ h
+    show ClosedUnder Attacker.ops {m | A.Derives S m}
+    rintro o ((ho | hd) | hs) args hargs r hr
+    · obtain ⟨n, _, ⟨f, hf, rfl⟩, rfl⟩ := Set.mem_iUnion.1 ho
+      dsimp only at hr
+      obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
+      obtain rfl := Option.some_injective _ hr
+      exact Model.Derives.ctor _ hf fun i => hargs i _ (hms i)
+    · obtain ⟨n, g, hg, rfl⟩ := Set.mem_iUnion.1 hd
+      dsimp only at hr
+      exact Model.Derives.dtor (.inl g) hg hargs ((A.rewrites_iff _).2 hr)
+    · rcases hs with (⟨n, rfl⟩ | ⟨⟨k, i⟩, rfl⟩) | rfl | rfl <;> dsimp only at hr
+      · obtain ⟨ms, hms, hr⟩ := liftFail_eq_some.1 hr
+        obtain rfl := Option.some_injective _ hr
+        rw [Set.mem_ofPred_eq, Theory.Msg.tuple_def]
+        exact Model.Derives.ctor (.inr (.tuple n)) trivial fun i => hargs i _ (hms i)
+      · exact Model.Derives.dtor (.inr (.proj k i)) trivial hargs
+          ((A.rewrites_iff _).2 ((A.dtorFun_proj k i args).trans hr))
+      · obtain rfl := Option.some_injective _ hr
+        rw [Set.mem_ofPred_eq, Theory.Msg.tt_def]
+        exact Model.Derives.ctor (.inr .tt) trivial fun i => i.elim0
+      · obtain rfl := Option.some_injective _ hr
+        rw [Set.mem_ofPred_eq, Theory.Msg.ff_def]
+        exact Model.Derives.ctor (.inr .ff) trivial fun i => i.elim0
 
 /-! ## Expressions -/
 

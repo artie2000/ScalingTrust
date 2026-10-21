@@ -643,10 +643,6 @@ into their offers (`CommSplit`), which a run can always do (`Runs.commSplit`).
 def obs {M : Type} (t : Trace M) : Trace M :=
   t.filter fun a => match a with | .new _ => true | .event _ => true | _ => false
 
-theorem event_mem_obs {M : Type} {t : Trace M} {e : M} :
-    Act.event e ∈ obs t ↔ Act.event e ∈ t := by
-  simp [obs, List.mem_filter]
-
 theorem obs_comm {M : Type} (c m : M) (t : Trace M) : obs (.comm c m :: t) = obs t := rfl
 
 theorem obs_new {M : Type} (k : ℕ) (t : Trace M) : obs (.new k :: t) = .new k :: obs t := rfl

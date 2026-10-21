@@ -24,12 +24,12 @@ docstrings; the ones that shape the design are listed below.
 | Module | Contents |
 | --- | --- |
 | `ProVerif.Specification.Syntax` | Terms, expressions and processes of the write-up's Definition "Source syntax"; rewrite rules of destructors; a `Model`, the write-up's Definition "Model" with the conditions (R1) and (R2), and the theory of the trace semantics it instantiates; substitution for the bound variables |
-| `ProVerif.Specification.Semantics` | Matching and rewriting by rules; the labelled step relations on term configurations (Figure B.1) and on configurations (Figure B.2), weak traces; steps and runs of processes beside others, of expressions in contexts and of the arguments of a `k`-ary context; the survey's Definitions 3.1–3.5 and the write-up's "Satisfaction" and "Correspondences between facts" |
+| `ProVerif.Specification.Semantics` | Matching and rewriting by rules; the labelled step relations on term configurations (Figure B.1) and on configurations (Figure B.2), weak traces; steps and runs of processes beside others, of expressions in contexts and of the arguments of a `k`-ary context; the survey's Definitions 3.1–3.5 and the write-up's "Deduction, knowledge", "Satisfaction" and "Correspondences between facts" |
 | `ProVerif.Specification.Invariance` | Equality modulo `E` of terms, expressions and processes, and the invariance of runs under it: a step on a term `M' =_E M` counts as a step on `M` |
 | `ProVerif.Specification.Denotation` | Destructors as functions, the projections denoting the standard operations and the boolean destructors yielding a boolean or an argument, and the model's `Attacker` instance; the computation of an expression and the denotation of a process in `TraceSemantics`; substitution commutes with denotation |
 | `ProVerif.Specification.Adequacy` | The write-up's Lemma "Expressions" and Theorem "Adequacy": the traces of the computation of an expression with a continuation are its runs followed by traces of the continuation; a closed process denotes its weak traces; the Lemma "Evaluation" for effect-free expressions |
 | `ProVerif.Specification.Attacks` | Runs of `N_pub`-adversaries are attacker traces; attacker traces are replayed by adversary processes; an adversary intercepting the protocol's communications |
-| `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences" |
+| `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences"; the attackers of the calculus and of the trace semantics know the same messages after a trace |
 
 Everything is proved; nothing is admitted.
 
@@ -146,16 +146,21 @@ Everything is proved; nothing is admitted.
 * **Queries with single facts.** `Model.Satisfies` is the write-up's
   Definition "Correspondences between facts" for one fact on each side, which
   is what `Proc.Corr` of the trace semantics checks.
-* **The Attacks theorem.** The write-up states it as lightly as the query
-  theorems need, as two correspondences between the traces of the manual
-  against adversaries and the attacks: of their events, and, when `N_pub` is
-  nonempty, of what a trace outputs publicly and what the attacker knows
-  after an attack, each taken over the traces with the same events. The Lean
-  proves more, which the constructions give for free: in `attacks_sound` and
-  `attacks_complete` the trace of the manual is the attack itself, and in
-  `attacks_known` the trace has the same created names and events as the
-  attack and outputs the message at its last step. The write-up's form is
-  derived from these (`events_sound`, `events_complete`, `known_sound`,
-  `known_complete`), and Secrecy and Correspondences are proved from it
-  alone, so that they survive a change of the constructions. The write-up's
-  hypothesis that `P₀` and the secret mention no created name is not needed.
+* **Attacker facts are knowledge.** The survey defines correspondences for
+  event facts only (Definition 3.5) and uses public output only for secrecy
+  (Definitions 3.2 and 3.3). An attacker fact in a query is read as the manual
+  reads it (§4.3.1), "the attacker knows `M`": `Model.Derives` is the
+  Dolev–Yao deduction with the public constructors and destructors,
+  `Model.knowledge` what the attacker has intercepted along a trace, every
+  message communicated on a channel it could derive, and `Model.Knows` their
+  composition. `Model.knows_iff` proves it the knowledge of the trace
+  semantics, which is defined on its own.
+* **The Attacks theorem.** The write-up states it as the Lean proves it: in
+  `attacks_sound` and `attacks_complete` the trace of the manual against an
+  adversary is the attack itself, and conversely; `Model.knows_iff` says that
+  the two attackers know the same messages after a trace; and `attacks_known`
+  finds, for a message known after an attack, a trace against some adversary
+  with the same created names and events that outputs it publicly at its last
+  step, when `N_pub` is nonempty. Correspondences follows from the first two
+  and Secrecy from the first and the last. The write-up's hypothesis that `P₀`
+  and the secret mention no created name is not needed.

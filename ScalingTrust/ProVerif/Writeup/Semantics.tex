@@ -25,7 +25,6 @@
 \newcommand{\Act}{\mathrm{Act}}
 \newcommand{\Proc}{\mathrm{Proc}}
 \newcommand{\known}{\operatorname{known}}
-\newcommand{\outputs}{\operatorname{outputs}}
 \newcommand{\Fact}{\mathrm{Fact}}
 \newcommand{\Closed}{\mathrm{Closed}}
 \newcommand{\nonces}{\operatorname{nonces}}
@@ -322,8 +321,12 @@ The survey states these for its own calculus. Here the traces are those of the m
 
 For an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ write $\mathcal{C}_Q$ for the configuration $\mathcal{N}_{\mathrm{priv}},\{P_0,Q\}$.
 
+\begin{definition}[Deduction, knowledge]\label{def:knowledge}
+The attacker \emph{derives} a closed term $M$ from a set $S$ of closed terms, written $S\Vdash M$, if this follows from: $S\Vdash M$ when $M=_E M'$ for some $M'\in S$; $S\Vdash f(M_1,\dots,M_n)$ when $f$ is a public constructor, a data symbol among them, and $S\Vdash M_1,\dots,S\Vdash M_n$; and $S\Vdash M$ when $g$ is a public destructor, a built-in one among them, $g(U_1,\dots,U_n)\to M$ and $S\Vdash U_i$ for every $U_i$ that is a term. This is what the survey's adversary computes, applying the public function symbols to what it has (\S3.1). The attacker's \emph{knowledge} $K(\mathrm{Tr})$ after a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ is the set of closed terms collected along it: none at first, the public names being public nullary symbols, and, at each communication step with the output $\mathsf{out}(N,M');Q'$, the term $M'$ when $K\Vdash N$ for the knowledge $K$ collected so far, since the attacker intercepts every message on a channel it has, whoever received it. The attacker \emph{knows} $M$ after $\mathrm{Tr}$ if $K(\mathrm{Tr})\Vdash M$.
+\end{definition}
+
 \begin{definition}[Satisfaction]\label{def:satisfies}
-A trace \emph{satisfies} $\mathsf{attacker}(M)$ if it outputs $M$ publicly, and \emph{satisfies} $\mathsf{event}(e)$ if it executes $\mathsf{event}\ e$.
+A trace \emph{satisfies} $\mathsf{attacker}(M)$ if the attacker knows $M$ after it, which is how the manual reads an attacker fact on either side of a correspondence (\S4.3.1), and \emph{satisfies} $\mathsf{event}(e)$ if it executes $\mathsf{event}\ e$.
 \end{definition}
 
 \begin{definition}[Correspondences between facts]\label{def:corr-facts}
@@ -419,21 +422,13 @@ Let $D$ be a closed expression whose names are free names and symbols $\nu_k$, l
 For every closed process $P$ whose names are free names and symbols $\nu_k$, $\sem{P}\rho=\Tr(\emptyset,\{P\})$, where $\rho$ extends $\rho_0$ by $\rho(\nu_k)=\nu_k$. For all finite multisets $\mathcal{P},\mathcal{Q}$ of such processes, $\Tr(\emptyset,\mathcal{P}\uplus\mathcal{Q})=\Tr(\emptyset,\mathcal{P})\mid\Tr(\emptyset,\mathcal{Q})$.
 \end{theorem}
 
-Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. For a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ let $\outputs(\mathrm{Tr})\subseteq\mathcal{M}$ be the set of $\iota M$ for the terms $M$ that $\mathrm{Tr}$ outputs publicly, and for $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \emph{have the same events} if $\mathrm{Tr}$ executes $\mathsf{event}\ e$ exactly when $\mathsf{ev}(\iota e)$ occurs in $t$.
+Let $\mathcal{A}_0=\Attacks(\sem{P_0}\rho_0)$. A trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ is, through $\iota$, a run of the labelled configuration $(\emptyset,\{P_0,Q\})$ none of whose labels is an offer; its \emph{word} $t(\mathrm{Tr})\in\Act^*$ is the sequence of its labels, which records the names it creates, its communications and its events. For $t\in\Act^*$ say that $\mathrm{Tr}$ and $t$ \emph{have the same events} if $\mathrm{Tr}$ executes $\mathsf{event}\ e$ exactly when $\mathsf{ev}(\iota e)$ occurs in $t$.
 
 \begin{theorem}[Attacks]\label{thm:A}
-Fix an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$ and a trace $\mathrm{Tr}$ from $\mathcal{C}_Q$, as well as a trace $t\in\mathcal{A}_0$.
 \begin{enumerate}
-\item[(E)]
-\begin{enumerate}
-\item[(i)] There is $t'\in\mathcal{A}_0$ with the same events as $\mathrm{Tr}$.
-\item[(ii)] There are an $\mathcal{N}_{\mathrm{pub}}$-adversary $Q'$ and a trace $\mathrm{Tr}'$ from $\mathcal{C}_{Q'}$ with the same events as $t$.
-\end{enumerate}
-\item[(K)] Suppose further $\mathcal{N}_{\mathrm{pub}}\ne\emptyset$.
-\begin{enumerate}
-\item[(i)] For every $m\in\outputs(\mathrm{Tr})$ there is $t'$ as in (E)(i) such that $m\in\known(\langle\emptyset\rangle,t')$.
-\item[(ii)] For every $m\in\known(\langle\emptyset\rangle,t)$ there are $Q'$ and $\mathrm{Tr}'$ as in (E)(ii) such that $m\in\outputs(\mathrm{Tr}')$.
-\end{enumerate}
+\item[(i)] The words of the traces from $\mathcal{C}_Q$, over all $\mathcal{N}_{\mathrm{pub}}$-adversaries $Q$, are exactly the traces in $\mathcal{A}_0$.
+\item[(ii)] For every trace $\mathrm{Tr}$ from $\mathcal{C}_Q$ and closed term $M$, the attacker knows $M$ after $\mathrm{Tr}$ if and only if $\iota M\in\known(\langle\emptyset\rangle,t(\mathrm{Tr}))$.
+\item[(iii)] If $\mathcal{N}_{\mathrm{pub}}\ne\emptyset$, $t\in\mathcal{A}_0$ and $m\in\known(\langle\emptyset\rangle,t)$, then some trace from $\mathcal{C}_Q$, for some $\mathcal{N}_{\mathrm{pub}}$-adversary $Q$, has the same events as $t$ and outputs publicly a term $M$ with $\iota M=m$.
 \end{enumerate}
 \end{theorem}
 
@@ -446,12 +441,8 @@ The hypothesis $\mathcal{N}_{\mathrm{pub}}\ne\emptyset$ cannot be dropped: when 
 \end{remark}
 
 \begin{theorem}[Correspondences]\label{thm:corr}
-Let $F$ and $H$ be query facts over $X$ such that $H$ is an event fact, and let $\mathcal{N}_{\mathrm{pub}}\ne\emptyset$ if $F$ is an attacker fact. Then $P_0$ satisfies $F\rightsquigarrow H$ against $\mathcal{N}_{\mathrm{pub}}$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$.
+Let $F$ and $H$ be query facts over $X$. Then $P_0$ satisfies $F\rightsquigarrow H$ against $\mathcal{N}_{\mathrm{pub}}$-adversaries if and only if $\Corr(\sem{P_0}\rho_0,\ \sigma\mapsto\sigma F,\ \sigma\mapsto\sigma H)$.
 \end{theorem}
-
-\begin{remark}
-Neither hypothesis can be dropped. When $\mathcal{N}_{\mathrm{pub}}=\emptyset$ and $F=\mathsf{attacker}(M)$, $P_0$ satisfies the correspondence vacuously, whereas $\Corr$ fails as soon as $\emptyset\vdash\sigma M$ for some valuation $\sigma$. For $H=\mathsf{attacker}(M)$, Definition~\ref{def:satisfies} requires $\sigma M$ itself to be output publicly, whereas $\mathsf{knows}(\sigma M)$ holds as soon as $\sigma M$ is derivable: with the symmetric encryption of the survey's \S2.1, $\mathcal{N}_{\mathrm{pub}}=\{c\}$, an event symbol $e$ of arity $0$ and $P_0=\mathsf{out}(c,\mathsf{senc}(s,k));\mathsf{out}(c,k);\mathsf{event}\ e$, $\Corr$ holds for $\mathsf{event}(e)\rightsquigarrow\mathsf{attacker}(s)$ while the correspondence of Definition~\ref{def:corr-facts} fails. The reading by derivability is ProVerif's.
-\end{remark}
 
 \begin{thebibliography}{1}
 \bibitem{BlanchetFnTPS16}
