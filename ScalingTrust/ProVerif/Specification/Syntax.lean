@@ -158,7 +158,10 @@ def MayFail.ff : MayFail F.withData := .term (.func (.inr .ff) ![])
 destructors have the survey's rules (§2.1, (2.5)), which are the manual's (Appendix B),
 `u` a may-fail variable so that `and(false, fail)` is `false`:
 `equal(x, x) → true; equal(x, y) → false`, `not(true) → false; not(x) → true`,
-`and(true, u) → u; and(x, u) → false` and `or(true, u) → true; or(x, u) → u`. -/
+`and(true, u) → u; and(x, u) → false` and `or(true, u) → true; or(x, u) → u`.  The manual's
+§3.1.4 says instead that the second operand of `&&` and `||` is not evaluated when the first
+decides; Appendix B takes precedence (the folder README's first principle), so both operands
+are evaluated and the effects of the second run. -/
 def Builtin.rules (F : Sig) : ∀ {n : ℕ}, Builtin n → List (Rule F.withData n)
   | _, .proj k i => [projRule F k i]
   | _, .equal =>

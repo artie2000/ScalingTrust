@@ -4,9 +4,11 @@
    conditional, a destructor in an output, else branches, events, queries with
    variables, queries that a fact never holds, and terms with effects (§4.1.4):
    function macros that create a name and emit an event, a conditional term whose
-   condition may fail, an event in an argument after a sibling that fails, and a
-   restriction and a term evaluation inside an output; a free name, T, whose
-   name the translation uses, so that it is renamed; and tuples and booleans: a
+   condition may fail, an event in an argument after a sibling that fails, a
+   restriction and a term evaluation inside an output, and calls of a function
+   and of a process macro whose first argument fails before the second emits an
+   event; a free name, T, and a process macro, forward, whose names the
+   translation uses, so that they are renamed; and tuples and booleans: a
    tuple as a message, in a rewrite rule and in a query, tuple patterns with an
    equality test in an input and a term evaluation, a pattern on a data
    constructor, the booleans as values, and conditions with the connectives,
@@ -57,6 +59,9 @@ query attacker((empty, T)).
 
 letfun stamp(x : bitstring) = event Stamped(x); x.
 letfun wrap(x : bitstring, k : key) = new r : nonce; senc(pair(x, n2b(r)), k).
+letfun both(x : bitstring, y : bitstring) = pair(x, y).
+
+let forward(x : bitstring, y : bitstring) = out(c, pair(x, y)).
 
 let sender(k : key) =
   new n : nonce;
@@ -100,4 +105,5 @@ process
   | (in(d, y : bitstring);
      if catchfail(test(eq(y, empty), y, empty)) <> empty then out(c, y) else 0)
   | (in(c, z : bitstring); out(c, sdec(z, k)))
+  | (in(c, w : bitstring); out(c, both(sdec(w, k), stamp(w))); forward(sdec(w, k), stamp(w)))
   | (out(c, new s : nonce; let v = wrap(n2b(s), k) in pair(v, stamp(v)))) )

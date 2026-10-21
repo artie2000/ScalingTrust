@@ -30,9 +30,14 @@ a translated model is ordinary Lean.
 The folder is built from ProVerif's own documentation and from the papers it
 refers to, by four principles, in order of importance:
 
-1. The semantics of ProVerif's input language given in the ProVerif manual
-   (`Reference/proverif-manual.pdf`, Appendix B) is the ground truth for what
-   ProVerif code means: `Specification/` and §2 of the write-up state it.
+1. The formal semantics of ProVerif's input language in Appendix B of the
+   ProVerif manual (`Reference/proverif-manual.pdf`) is the ground truth for
+   what ProVerif code means: `Specification/` and §2 of the write-up state it.
+   It takes precedence over the manual's informal chapters where the two
+   differ, as they do on whether `&&` and `||` evaluate their second operand
+   (§3.1.4 against Appendix B), and over the tool: ProVerif's resolution
+   procedure, the encodings it applies to a model beforehand (§4.1.4) and the
+   results it reports approximate Appendix B and are never consulted.
 2. Where the manual refers to a paper for a component, that paper is the ground
    truth for the component. The manual describes the attacker and the
    properties its queries test informally and refers to Blanchet's survey

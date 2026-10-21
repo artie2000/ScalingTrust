@@ -81,9 +81,10 @@ and nothing else is reserved. The precedences of processes are the manual's
 A model is translated piece by piece, types erased as in the manual's semantics
 (Appendix B).
 An identifier of the model that is a name the translation uses unqualified,
-listed in `Emit.reserved`, such as `T` or `pure`, is first renamed by appending
-primes until it is free, `T'`, and the definition of a renamed symbol says so in
-its docstring.
+listed in `Emit.reserved`, such as `T` or `pure`, or that `aesop` reads as a
+phase or a builder in a rule list, such as `forward`, is first renamed by
+appending primes until it is free, `T'`, and the definition of a renamed symbol
+says so in its docstring.
 
 1. **Free names** (`free a`, `channel a`) become the constructors of an inductive
    type `Free`, and the nullary constructor `Fun.const : Free → Fun 0`; a free
@@ -111,7 +112,8 @@ its docstring.
 3. **Equations** (`equation`) become a `Theory Fun` named `T₀`: the set `E` of
    pairs of raw terms, the variables of each `forall` numbered in order, and
    `free`, true of every symbol at the root of no equation; `heads` is proved by
-   `simp`. `T := T₀.withData` adds the data symbols, the tuples and the
+   `simp`. A free name in an equation is rejected, as ProVerif rejects it
+   (manual, Appendix A). `T := T₀.withData` adds the data symbols, the tuples and the
    booleans, and `T.Msg`, terms modulo `E`, is the message type, with its
    `StdOps` instance; Lean's `=` on it is the survey's `=_E`.
 4. **Destructors** (`reduc`) become functions to `Option T.Msg`, `none` being
@@ -125,8 +127,10 @@ its docstring.
    patterns do not match and `some r` when they do, and the destructor is the
    rules in order chained with `<|>` and flattened by `Option.join`, so that the
    first rule that matches decides, even when its result is `fail`. A pattern
-   may only match on a free symbol; `true` and `false` are constant patterns,
-   tested by equality, and a tuple pattern in a rule is not translated. A
+   mentions no symbol at the root of an equation, the write-up's (R2), and no
+   free name, which ProVerif forbids in a rule (Appendix A); `true` and `false`
+   are constant patterns, tested by equality, and a tuple pattern in a rule is
+   not translated. A
    destructor whose rules have neither a
    may-fail variable nor the pattern `fail` is written on messages and lifted by
    `liftFail` in the algebra; one whose rules match `fail` takes
@@ -182,12 +186,16 @@ its docstring.
    before those of its message; an event whose argument fails is not emitted
    and its continuation does not run; a conditional whose condition fails runs
    neither branch; a term evaluation whose term fails runs its `else` branch.
-   Where the effects depend on a test, the test and what follows it become a
-   sub-block bound to a fresh `tᵢ` by `←`, returning `Option T.Msg` when the
-   term may fail: the branches of a conditional or of a term evaluation when
-   either has effects, an event whose argument may fail, and a call of a
-   function macro with effects on an argument that may fail. Branches without
-   effects stay a Lean `if` or `match` on the value. A **function macro**
+   A call of a macro, function or process, is the nested `let`s of the
+   write-up's Definition "Source syntax": each argument's effects run and its
+   value is tested before the next argument is evaluated, so an argument that
+   fails stops the evaluation of those after it. Where the effects depend on a
+   test, the test and what follows it become a sub-block bound to a fresh `tᵢ`
+   by `←`, returning `Option T.Msg` when the term may fail: the branches of a
+   conditional or of a term evaluation when either has effects, an event whose
+   argument may fail, and a call of a function macro when an argument may fail
+   and the macro or an argument has effects. Branches without effects stay a
+   Lean `if` or `match` on the value. A **function macro**
    (`letfun`) becomes a function of its parameters: to its value, of type
    `T.Msg` or `Option T.Msg`, when its body has no effects, and to a block in
    `Cont (Proc T.Msg)` otherwise, so that a call with effects is bound by `←`.

@@ -75,14 +75,16 @@ def resetSt : EmitM Unit := modify fun st => { fns := st.fns }
 
 /-- The names the translation uses unqualified, which a definition or a binder of the
 model would shadow: its own definitions, and those of Lean, Mathlib and the trace
-semantics that the generated code and proofs mention. -/
+semantics that the generated code and proofs mention; and the names that `aesop` reads as
+a phase or a builder in the rule lists of the prefix-closure proofs. -/
 def reserved : List String :=
   ["Free", "Fun", "E", "free", "free_eq", "T", "pub", "system", "system_mem_tree", "Option",
    "some", "none", "pure", "Set", "Term", "Theory", "Sig", "Data", "StdOps", "Tuple",
    "Attacker", "equal", "and",
    "liftFail", "Cont", "Proc", "Unit", "Prop", "Type", "Bool", "Fact", "True", "False",
    "Classical", "Fin", "Descriptive", "Act", "FirstOrder", "Or", "rfl", "trivial", "congrArg",
-   "comp_vecCons", "comp_vecEmpty", "join_eq_some", "orElse_eq_some"]
+   "comp_vecCons", "comp_vecEmpty", "join_eq_some", "orElse_eq_some",
+   "safe", "norm", "forward", "destruct", "constructors", "tactic", "default"]
 
 /-- `m` with each of its identifiers in `reserved` renamed by appending primes until the
 name is neither reserved nor another identifier of the model, and the renamings, new name
@@ -352,7 +354,8 @@ partial def emitRaw (vars : Array String) : Term → EmitM Lean.Term
     if let some i := vars.findIdx? (· == x) then `(.var $(num i))
     else
       match ← sym? x with
-      | some (.free _) | some (.ctor ⟨_, 0, _, _, _⟩) => do `(.func $(← funCtor x) ![])
+      | some (.free _) => throwError "the free name `{x}` in an equation"
+      | some (.ctor ⟨_, 0, _, _, _⟩) => do `(.func $(← funCtor x) ![])
       | some (.bool _) => throwError "the boolean `{x}` in an equation is not translated"
       | _ => throwError "`{x}` in an equation is neither a variable nor a constant"
   | .tuple _ => throwError "a tuple in an equation is not translated"
@@ -441,6 +444,15 @@ def RuleVars.needs (rv : RuleVars) : Term → Bool
   | .ident v => !rv.isVar v || rv.used v
   | _ => true
 
+/-- A symbol of the pattern at the root of an equation, if there is one, which the write-up's
+(R2) forbids; a variable of the rule is not a symbol. -/
+partial def Term.equated (eq : Std.HashSet String) (isVar : String → Bool) :
+    Term → Option String
+  | .ident x => if !isVar x && eq.contains x then some x else none
+  | .app f args => if eq.contains f then some f else args.findSome? (Term.equated eq isVar)
+  | .tuple args => args.findSome? (Term.equated eq isVar)
+  | _ => none
+
 /-- Match the pending patterns, then test the collected equalities and give `k env`. -/
 partial def matchPats (rv : RuleVars) (pending : Pending)
     (env : Std.HashMap String Lean.Term) (tests : Array (Lean.Term × Lean.Term))
@@ -477,8 +489,8 @@ partial def matchPats (rv : RuleVars) (pending : Pending)
         | some (.free _) | some (.bool _) => pure 0
         | _ => throwError "`{f}` in a pattern is not a constructor"
       unless arity == ps.size do throwError "`{f}` takes {arity} arguments, not {ps.size}"
-      if (← read).equated.contains f then
-        throwError "the pattern `{p.print}` matches on `{f}`, which an equation mentions"
+      if let some g := p.equated (← read).equated rv.isVar then
+        throwError "the pattern `{p.print}` mentions `{g}`, which an equation mentions"
       if (p.vars.filter rv.isVar).all env.contains then
         matchPats rv rest env (tests.push (s, ← emitPure env p)) k
       else
@@ -947,6 +959,11 @@ def emitDtorTheorem (d : Dtor) (alts : Array Lean.Term) (recs : Array St) : Emit
 /-- A destructor: its docstring, its definition and its graph theorem. -/
 def emitDtor (d : Dtor) : EmitM (String × Command × Command) := do
   resetSt
+  for r in d.rules do
+    let vars := r.vars.map (·.1)
+    for x in r.lhs.flatMap Term.names ++ r.rhs.names do
+      if !vars.contains x && (← sym? x) matches some (.free _) then
+        throwError "the free name `{x}` in a rewrite rule of `{d.name}`"
   let mayFail := d.mayFail
   let args := Array.range d.arity |>.map (sub (if mayFail then "u" else "x"))
   let argTy ← if mayFail then `(Option T.Msg) else `(T.Msg)
@@ -1036,6 +1053,16 @@ partial def hoist (onFail : Array DoElem) (ms : List Msg) (acc : Array Lean.Term
         | some $t:ident => $(mkDoSeq body):doSeq
         | none => $(mkDoSeq onFail):doSeq)]
     return body
+
+/-- Run `k` on the values of the terms `cs`, each term's effects running, and its value
+being matched, before the next term is evaluated: the nested `let`s that a macro call
+abbreviates (the write-up's Definition "Source syntax"). -/
+partial def hoistComps (onFail : Array DoElem) (cs : List Comp) (acc : Array Lean.Term)
+    (k : Array Lean.Term → EmitM (Array DoElem)) : EmitM (Array DoElem) :=
+  match cs with
+  | [] => k acc
+  | c :: rest => do
+    return c.elems ++ (← hoist onFail [c.value] acc fun acc' => hoistComps onFail rest acc' k)
 
 /-- The failure of a term: its sub-block returns `none`. -/
 def failBlock : EmitM (Array DoElem) := return #[← `(doElem| pure none)]
@@ -1215,6 +1242,19 @@ partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
       arity fn.params.size
       let some (effects, mayFail) := (← get).fns[f]?
         | throwError "the function macro `{f}` is used before its definition"
+      -- The call is the write-up's nested `let`s: when an argument has effects and another
+      -- may fail, each argument's effects run and its value is tested before the next.
+      if cs.any (!·.elems.isEmpty) && ms.any (· matches .may _) then
+        let t ← fresh "t"
+        let body ← hoistComps (← failBlock) cs.toList #[] fun as => do
+          let call ← app (ident f) as
+          let last ← match effects, mayFail with
+            | true, true => pure call
+            | true, false => `(some <$> $call)
+            | false, true => `(pure $call)
+            | false, false => `(pure (some $call))
+          return #[← `(doElem| $last:term)]
+        return { elems := #[← letArrow t body], value := .may t }
       if !effects then return { elems, value := ← applyVals (ident f) ms mayFail false }
       let t ← fresh "t"
       if ms.all (· matches .pure _) then
@@ -1476,9 +1516,8 @@ partial def emitProc (env : Std.HashMap String Lean.Term) : Proc → EmitM (Arra
     unless m.params.size == args.size do
       throwError "`{p}` takes {m.params.size} arguments, not {args.size}"
     let cs ← args.mapM (emitTerm env)
-    let rest ← hoist (← stopBlock) (cs.map (·.value)).toList #[] fun as =>
+    hoistComps (← stopBlock) cs.toList #[] fun as =>
       return #[← `(doElem| $(← app (ident p) as):term)]
-    return cs.flatMap (·.elems) ++ rest
   | .par P Q => do
     let p ← emitProc env P
     let q ← emitProc env Q

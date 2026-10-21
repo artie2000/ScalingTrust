@@ -584,7 +584,19 @@ def wrap (x k : T.Msg) : Cont (Proc T.Msg) T.Msg := do
   let r ← .fresh
   pure (senc (pair x r) k)
 
+/-- `both(x, y) = pair(x, y)` -/
+def both (x y : T.Msg) : T.Msg :=
+  pair x y
+
 /-! ## The process -/
+
+/-- The model's `forward`, renamed since the translation uses that name. -/
+def forward' (x y : T.Msg) : Cont (Proc T.Msg) Unit := do
+  .send c (pair x y)
+
+/-- `forward'` is prefix-closed. -/
+theorem forward'_mem_tree (x y : T.Msg) : Proc.run (forward' x y) ∈ Descriptive.tree (Act T.Msg) :=
+  by aesop  (add norm simp [stamp, wrap, both, forward'])
 
 def sender (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let n ← .fresh
@@ -595,7 +607,7 @@ def sender (k : T.Msg) : Cont (Proc T.Msg) Unit := do
 
 /-- `sender` is prefix-closed. -/
 theorem sender_mem_tree (k : T.Msg) : Proc.run (sender k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, sender])
+  aesop  (add norm simp [stamp, wrap, both, forward'_mem_tree, sender])
 
 def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let x ← .recv c
@@ -607,7 +619,7 @@ def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
 
 /-- `receiver` is prefix-closed. -/
 theorem receiver_mem_tree (k : T.Msg) : Proc.run (receiver k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver])
+  aesop  (add norm simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver])
 
 def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let y ← .recv c
@@ -635,7 +647,9 @@ def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
 
 /-- `relay` is prefix-closed. -/
 theorem relay_mem_tree (k : T.Msg) : Proc.run (relay k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay])
+  aesop
+     (add
+      norm simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree, relay])
 
 def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let t₀ ← .recv c
@@ -687,7 +701,11 @@ def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
 
 /-- `tupler` is prefix-closed. -/
 theorem tupler_mem_tree (k : T.Msg) : Proc.run (tupler k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay_mem_tree, tupler])
+  aesop
+     (add
+      norm
+        simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree,
+          relay_mem_tree, tupler])
 
 /-- The main process. -/
 def system : Proc T.Msg :=
@@ -700,48 +718,69 @@ def system : Proc T.Msg :=
             if ← .fork then
               if ← .fork then
                 if ← .fork then
-                  .repl
-                  sender k
+                  if ← .fork then
+                    .repl
+                    sender k
+                  else
+                    .repl
+                    receiver k
                 else
                   .repl
-                  receiver k
+                  relay k
               else
                 .repl
-                relay k
+                tupler k
             else
-              .repl
-              tupler k
-          else
-            let y ← .recv d
-            match catchfail (test (eq y empty) (some y) (some empty)) with
-            | some t₀ =>
-              if t₀ ≠ empty then
-                .send c y
-              else
+              let y ← .recv d
+              match catchfail (test (eq y empty) (some y) (some empty)) with
+              | some t₀ =>
+                if t₀ ≠ empty then
+                  .send c y
+                else
+                  .stop
+              | none =>
                 .stop
+          else
+            let z ← .recv c
+            match sdec z k with
+            | some t₁ =>
+              .send c t₁
             | none =>
               .stop
         else
-          let z ← .recv c
-          match sdec z k with
-          | some t₁ =>
-            .send c t₁
+          let w ← .recv c
+          let t₃ ←
+            match sdec w k with
+            | some t₄ =>
+              let t₂ ← stamp w
+              pure (some (both t₄ t₂))
+            | none =>
+              pure none
+          match t₃ with
+          | some t₅ =>
+            .send c t₅
+            match sdec w k with
+            | some t₇ =>
+              let t₆ ← stamp w
+              forward' t₇ t₆
+            | none =>
+              .stop
           | none =>
             .stop
       else
         let s ← .fresh
-        let t₂ ← wrap s k
-        let v := t₂
-        let t₃ ← stamp v
-        .send c (pair v t₃))
+        let t₈ ← wrap s k
+        let v := t₈
+        let t₉ ← stamp v
+        .send c (pair v t₉))
 
 /-- The main process is prefix-closed. -/
 theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
   aesop
      (add
       norm
-        simp [stamp, wrap, sender_mem_tree, receiver_mem_tree, relay_mem_tree, tupler_mem_tree,
-          system])
+        simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree,
+          relay_mem_tree, tupler_mem_tree, system])
 
 /-! ## Queries -/
 
