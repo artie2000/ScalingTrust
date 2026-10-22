@@ -52,8 +52,8 @@ structure Ctor where
   pub : Bool
   /-- `[typeConverter]`: the identity, as under ProVerif's default `ignoreTypes = true`. -/
   converter : Bool
-  /-- `[data]`: patterns may match on it, and its projections are destructors, public when
-  it is (manual §4.1.2). -/
+  /-- `[data]`: patterns may match on it, and its projections are destructors, public as the
+  manual requires it to be (§4.1.2). -/
   data : Bool
   deriving Repr
 
@@ -65,14 +65,18 @@ structure Rule where
   rhs : Term
   deriving Inhabited, Repr
 
-/-- A destructor: `reduc` with rules separated by `;`, or `fun … reduc` with rules
-separated by `otherwise`.  Either way the first rule that applies decides
-(manual §4.2.1). -/
+/-- A destructor: `reduc` with rules separated by `;`, a set the manual requires to be
+deterministic (§3.1.1), which the translation checks; or `fun … reduc` with rules
+separated by `otherwise`, a sequence in which the first rule that applies decides
+(§4.2.1).  Either way the rules are compiled in order, which for a deterministic set
+chooses a rule that applies. -/
 structure Dtor where
   name : String
   arity : Nat
   pub : Bool
   rules : Array Rule
+  /-- Declared with `;`: the rules are a set. -/
+  plain : Bool
   deriving Repr
 
 /-- `equation forall x₁ : t₁, …; l = r` -/
@@ -83,7 +87,11 @@ structure Equation where
   deriving Repr
 
 /-- A process of the fragment.  An `if` tests a boolean term; `in` and `let` bind a
-pattern; an absent `else` and an absent `in` are `0`. -/
+pattern; an absent `else` and an absent `in` are `0`.  The manual's sugar is read as what
+it abbreviates: `yield` as `0`, `foreach i <= N do P` and `! i <= N P` as `!P`,
+`x <-R t; P` as `new x : t; P` and `x <- D; P` as `let x = D in P` (§6.8).  `insert` and
+`get` on tables (§4.1.5) and the phase prefix `phase n; P` (§4.1.6) are compiled out before
+the translation, by `Compile.lean`. -/
 inductive Proc where
   | nil
   | call (p : String) (args : Array Term)
@@ -95,22 +103,48 @@ inductive Proc where
   | out (c m : Term) (P : Proc)
   | «let» (p : Pat) (d : Term) (P Q : Proc)
   | event (e : String) (args : Array Term) (P : Proc)
+  /-- `insert d(M₁, …, Mₙ); P` -/
+  | insert (d : String) (args : Array Term) (P : Proc)
+  /-- `get d(T₁, …, Tₙ) suchthat M in P else Q` -/
+  | get (d : String) (ps : Array Pat) (cond : Option Term) (P Q : Proc)
+  /-- `phase n; P` -/
+  | phase (n : Nat) (P : Proc)
   deriving Inhabited, Repr
 
-/-- A fact of a query. -/
+/-- A fact of a query (manual, Figure A.5): the attacker knows `M`, an event, a message on
+a channel or an element of a table, each but the event qualified by a phase or not; and,
+once phases are compiled out, a fact before the first occurrence of an event,
+`F before e(M₁, …, Mₙ)`, which no ProVerif query writes.  An event carries a phase only
+as the element of a table once tables are compiled out. -/
 inductive Fact where
-  | attacker (m : Term)
-  | event (e : String) (args : Array Term)
-  deriving Repr
+  | attacker (m : Term) (phase : Option Nat)
+  | event (e : String) (args : Array Term) (phase : Option Nat)
+  | mess (c m : Term) (phase : Option Nat)
+  | table (d : String) (args : Array Term) (phase : Option Nat)
+  | before (f : Fact) (e : String) (args : Array Term)
+  deriving Repr, Inhabited
 
-/-- `query x₁ : t₁, …; F ==> H`, or `query x₁ : t₁, …; F`, which asks that `F` never
-holds, as does `F ==> false`. -/
+/-- The hypothesis of a query, after `==>` (Figure A.5): a fact, injective or not; a
+conjunction, `&&` binding tighter than `||`; a disjunction; `false`; or a nested
+correspondence `F ==> H`. -/
+inductive Hyp where
+  | fact (inj : Bool) (f : Fact)
+  | and (h₁ h₂ : Hyp)
+  | or (h₁ h₂ : Hyp)
+  | false
+  | corr (inj : Bool) (f : Fact) (h : Hyp)
+  deriving Repr, Inhabited
+
+/-- `query x₁ : t₁, …; F₁ && … && Fₙ ==> H`, or `query x₁ : t₁, …; F₁ && … && Fₙ`, which
+asks that the facts never hold together, as `==> false` does; the facts before the arrow
+are each marked if injective.  `source` is the query as written, for the docstring of its
+translation, which the compilations of `Compile.lean` keep. -/
 structure Query where
   vars : Array String
-  premise : Fact
-  /-- `H`, or `none` when the query asks that the premise never holds. -/
-  conclusion : Option Fact
-  deriving Repr
+  premise : Array (Bool × Fact)
+  concl : Hyp
+  source : String
+  deriving Repr, Inhabited
 
 /-- `let p(x₁ : t₁, …) = P.` -/
 structure Macro where
@@ -133,14 +167,22 @@ structure Model where
   ctors : Array Ctor := #[]
   /-- The events, with their arities. -/
   events : Array (String × Nat) := #[]
+  /-- The tables, with their arities; none once compiled to private channels. -/
+  tables : Array (String × Nat) := #[]
   equations : Array Equation := #[]
   dtors : Array Dtor := #[]
   /-- The function macros, in order: each may call only the earlier ones. -/
   fns : Array Fn := #[]
   macros : Array Macro := #[]
   queries : Array Query := #[]
+  /-- The bound names of `query secret x` declarations; none once compiled to queries. -/
+  secrets : Array String := #[]
   main : Proc := .nil
   deriving Repr
+
+/-- The digits of `n` as subscripts: `12` is `₁₂`. -/
+def subscript (n : Nat) : String :=
+  String.ofList <| (toString n).toList.map fun c => Char.ofNat (c.toNat - '0'.toNat + '₀'.toNat)
 
 /-! ## Printing, for the docstrings of the translation -/
 
@@ -194,15 +236,47 @@ end
 def Fn.print (f : Fn) : String :=
   s!"{printApp f.name f.params} = {f.body.print}"
 
-def Fact.print : Fact → String
-  | .attacker m => s!"attacker({m.print})"
-  | .event e args => s!"event({printApp e (args.map Term.print)})"
+/-- A fact as ProVerif writes it, an injective event with `inj-event`. -/
+partial def Fact.print (inj : Bool := false) : Fact → String
+  | .attacker m ph => s!"attacker({m.print}){phase ph}"
+  | .event e args ph => s!"{if inj then "inj-event" else "event"}({printApp e (args.map Term.print)}){phase ph}"
+  | .mess c m ph => s!"mess({c.print}, {m.print}){phase ph}"
+  | .table d args ph => s!"table({printApp d (args.map Term.print)}){phase ph}"
+  | .before f e args => s!"{f.print} before {printApp e (args.map Term.print)}"
+where
+  phase : Option Nat → String
+    | none => ""
+    | some n => s!" phase {n}"
 
-def Query.print (q : Query) : String :=
-  let vars := if q.vars.isEmpty then "" else s!"{", ".intercalate q.vars.toList}; "
-  match q.conclusion with
-  | none => s!"query {vars}{q.premise.print}"
-  | some h => s!"query {vars}{q.premise.print} ==> {h.print}"
+/-- A hypothesis, with the parentheses the precedences need. -/
+partial def Hyp.print : Hyp → String
+  | .fact inj f => f.print inj
+  | .and h₁ h₂ => s!"{operand Bool.true h₁} && {operand Bool.true h₂}"
+  | .or h₁ h₂ => s!"{operand Bool.false h₁} || {operand Bool.false h₂}"
+  | .false => "false"
+  | .corr inj f h => s!"({f.print inj} ==> {h.print})"
+where
+  /-- An operand of `&&`, when `conj`, or of `||`: a disjunction, or a conjunction under
+  `&&`, in parentheses. -/
+  operand (conj : Bool) (h : Hyp) : String :=
+    match h with
+    | .or .. => s!"({h.print})"
+    | .and .. => if conj then h.print else s!"({h.print})"
+    | _ => h.print
+
+/-- Whether some fact of the hypothesis is injective. -/
+def Hyp.hasInj : Hyp → Bool
+  | .fact inj _ => inj
+  | .and h₁ h₂ | .or h₁ h₂ => h₁.hasInj || h₂.hasInj
+  | .false => Bool.false
+  | .corr inj _ h => inj || h.hasInj
+
+def Query.print (vars : Array String) (premise : Array (Bool × Fact)) (concl : Hyp) : String :=
+  let vs := if vars.isEmpty then "" else s!"{", ".intercalate vars.toList}; "
+  let fs := " && ".intercalate (premise.map fun (inj, f) => f.print inj).toList
+  match concl with
+  | .false => s!"query {vs}{fs}"
+  | h => s!"query {vs}{fs} ==> {h.print}"
 
 /-- A rule of the destructor `g`, as `g(p₁, …, pₙ) → r`. -/
 def Rule.print (g : String) (r : Rule) : String :=
@@ -254,24 +328,52 @@ partial def Proc.names : Proc → Array String
   | .out c m P => c.names ++ m.names ++ P.names
   | .let p d P Q => p.names ++ d.names ++ P.names ++ Q.names
   | .event e args P => #[e] ++ args.flatMap Term.names ++ P.names
+  | .insert d args P => #[d] ++ args.flatMap Term.names ++ P.names
+  | .get d ps cond P Q =>
+    #[d] ++ ps.flatMap Pat.names ++ (cond.map Term.names).getD #[] ++ P.names ++ Q.names
+  | .phase _ P => P.names
 
-def Fact.names : Fact → Array String
-  | .attacker m => m.names
-  | .event e args => #[e] ++ args.flatMap Term.names
+partial def Fact.names : Fact → Array String
+  | .attacker m _ => m.names
+  | .event e args _ => #[e] ++ args.flatMap Term.names
+  | .mess c m _ => c.names ++ m.names
+  | .table d args _ => #[d] ++ args.flatMap Term.names
+  | .before f e args => f.names ++ #[e] ++ args.flatMap Term.names
+
+partial def Hyp.names : Hyp → Array String
+  | .fact _ f => f.names
+  | .and h₁ h₂ | .or h₁ h₂ => h₁.names ++ h₂.names
+  | .false => #[]
+  | .corr _ f h => f.names ++ h.names
+
+def Query.names (q : Query) : Array String :=
+  q.vars ++ q.premise.flatMap (·.2.names) ++ q.concl.names
 
 def Rule.names (r : Rule) : Array String :=
   r.vars.map (·.1) ++ r.lhs.flatMap Term.names ++ r.rhs.names
 
 /-- Every identifier of a model. -/
 def Model.names (m : Model) : Array String :=
-  m.frees.map (·.1) ++ m.ctors.map (·.name) ++ m.events.map (·.1)
+  m.frees.map (·.1) ++ m.ctors.map (·.name) ++ m.events.map (·.1) ++ m.tables.map (·.1)
     ++ m.equations.flatMap (fun e => e.vars ++ e.lhs.names ++ e.rhs.names)
     ++ m.dtors.flatMap (fun d => #[d.name] ++ d.rules.flatMap Rule.names)
     ++ m.fns.flatMap (fun f => #[f.name] ++ f.params ++ f.body.names)
     ++ m.macros.flatMap (fun p => #[p.name] ++ p.params ++ p.body.names)
-    ++ m.queries.flatMap (fun q =>
-      q.vars ++ q.premise.names ++ (q.conclusion.map Fact.names).getD #[])
+    ++ m.queries.flatMap Query.names ++ m.secrets
     ++ m.main.names
+
+/-- `t` with the term `M` for the variable `x`, in a term without binders, as in a rule or
+an equation: the manual's `let x = M in …` there. -/
+partial def Term.substVar (x : String) (M : Term) : Term → Term
+  | .ident y => if y == x then M else .ident y
+  | .app f args => .app f (args.map (substVar x M))
+  | .tuple args => .tuple (args.map (substVar x M))
+  | t => t
+
+/-- `t` under the bindings `let x₁ = M₁ in … let xₖ = Mₖ in`, the later ones substituted
+first since each may use the earlier ones. -/
+def Term.withBindings (binds : Array (String × Term)) (t : Term) : Term :=
+  binds.foldr (fun (x, m) t => t.substVar x m) t
 
 mutual
 
@@ -304,10 +406,30 @@ partial def Proc.rename (σ : String → String) : Proc → Proc
   | .out c m P => .out (c.rename σ) (m.rename σ) (P.rename σ)
   | .let p d P Q => .let (p.rename σ) (d.rename σ) (P.rename σ) (Q.rename σ)
   | .event e args P => .event (σ e) (args.map (Term.rename σ)) (P.rename σ)
+  | .insert d args P => .insert (σ d) (args.map (Term.rename σ)) (P.rename σ)
+  | .get d ps cond P Q =>
+    .get (σ d) (ps.map (Pat.rename σ)) (cond.map (Term.rename σ)) (P.rename σ) (Q.rename σ)
+  | .phase n P => .phase n (P.rename σ)
 
-def Fact.rename (σ : String → String) : Fact → Fact
-  | .attacker m => .attacker (m.rename σ)
-  | .event e args => .event (σ e) (args.map (Term.rename σ))
+partial def Fact.rename (σ : String → String) : Fact → Fact
+  | .attacker m ph => .attacker (m.rename σ) ph
+  | .event e args ph => .event (σ e) (args.map (Term.rename σ)) ph
+  | .mess c m ph => .mess (c.rename σ) (m.rename σ) ph
+  | .table d args ph => .table (σ d) (args.map (Term.rename σ)) ph
+  | .before f e args => .before (f.rename σ) (σ e) (args.map (Term.rename σ))
+
+partial def Hyp.rename (σ : String → String) : Hyp → Hyp
+  | .fact inj f => .fact inj (f.rename σ)
+  | .and h₁ h₂ => .and (h₁.rename σ) (h₂.rename σ)
+  | .or h₁ h₂ => .or (h₁.rename σ) (h₂.rename σ)
+  | .false => .false
+  | .corr inj f h => .corr inj (f.rename σ) (h.rename σ)
+
+def Query.rename (σ : String → String) (q : Query) : Query where
+  vars := q.vars.map σ
+  premise := q.premise.map fun (inj, f) => (inj, f.rename σ)
+  concl := q.concl.rename σ
+  source := q.source
 
 def Rule.rename (σ : String → String) (r : Rule) : Rule where
   vars := r.vars.map fun (x, b) => (σ x, b)
@@ -319,14 +441,15 @@ def Model.rename (σ : String → String) (m : Model) : Model where
   frees := m.frees.map fun (a, pub) => (σ a, pub)
   ctors := m.ctors.map fun c => { c with name := σ c.name }
   events := m.events.map fun (e, n) => (σ e, n)
+  tables := m.tables.map fun (d, n) => (σ d, n)
   equations := m.equations.map fun e =>
     { vars := e.vars.map σ, lhs := e.lhs.rename σ, rhs := e.rhs.rename σ }
   dtors := m.dtors.map fun d => { d with name := σ d.name, rules := d.rules.map (Rule.rename σ) }
   fns := m.fns.map fun f => { name := σ f.name, params := f.params.map σ, body := f.body.rename σ }
   macros := m.macros.map fun p =>
     { name := σ p.name, params := p.params.map σ, body := p.body.rename σ }
-  queries := m.queries.map fun q =>
-    { vars := q.vars.map σ, premise := q.premise.rename σ, conclusion := q.conclusion.map (Fact.rename σ) }
+  queries := m.queries.map (Query.rename σ)
+  secrets := m.secrets.map σ
   main := m.main.rename σ
 
 end ProVerif.Translation

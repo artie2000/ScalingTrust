@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.TraceSemantics.Security
+import ScalingTrust.ProVerif.TraceSemantics.Query
 
 /-!
 # `Features.pv`, translated
@@ -22,6 +22,11 @@ inductive Free
   | c
   | d
   | T'
+  | seen
+  | clock₁
+  | go₁
+  | tok₀
+  | tok₁
 
 /-- The constructors, by arity: the free names, the declared constructors and the events. -/
 inductive Fun : ℕ → Type
@@ -33,9 +38,14 @@ inductive Fun : ℕ → Type
   | senc : Fun 2
   | n2b : Fun 1
   | tag : Fun 1
+  | ph₀ : Fun 0
+  | ph₁ : Fun 0
   | Sent : Fun 1
   | Received : Fun 1
   | Stamped : Fun 1
+  | kₛ : Fun 1
+  | seenᵢ : Fun 1
+  | tick₁ : Fun 0
 
 /-- No equations. -/
 def E : Set (Term Fun × Term Fun) :=
@@ -70,6 +80,21 @@ def d : T.Msg :=
 def T' : T.Msg :=
   .app (.inl (.const .T')) ![]
 
+def seen : T.Msg :=
+  .app (.inl (.const .seen)) ![]
+
+def clock₁ : T.Msg :=
+  .app (.inl (.const .clock₁)) ![]
+
+def go₁ : T.Msg :=
+  .app (.inl (.const .go₁)) ![]
+
+def tok₀ : T.Msg :=
+  .app (.inl (.const .tok₀)) ![]
+
+def tok₁ : T.Msg :=
+  .app (.inl (.const .tok₁)) ![]
+
 def empty : T.Msg :=
   .app (.inl .empty) ![]
 
@@ -88,6 +113,12 @@ def senc (x₀ x₁ : T.Msg) : T.Msg :=
 def tag (x₀ : T.Msg) : T.Msg :=
   .app (.inl .tag) ![x₀]
 
+def ph₀ : T.Msg :=
+  .app (.inl .ph₀) ![]
+
+def ph₁ : T.Msg :=
+  .app (.inl .ph₁) ![]
+
 /-! ## Events -/
 
 def Sent (x₀ : T.Msg) : T.Msg :=
@@ -98,6 +129,15 @@ def Received (x₀ : T.Msg) : T.Msg :=
 
 def Stamped (x₀ : T.Msg) : T.Msg :=
   .app (.inl .Stamped) ![x₀]
+
+def kₛ (x₀ : T.Msg) : T.Msg :=
+  .app (.inl .kₛ) ![x₀]
+
+def seenᵢ (x₀ : T.Msg) : T.Msg :=
+  .app (.inl .seenᵢ) ![x₀]
+
+def tick₁ : T.Msg :=
+  .app (.inl .tick₁) ![]
 
 /-! ## Destructors -/
 
@@ -145,6 +185,16 @@ def unpair (x₀ : T.Msg) : Option T.Msg :=
   match x₀.view with
   | .app (.inl .pair) a₀ => some ((a₀ 0, a₀ 1) : T.Msg)
   | _ => none
+
+/-- `left(pair(x, empty)) → x; left(pair(empty, y)) → y` -/
+def left (x₀ : T.Msg) : Option T.Msg :=
+  Option.join
+    ((match x₀.view with
+      | .app (.inl .pair) a₀ => if a₀ 1 = empty then some (some (a₀ 0)) else none
+      | _ => none) <|>
+      match x₀.view with
+      | .app (.inl .pair) a₁ => if a₁ 0 = empty then some (some (a₁ 1)) else none
+      | _ => none)
 
 /-- `pair₁(pair(y₁, y₂)) → y₁` -/
 def pair₁ (x₀ : T.Msg) : Option T.Msg :=
@@ -357,6 +407,74 @@ theorem unpair_eq_some {x₀ m₀ : T.Msg} :
     rcases h₀ with ⟨x, y, rfl, rfl⟩
     simp [unpair, pair, free]⟩
 
+theorem left_eq_some {x₀ m₀ : T.Msg} :
+    left x₀ = some m₀ ↔ x₀ = pair m₀ empty ∨ (¬∃ x, x₀ = pair x empty) ∧ x₀ = pair empty m₀ :=
+  ⟨fun h₀ => by
+    rw [left.eq_def, join_eq_some, orElse_eq_some] at h₀
+    rcases h₀ with h₀ | ⟨n₀, h₀⟩
+    · refine Or.inl ?_
+      rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [hv₀] at h₀
+      rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
+      rcases h₀ with ⟨h₁, h₂⟩
+      subst h₂
+      have e₀ : x₀ = pair (a₀ 0) empty :=
+        x₀.eq_app_of_view' hv₀
+          (by
+            intro i₀
+            fin_cases i₀
+            · exact rfl
+            · exact h₁)
+      exact e₀
+    · refine Or.inr ⟨?_, ?_⟩
+      · intro hm₀
+        rcases hm₀ with ⟨x, rfl⟩
+        simp [pair, empty, free] at n₀
+      · rcases hv₀ : x₀.view with _ | ⟨f₀, a₁⟩ | _ <;> simp [hv₀] at h₀
+        rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at h₀
+        rcases h₀ with ⟨h₁, h₂⟩
+        subst h₂
+        have e₀ : x₀ = pair empty (a₁ 1) :=
+          x₀.eq_app_of_view' hv₀
+            (by
+              intro i₀
+              fin_cases i₀
+              · exact h₁
+              · exact rfl)
+        exact e₀, fun h₀ =>
+    by
+    have r₀ :
+      ∀ o,
+        (match x₀.view with
+            | .app (.inl .pair) a₀ => if a₀ 1 = empty then some (some (a₀ 0)) else none
+            | _ => none) =
+            some o →
+          ∃ x, x₀ = pair x empty :=
+      fun o₀ ho₀ =>
+      by
+      rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [hv₀] at ho₀
+      rcases f₀ with f₀ | f₀ <;> cases f₀ <;> try simp at ho₀
+      rcases ho₀ with ⟨h₁, -⟩
+      have e₀ : x₀ = pair (a₀ 0) empty :=
+        x₀.eq_app_of_view' hv₀
+          (by
+            intro i₀
+            fin_cases i₀
+            · exact rfl
+            · exact h₁)
+      exact ⟨a₀ 0, e₀⟩
+    rcases h₀ with d₀ | (d₁)
+    · rcases d₀ with rfl
+      rw [left.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inl ?_
+      simp [pair, empty, free]
+    · rcases d₁ with ⟨n₀, rfl⟩
+      rw [left.eq_def, join_eq_some, orElse_eq_some]
+      refine Or.inr ⟨?_, ?_⟩
+      · by_contra hne₀
+        obtain ⟨o₀, ho₀⟩ := Option.ne_none_iff_exists'.1 hne₀
+        exact n₀ (r₀ o₀ ho₀)
+      · simp [pair, empty, free]⟩
+
 theorem pair₁_eq_some {x₀ m₀ : T.Msg} : pair₁ x₀ = some m₀ ↔ ∃ y₂, x₀ = pair m₀ y₂ :=
   ⟨fun h₀ => by
     rcases hv₀ : x₀.view with _ | ⟨f₀, a₀⟩ | _ <;> simp [pair₁, hv₀] at h₀
@@ -558,10 +676,17 @@ theorem or_eq_some {u₀ u₁ : Option T.Msg} {m₀ : T.Msg} :
 /-- The public symbols: all but the private free names and constructors, and the events. -/
 def pub : ∀ n, Fun n → Prop
   | _, .const .d => False
+  | _, .const .seen => False
+  | _, .const .go₁ => False
+  | _, .const .tok₀ => False
+  | _, .const .tok₁ => False
   | _, .tag => False
   | _, .Sent => False
   | _, .Received => False
   | _, .Stamped => False
+  | _, .kₛ => False
+  | _, .seenᵢ => False
+  | _, .tick₁ => False
   | _, _ => True
 
 /-- The attacker: the public constructors, including the public free names, the public destructors, and the standard operations. -/
@@ -569,8 +694,8 @@ instance : Attacker T.Msg :=
   .ofDecls (fun n => {f | pub n f})
     {⟨2, liftFail fun a => sdec (a 0) (a 1)⟩, ⟨2, liftFail fun a => eq (a 0) (a 1)⟩,
       ⟨3, fun a => test (a 0) (a 1) (a 2)⟩, ⟨1, fun a => catchfail (a 0)⟩,
-      ⟨1, liftFail fun a => unpair (a 0)⟩, ⟨1, liftFail fun a => pair₁ (a 0)⟩,
-      ⟨1, liftFail fun a => pair₂ (a 0)⟩}
+      ⟨1, liftFail fun a => unpair (a 0)⟩, ⟨1, liftFail fun a => left (a 0)⟩,
+      ⟨1, liftFail fun a => pair₁ (a 0)⟩, ⟨1, liftFail fun a => pair₂ (a 0)⟩}
 
 /-! ## Function macros -/
 
@@ -579,10 +704,24 @@ def stamp (x : T.Msg) : Cont (Proc T.Msg) T.Msg := do
   .emit (Stamped x)
   pure x
 
+/-- `stamp` is prefix-closed. -/
+theorem stamp_tree (x : T.Msg) : Cont.Tree (stamp x) :=
+  by
+  unfold stamp
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only))
+
 /-- `wrap(x, k) = new r; senc(pair(x, n2b(r)), k)` -/
 def wrap (x k : T.Msg) : Cont (Proc T.Msg) T.Msg := do
   let r ← .fresh
   pure (senc (pair x r) k)
+
+/-- `wrap` is prefix-closed. -/
+theorem wrap_tree (x k : T.Msg) : Cont.Tree (wrap x k) :=
+  by
+  unfold wrap
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [stamp_tree])
 
 /-- `both(x, y) = pair(x, y)` -/
 def both (x y : T.Msg) : T.Msg :=
@@ -592,37 +731,60 @@ def both (x y : T.Msg) : T.Msg :=
 
 /-- The model's `forward`, renamed since the translation uses that name. -/
 def forward' (x y : T.Msg) : Cont (Proc T.Msg) Unit := do
-  .send c (pair x y)
+  .send ((c, ph₀) : T.Msg) (pair x y)
 
 /-- `forward'` is prefix-closed. -/
-theorem forward'_mem_tree (x y : T.Msg) : Proc.run (forward' x y) ∈ Descriptive.tree (Act T.Msg) :=
-  by aesop  (add norm simp [stamp, wrap, both, forward'])
+theorem forward'_tree (x y : T.Msg) : Cont.Tree (forward' x y) :=
+  by
+  unfold forward'
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [stamp_tree, wrap_tree])
 
 def sender (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let n ← .fresh
   .emit (Sent n)
-  let m := senc n k
-  .send c m
-  .send d (tag n)
+  let rec₀ := n
+  .emit (seenᵢ rec₀)
+  if ← .fork then
+    if ← .fork then
+      .repl
+      .send ((seen, ph₀) : T.Msg) rec₀
+    else
+      .repl
+      .send ((seen, ph₁) : T.Msg) rec₀
+  else
+    let m := senc n k
+    .send ((c, ph₀) : T.Msg) m
+    .send ((d, ph₀) : T.Msg) (tag n)
 
 /-- `sender` is prefix-closed. -/
-theorem sender_mem_tree (k : T.Msg) : Proc.run (sender k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, both, forward'_mem_tree, sender])
+theorem sender_tree (k : T.Msg) : Cont.Tree (sender k) :=
+  by
+  unfold sender
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree])
 
 def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
-  let x ← .recv c
+  let x ← .recv ((c, ph₀) : T.Msg)
+  let tokᵥ ← .recv tok₀
+  .send tok₀ tokᵥ
   match sdec x k with
   | some n =>
     .emit (Received n)
   | none =>
-    .send c (pair empty T')
+    .send ((c, ph₀) : T.Msg) (pair empty T')
 
 /-- `receiver` is prefix-closed. -/
-theorem receiver_mem_tree (k : T.Msg) : Proc.run (receiver k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver])
+theorem receiver_tree (k : T.Msg) : Cont.Tree (receiver k) :=
+  by
+  unfold receiver
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree, sender_tree])
 
 def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
-  let y ← .recv c
+  let y ← .recv ((c, ph₀) : T.Msg)
+  let tokᵥ ← .recv tok₀
+  .send tok₀ tokᵥ
   let t₂ ←
     match sdec y k with
     | some t₃ =>
@@ -636,33 +798,67 @@ def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
       pure none
   match t₂ with
   | some z =>
-    .send c z
+    .send ((c, ph₀) : T.Msg) z
   | none =>
     let t₄ ← stamp y
     match sdec y k >>= fun t₅ => some (pair t₅ t₄) with
     | some w =>
-      .send c w
+      .send ((c, ph₀) : T.Msg) w
     | none =>
-      .send c y
+      .send ((c, ph₀) : T.Msg) y
 
 /-- `relay` is prefix-closed. -/
-theorem relay_mem_tree (k : T.Msg) : Proc.run (relay k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop
-     (add
-      norm simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree, relay])
+theorem relay_tree (k : T.Msg) : Cont.Tree (relay k) :=
+  by
+  unfold relay
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only),
+      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree])
+
+def reader (k : T.Msg) : Cont (Proc T.Msg) Unit := do
+  let x ← .recv ((seen, ph₀) : T.Msg)
+  let tokᵥ ← .recv tok₀
+  .send tok₀ tokᵥ
+  .send ((d, ph₀) : T.Msg) (tag x)
+  let t₀ ← .recv ((c, ph₀) : T.Msg)
+  match sdec x k with
+  | some t₁ =>
+    match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₀ with
+    | some (_, z2, t₂) =>
+      if t₂ = t₁ then
+        let tokᵥ ← .recv tok₀
+        .send tok₀ tokᵥ
+        let z3 := pair z2 z2
+        .send ((c, ph₀) : T.Msg) z3
+      else
+        .stop
+    | none =>
+      .stop
+  | none =>
+    .stop
+
+/-- `reader` is prefix-closed. -/
+theorem reader_tree (k : T.Msg) : Cont.Tree (reader k) :=
+  by
+  unfold reader
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only),
+      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree])
 
 def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
-  let t₀ ← .recv c
+  let t₀ ← .recv ((c, ph₀) : T.Msg)
   match Tuple.ofMsg (T.Msg × T.Msg) t₀ with
   | some (x, t₁) =>
     if t₁ = empty then
+      let tokᵥ ← .recv tok₀
+      .send tok₀ tokᵥ
       let q₅ : Cont (Proc T.Msg) Unit := do
         match and (sdec x k >>= fun t₂ => equal t₂ empty) (equal x x) with
         | some t₃ =>
           if t₃ = (true : T.Msg) then
             match equal x x with
             | some t₄ =>
-              .send c t₄
+              .send ((c, ph₀) : T.Msg) t₄
             | none =>
               .stop
           else
@@ -681,9 +877,9 @@ def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
               match equal a a' with
               | some flag =>
                 if flag = (true : T.Msg) ∧ ¬b = empty ∨ True then
-                  .send c ((a', b', flag) : T.Msg)
+                  .send ((c, ph₀) : T.Msg) ((a', b', flag) : T.Msg)
                 else
-                  .send c (StdOps.tuple 0 ![])
+                  .send ((c, ph₀) : T.Msg) (StdOps.tuple 0 ![])
               | none =>
                 .stop
             | none =>
@@ -700,87 +896,122 @@ def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `tupler` is prefix-closed. -/
-theorem tupler_mem_tree (k : T.Msg) : Proc.run (tupler k) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop
-     (add
-      norm
-        simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree,
-          relay_mem_tree, tupler])
+theorem tupler_tree (k : T.Msg) : Cont.Tree (tupler k) :=
+  by
+  unfold tupler
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only),
+      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree,
+        reader_tree])
 
 /-- The main process. -/
 def system : Proc T.Msg :=
   .run
     (do
-      let k ← .fresh
       if ← .fork then
+        let k ← .fresh
+        .emit (kₛ k)
         if ← .fork then
           if ← .fork then
             if ← .fork then
               if ← .fork then
                 if ← .fork then
                   if ← .fork then
-                    .repl
-                    sender k
+                    if ← .fork then
+                      if ← .fork then
+                        .repl
+                        sender k
+                      else
+                        .repl
+                        receiver k
+                    else
+                      .repl
+                      relay k
                   else
                     .repl
-                    receiver k
+                    tupler k
                 else
-                  .repl
-                  relay k
+                  let y ← .recv ((d, ph₀) : T.Msg)
+                  let tokᵥ ← .recv tok₀
+                  .send tok₀ tokᵥ
+                  match catchfail (test (eq y empty) (some y) (some empty)) with
+                  | some t₀ =>
+                    if t₀ ≠ empty then
+                      .send ((c, ph₀) : T.Msg) y
+                    else
+                      .stop
+                  | none =>
+                    .stop
               else
-                .repl
-                tupler k
+                let z ← .recv ((c, ph₀) : T.Msg)
+                let tokᵥ ← .recv tok₀
+                .send tok₀ tokᵥ
+                match sdec z k with
+                | some t₁ =>
+                  .send ((c, ph₀) : T.Msg) t₁
+                  reader k
+                | none =>
+                  .stop
             else
-              let y ← .recv d
-              match catchfail (test (eq y empty) (some y) (some empty)) with
-              | some t₀ =>
-                if t₀ ≠ empty then
-                  .send c y
-                else
+              let w ← .recv ((c, ph₀) : T.Msg)
+              let tokᵥ ← .recv tok₀
+              .send tok₀ tokᵥ
+              let t₃ ←
+                match sdec w k with
+                | some t₄ =>
+                  let t₂ ← stamp w
+                  pure (some (both t₄ t₂))
+                | none =>
+                  pure none
+              match t₃ with
+              | some t₅ =>
+                .send ((c, ph₀) : T.Msg) t₅
+                match sdec w k with
+                | some t₇ =>
+                  let t₆ ← stamp w
+                  forward' t₇ t₆
+                | none =>
                   .stop
               | none =>
                 .stop
           else
-            let z ← .recv c
-            match sdec z k with
-            | some t₁ =>
-              .send c t₁
-            | none =>
-              .stop
+            let s ← .fresh
+            let t₈ ← wrap s k
+            let v := t₈
+            let t₉ ← stamp v
+            .send ((c, ph₀) : T.Msg) (pair v t₉)
         else
-          let w ← .recv c
-          let t₃ ←
-            match sdec w k with
-            | some t₄ =>
-              let t₂ ← stamp w
-              pure (some (both t₄ t₂))
-            | none =>
-              pure none
-          match t₃ with
-          | some t₅ =>
-            .send c t₅
-            match sdec w k with
-            | some t₇ =>
-              let t₆ ← stamp w
-              forward' t₇ t₆
-            | none =>
-              .stop
-          | none =>
-            .stop
+          let _tokᵥ ← .recv go₁
+          .send ((c, ph₁) : T.Msg) k
       else
-        let s ← .fresh
-        let t₈ ← wrap s k
-        let v := t₈
-        let t₉ ← stamp v
-        .send c (pair v t₉))
+        if ← .fork then
+          .send tok₀ ph₀
+        else
+          let _tokᵥ ← .recv clock₁
+          let _tokᵥ ← .recv tok₀
+          .emit tick₁
+          if ← .fork then
+            .repl
+            .send go₁ ph₁
+          else
+            if ← .fork then
+              .send tok₁ ph₁
+            else
+              .stop)
 
 /-- The main process is prefix-closed. -/
-theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
-  aesop
-     (add
-      norm
-        simp [stamp, wrap, both, forward'_mem_tree, sender_mem_tree, receiver_mem_tree,
-          relay_mem_tree, tupler_mem_tree, system])
+theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) :=
+  by
+  unfold system
+  exact
+    Cont.Tree.run
+      (by
+        aesop
+           (config :=
+            { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+           (add norm (by dsimp only),
+            safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree,
+              reader_tree, tupler_tree]))
 
 /-! ## Queries -/
 
@@ -793,45 +1024,134 @@ def query₁ : Prop :=
   system.Corr (fun σ : Vars₁ → T.Msg => Fact.event (Received (σ .n))) fun σ =>
     Fact.event (Sent (σ .n))
 
-/-- The variables of `query n; attacker(tag(n)) ==> event(Sent(n))`. -/
+/-- The variables of `query n; event(Received(n)) ==> event(Sent(n)) || (event(Sent(n)) && attacker(tag(n)))`. -/
 inductive Vars₂
   | n
 
-/-- `query n; attacker(tag(n)) ==> event(Sent(n))` -/
+/-- `query n; event(Received(n)) ==> event(Sent(n)) || (event(Sent(n)) && attacker(tag(n)))` -/
 def query₂ : Prop :=
-  system.Corr (fun σ : Vars₂ → T.Msg => Fact.knows (tag (σ .n))) fun σ => Fact.event (Sent (σ .n))
+  system.Satisfies (X := Vars₂)
+    ⟨[(false, fun σ => QFact.event (Received (σ .n)))],
+      .or (.fact false fun σ => QFact.event (Sent (σ .n)))
+        (.and (.fact false fun σ => QFact.event (Sent (σ .n)))
+          (.fact false fun σ => QFact.knows (tag (σ .n))))⟩
+
+/-- The variables of `query n; attacker(tag(n)) ==> event(Sent(n))`. -/
+inductive Vars₃
+  | n
+
+/-- `query n; attacker(tag(n)) ==> event(Sent(n))` -/
+def query₃ : Prop :=
+  system.Corr (fun σ : Vars₃ → T.Msg => Fact.knows (tag (σ .n))) fun σ => Fact.event (Sent (σ .n))
 
 /-- `query attacker(empty)` -/
-def query₃ : Prop :=
+def query₄ : Prop :=
   system.Secret empty
 
 /-- The variables of `query n; attacker(tag(n))`. -/
-inductive Vars₄
-  | n
-
-/-- `query n; attacker(tag(n))` -/
-def query₄ : Prop :=
-  ∀ σ : Vars₄ → T.Msg, system.Secret (tag (σ .n))
-
-/-- The variables of `query n; event(Sent(n))`. -/
 inductive Vars₅
   | n
 
-/-- `query n; event(Sent(n))` -/
+/-- `query n; attacker(tag(n))` -/
 def query₅ : Prop :=
-  ∀ σ : Vars₅ → T.Msg, ∀ t₀ ∈ system.Attacks, ¬(Fact.event (Sent (σ .n))).Holds t₀
+  ∀ σ : Vars₅ → T.Msg, system.Secret (tag (σ .n))
+
+/-- The variables of `query n; event(Sent(n))`. -/
+inductive Vars₆
+  | n
+
+/-- `query n; event(Sent(n))` -/
+def query₆ : Prop :=
+  ∀ σ : Vars₆ → T.Msg, ∀ t₀ ∈ system.Attacks, ¬(Fact.event (Sent (σ .n))).Holds t₀
 
 /-- The variables of `query x; event(Stamped(x)) ==> attacker(x)`. -/
-inductive Vars₆
+inductive Vars₇
   | x
 
 /-- `query x; event(Stamped(x)) ==> attacker(x)` -/
-def query₆ : Prop :=
-  system.Corr (fun σ : Vars₆ → T.Msg => Fact.event (Stamped (σ .x))) fun σ => Fact.knows (σ .x)
-
-/-- `query attacker((empty, T'))` -/
 def query₇ : Prop :=
+  system.Corr (fun σ : Vars₇ → T.Msg => Fact.event (Stamped (σ .x))) fun σ => Fact.knows (σ .x)
+
+/-- `query attacker((empty, T))` -/
+def query₈ : Prop :=
   system.Secret ((empty, T') : T.Msg)
+
+/-- The variables of `query n; attacker(tag(n)) phase 0`. -/
+inductive Vars₉
+  | n
+
+/-- `query n; attacker(tag(n)) phase 0` -/
+def query₉ : Prop :=
+  system.Satisfies (X := Vars₉)
+    ⟨[(false, fun σ => QFact.before (QFact.knows (tag (σ .n))) tick₁)], .false⟩
+
+/-- The variables of `query n; mess(d, tag(n))`. -/
+inductive Vars₁₀
+  | n
+
+/-- `query n; mess(d, tag(n))` -/
+def query₁₀ : Prop :=
+  system.Satisfies (X := Vars₁₀)
+    ⟨[(false, fun σ => QFact.mess ((d, ph₁) : T.Msg) (tag (σ .n)))], .false⟩
+
+/-- The variables of `query n; mess(c, tag(n)) phase 1`. -/
+inductive Vars₁₁
+  | n
+
+/-- `query n; mess(c, tag(n)) phase 1` -/
+def query₁₁ : Prop :=
+  system.Satisfies (X := Vars₁₁)
+    ⟨[(false, fun σ => QFact.mess ((c, ph₁) : T.Msg) (tag (σ .n)))], .false⟩
+
+/-- The variables of `query n; table(seen(n)) ==> event(Sent(n))`. -/
+inductive Vars₁₂
+  | n
+
+/-- `query n; table(seen(n)) ==> event(Sent(n))` -/
+def query₁₂ : Prop :=
+  system.Corr (fun σ : Vars₁₂ → T.Msg => Fact.event (seenᵢ (σ .n))) fun σ =>
+    Fact.event (Sent (σ .n))
+
+/-- The variables of `query n; inj-event(Received(n)) ==> inj-event(Sent(n))`. -/
+inductive Vars₁₃
+  | n
+
+/-- `query n; inj-event(Received(n)) ==> inj-event(Sent(n))` -/
+def query₁₃ : Prop :=
+  system.Satisfies (X := Vars₁₃)
+    ⟨[(true, fun σ => QFact.event (Received (σ .n)))],
+      .fact true fun σ => QFact.event (Sent (σ .n))⟩
+
+/-- The variables of `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))`. -/
+inductive Vars₁₄
+  | n
+
+/-- `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))` -/
+def query₁₄ : Prop :=
+  system.Satisfies (X := Vars₁₄)
+    ⟨[(false, fun σ => QFact.event (Received (σ .n)))],
+      .corr false (fun σ => QFact.event (Sent (σ .n)))
+        (.fact false fun σ => QFact.event (Stamped (σ .n)))⟩
+
+/-- The variables of `query n; event(Received(n)) && event(Sent(n)) ==> attacker(tag(n)) phase 0 || event(Stamped(n2b(n)))`. -/
+inductive Vars₁₅
+  | n
+
+/-- `query n; event(Received(n)) && event(Sent(n)) ==> attacker(tag(n)) phase 0 || event(Stamped(n2b(n)))` -/
+def query₁₅ : Prop :=
+  system.Satisfies (X := Vars₁₅)
+    ⟨[(false, fun σ => QFact.event (Received (σ .n))), (false, fun σ => QFact.event (Sent (σ .n)))],
+      .or (.fact false fun σ => QFact.before (QFact.knows (tag (σ .n))) tick₁)
+        (.fact false fun σ => QFact.event (Stamped (σ .n)))⟩
+
+/-- The variables of `query secret k`. -/
+inductive Vars₁₆
+  | k
+
+/-- `query secret k` -/
+def query₁₆ : Prop :=
+  system.Satisfies (X := Vars₁₆)
+    ⟨[(false, fun σ => QFact.event (kₛ (σ .k))), (false, fun σ => QFact.knows (σ .k))], .false⟩
 
 end Features
 

@@ -39,13 +39,17 @@ symbols.
   ordinary variables, a may-fail variable or `fail`, every variable of the right-hand
   side occurring in an argument.  Ordinary and may-fail variables are both indexed by
   `ℕ`.  The built-in destructors have the rules `Builtin.rules`: a projection the one rule
-  `proj k i (tuple k (x₀, …)) → xᵢ`, the boolean destructors the survey's.
+  `proj k i (tuple k (x₀, …)) → xᵢ`, the boolean destructors the survey's.  The value of
+  a may-fail term under valuations of its variables, `MayFail.eval`, and the matching of
+  a rule's arguments, `Rule.Matching`, are defined for any structure on the signature.
 * A **model** is the write-up's Definition "Model" without the process, which the
   theorems take separately: the equations, the rules of each declared destructor, and
-  the public constructors and destructors, together with the two conditions of the
-  write-up's §3 under which it instantiates the trace semantics, (R1) that no side of an
-  equation is a variable and (R2) that the terms among the arguments of a rule are over
-  the free symbols.  The theory of the trace semantics is derived from the equations,
+  the public constructors and destructors, together with the condition (D) of the
+  write-up's §2, that the rules of a destructor declared with `;` are deterministic as
+  the manual requires (§3.1.1), and the two conditions of its §3 under which it
+  instantiates the trace semantics, (R1) that no side of an equation is a variable and
+  (R2) that the terms among the arguments of a rule are over the free symbols.  The
+  theory of the trace semantics is derived from the equations,
   `Model.theory`, with the free symbols those at the root of no equation, the event
   symbols and the data symbols; its messages, `Model.Msg`, are those of the theory with
   the data symbols, so `true` is `StdOps.tt`.
@@ -139,6 +143,26 @@ structure Rule (F : Sig) (n : ℕ) where
   vars : rhs.vars ⊆ Finset.univ.biUnion fun i => (args i).vars
   /-- Every may-fail variable of the right-hand side occurs in an argument. -/
   mvars : rhs.mvars ⊆ Finset.univ.biUnion fun i => (args i).mvars
+
+section eval
+
+variable {M : Type} [F.lang.Structure M]
+
+/-- The value of a may-fail term under a valuation `θ` of the ordinary variables, into
+messages, and `μ` of the may-fail variables, into may-fail messages: the write-up's `Uθ`. -/
+def MayFail.eval (θ : ℕ → M) (μ : ℕ → Option M) : MayFail F → Option M
+  | .term t => some (t.realize θ)
+  | .mvar u => μ u
+  | .fail => none
+
+/-- `θ, μ` match the arguments `us` against the rule: each argument of the rule has the
+value given.  So a term accepts only a message, `fail` only `fail`, and a may-fail variable
+anything. -/
+def Rule.Matching {n : ℕ} (r : Rule F n) (θ : ℕ → M) (μ : ℕ → Option M)
+    (us : Fin n → Option M) : Prop :=
+  ∀ i, (r.args i).eval θ μ = us i
+
+end eval
 
 /-- The rule of the `i`-th projection of `k`-tuples, `proj k i (tuple k (x₀, …)) → xᵢ`, the
 variables numbered by position. -/
@@ -260,8 +284,9 @@ noncomputable def theoryOf (Ev : Sig) (eqs : Set (Term F × Term F)) (h : R1 eqs
 
 /-- A model, the write-up's Definition "Model" without the process: the equations, the
 rules of each declared destructor over the constructors of the calculus, and the public
-constructors and destructors; with the two conditions of the write-up's §3 under which the
-trace semantics is instantiated from it. -/
+constructors and destructors; with the condition (D) of the write-up's §2 on the rules of
+the destructors declared with `;`, and the two conditions of its §3 under which the trace
+semantics is instantiated from it. -/
 structure Model (F G Ev : Sig) where
   /-- The equations, between terms over the declared constructors. -/
   eqs : Set (Term F × Term F)
@@ -275,6 +300,16 @@ structure Model (F G Ev : Sig) where
   r1 : R1 eqs
   /-- (R2): the terms among the arguments of a rule are over the free symbols. -/
   r2 : ∀ {n : ℕ} (g : G n), ∀ r ∈ dtor g, ∀ i, (r.args i).Free (theoryOf Ev eqs r1).withData
+  /-- The destructors declared by `reduc` with their rules separated by `;` (manual
+  §3.1.1), whose rules are a set. -/
+  plain : ∀ n, Set (G n)
+  /-- (D): the rules of such a destructor are deterministic, as the manual requires: two of
+  them matching the same arguments give the same result. -/
+  det : ∀ {n : ℕ} (g : G n), g ∈ plain n → ∀ r ∈ dtor g, ∀ r' ∈ dtor g,
+    ∀ (θ θ' : ℕ → (theoryOf Ev eqs r1).withData.Msg)
+      (μ μ' : ℕ → Option (theoryOf Ev eqs r1).withData.Msg)
+      (us : Fin n → Option (theoryOf Ev eqs r1).withData.Msg),
+      r.Matching θ μ us → r'.Matching θ' μ' us → r.rhs.eval θ μ = r'.rhs.eval θ' μ'
 
 /-- The theory of the trace semantics a model instantiates. -/
 noncomputable def Model.theory (A : Model F G Ev) : Theory (Sig.withEv F Ev) :=

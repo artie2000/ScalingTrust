@@ -5,7 +5,7 @@ is measured against. Nothing here is built.
 
 | File | What it is |
 | --- | --- |
-| `BlanchetFnTPS16.pdf`, `BlanchetFnTPS16.txt` | B. Blanchet, *Modeling and Verifying Security Protocols with the Applied Pi Calculus and ProVerif*, FnTPS 2016, with a text extraction for searching: the paper the manual refers to for the theory behind ProVerif. Used for what the manual refers out, the adversary, public outputs, secrecy and correspondences (§3.1–3.3, Definitions 3.1–3.5), which `ProVerif.TraceSemantics.Security` and `Specification/` formalise, and for the background on terms, rewrite rules and equations (§2.1, §2.5.1). Its translation to Horn clauses and its resolution algorithm (§3.2.2–3.2.3, §4) are not used. |
+| `BlanchetFnTPS16.pdf`, `BlanchetFnTPS16.txt` | B. Blanchet, *Modeling and Verifying Security Protocols with the Applied Pi Calculus and ProVerif*, FnTPS 2016, with a text extraction for searching: the paper the manual refers to for the theory behind ProVerif. Used for what the manual refers out, the adversary and correspondences (§3.1–3.3, Definitions 3.1, 3.4 and 3.5), which `ProVerif.TraceSemantics.Security` and `Specification/` formalise, and for the background on terms, rewrite rules and equations (§2.1, §2.5.1); its secrecy by public output (Definitions 3.2 and 3.3) is replaced by the attacker's knowledge, as the `Specification` README says. Its translation to Horn clauses and its resolution algorithm (§3.2.2–3.2.3, §4) are not used. |
 | `AbadiBlanchetFournet18.pdf` | M. Abadi, B. Blanchet and C. Fournet, *The Applied Pi Calculus: Mobile Values, New Names, and Secure Communication*, JACM 65(1), 2018 (the arXiv version 1609.03003v2, which the ACM copy is; the section numbers agree). §2.2 is the chemical semantics of the applied pi calculus and §4.3 its labelled operational semantics, whose labels hide output terms behind variables so that labelled bisimilarity coincides with observational equivalence. Kept as the point of comparison: `ProVerif.TraceSemantics.Process` has no syntax and no frames and reveals output terms, a semantics for reachability queries and not for equivalences. |
 | `proverif-manual.pdf`, `proverif-manual.txt` | The ProVerif manual (version 2.05), with a text extraction for searching: the ground truth for what ProVerif code means. Appendix A is the grammar of the full input language and Appendix B its semantics, a labelled transition relation on configurations with terms with effects, tables, phases and synchronisations; `Specification/` formalises Appendix B for the fragment with terms with effects, and its README says what is left out. Enriched terms are §4.1.4 and function macros §4.2.3. The queries are described informally in §3.2 and §4.3.1, and Chapter 7 refers to the papers for the theory. Tables are §4.1.5; their encoding by private channels is §6.7.3. |
 | `DutertreSchneider97.pdf` | B. Dutertre and S. Schneider, *Using a PVS Embedding of CSP to Verify Authentication Protocols*, TPHOLs 1997. The same design as this folder, processes as trace sets and an enemy process built from a deduction relation, in PVS. |
@@ -19,10 +19,12 @@ Explorer](https://noiseexplorer.com), taken from the `models/` directory of
 [symbolicsoft/noiseexplorer](https://github.com/symbolicsoft/noiseexplorer).
 They are kept so that claims about what the embedding must be able to express
 can be checked against real ProVerif input rather than against the textbook
-encoding. They use a single untyped `key` sort, events, two phases, tables for
-per-session state, and queries that mix `attacker` facts with events; the
-`TraceSemantics` README lists which of these the trace semantics does not yet
-cover.
+encoding. They use a single untyped `key` sort, events, tables for
+per-session state, queries that mix `attacker` facts with events, and, `XX`,
+a second phase in which static keys are compromised. Both are translated in
+`../Translation/Examples/`, `XX` with its phases compiled away, and every
+query of `NN` is refuted in `../TraceSemantics/Examples/NoiseNN.lean`; the
+`TraceSemantics` README lists what the trace semantics does not yet cover.
 
 ### Security properties
 

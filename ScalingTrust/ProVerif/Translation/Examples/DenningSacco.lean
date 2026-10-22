@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.TraceSemantics.Security
+import ScalingTrust.ProVerif.TraceSemantics.Query
 
 /-!
 # `DenningSacco.pv`, translated
@@ -201,9 +201,11 @@ def initiator (sskA pkB : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `initiator` is prefix-closed. -/
-theorem initiator_mem_tree (sskA pkB : T.Msg) :
-    Proc.run (initiator sskA pkB) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [initiator])
+theorem initiator_tree (sskA pkB : T.Msg) : Cont.Tree (initiator sskA pkB) :=
+  by
+  unfold initiator
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only))
 
 def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
   .repl
@@ -219,9 +221,11 @@ def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `responder` is prefix-closed. -/
-theorem responder_mem_tree (skB spkA : T.Msg) :
-    Proc.run (responder skB spkA) ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [initiator_mem_tree, responder])
+theorem responder_tree (skB spkA : T.Msg) : Cont.Tree (responder skB spkA) :=
+  by
+  unfold responder
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [initiator_tree])
 
 /-- The main process. -/
 def system : Proc T.Msg :=
@@ -236,8 +240,16 @@ def system : Proc T.Msg :=
       responder skB (pk sskA)
 
 /-- The main process is prefix-closed. -/
-theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) := by
-  aesop  (add norm simp [initiator_mem_tree, responder_mem_tree, system])
+theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) :=
+  by
+  unfold system
+  exact
+    Cont.Tree.run
+      (by
+        aesop
+           (config :=
+            { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+           (add norm (by dsimp only), safe [initiator_tree, responder_tree]))
 
 /-! ## Queries -/
 

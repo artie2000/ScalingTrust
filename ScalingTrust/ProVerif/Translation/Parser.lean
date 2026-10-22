@@ -224,6 +224,19 @@ def sepBy {α : Type} (p : P α) (s close : String) : P (Array α) := do
 def optElse {α : Type} (p : P α) : P (Option α) := do
   if ← optKeyword "else" then some <$> p else return none
 
+/-- The bound of a replication `! i <= N` or `foreach i <= N`, a parameter or a numeral,
+which means nothing here. -/
+def bound : P Unit := do
+  match ← peek with
+  | .ident _ | .num _ => advance
+  | _ => unexpected "a bound"
+
+/-- `[precise, …]` on an input or a `get`, which means nothing here, or nothing. -/
+def skipOptions : P Unit := do
+  if ← optSym "[" then
+    discard (sepBy ident "," "]")
+    sym "]"
+
 /-! ## Terms (Figure A.1) and patterns
 
 An identifier is a variable, a free name or a constant; `fail` occurs in rewrite rules.
@@ -286,10 +299,22 @@ partial def atom : P Term := do
     let m ← term
     sym ")"
     return .app "not" #[m]
+  | .ident "insert" | .ident "get" => fail "tables inside terms are not translated"
   | .ident s =>
     if keywords.contains s then unexpected "a term"
     else
       advance
+      -- `x <-R t; M` is `new x : t; M` and `x[: t] <- M; M'` is `let x = M in M'` (§6.8).
+      if ← optSym "<-R" then
+        typeName
+        sym ";"
+        return .new s (← term)
+      if (← peek) == .sym ":" || (← peek) == .sym "<-" then
+        skipType
+        sym "<-"
+        let d ← term
+        sym ";"
+        return .let (.var s) d (← term) none
       if (← peek) == .sym "(" then return .app s (← args) else return .ident s
   | .sym "(" =>
     advance
@@ -350,10 +375,14 @@ partial def parallel (p : Proc) : P Proc := do
   if ← optSym "|" then parallel (.par p (← simple)) else return p
 
 /-- A process that is not a parallel composition.  A prefix extends to the right as far as
-possible; an absent continuation, `else` or `in` is `0`. -/
+possible; an absent continuation, `else` or `in` is `0`.  The manual's sugar is read as
+what it abbreviates (§6.8). -/
 partial def simple : P Proc := do
   match ← peek with
   | .num 0 =>
+    advance
+    return .nil
+  | .ident "yield" =>
     advance
     return .nil
   | .sym "(" =>
@@ -363,6 +392,15 @@ partial def simple : P Proc := do
     return p
   | .sym "!" =>
     advance
+    -- `! i <= N P` is `!P`.
+    discard (attempt (do discard ident; sym "<="; bound) <|> pure ())
+    return .repl (← proc)
+  | .ident "foreach" =>
+    advance
+    discard ident
+    sym "<="
+    bound
+    keyword "do"
     return .repl (← proc)
   | .ident "new" =>
     advance
@@ -382,7 +420,23 @@ partial def simple : P Proc := do
     sym ","
     let x ← pattern
     sym ")"
+    skipOptions
     return .inp c x (← continuation)
+  | .ident "insert" =>
+    advance
+    let d ← ident
+    let args ← args
+    return .insert d args (← continuation)
+  | .ident "get" =>
+    advance
+    let d ← ident
+    sym "("
+    let ps ← sepBy pattern "," ")"
+    sym ")"
+    let cond ← if ← optKeyword "suchthat" then some <$> term else pure none
+    skipOptions
+    let p ← if ← optKeyword "in" then proc else pure .nil
+    return .get d ps cond p (← elseProc)
   | .ident "out" =>
     advance
     sym "("
@@ -406,10 +460,24 @@ partial def simple : P Proc := do
     let e ← ident
     let args ← optArgs
     return .event e args (← continuation)
+  | .ident "phase" =>
+    advance
+    let n ← phaseNumber
+    return .phase n (← continuation)
+  | .ident "sync" => fail "synchronisation is not implemented yet"
   | .ident s =>
     if keywords.contains s then unexpected "a process"
     else
       advance
+      -- `x <-R t; P` is `new x : t; P` and `x[: t] <- D; P` is `let x = D in P`.
+      if ← optSym "<-R" then
+        typeName
+        return .new s (← continuation)
+      if (← peek) == .sym ":" || (← peek) == .sym "<-" then
+        skipType
+        sym "<-"
+        let d ← term
+        return .let (.var s) d (← continuation) .nil
       return .call s (← optArgs)
   | _ => unexpected "a process"
 
@@ -419,6 +487,14 @@ partial def continuation : P Proc := do
 
 partial def elseProc : P Proc := do
   if ← optKeyword "else" then proc else return .nil
+
+/-- The number of a phase. -/
+partial def phaseNumber : P Nat := do
+  match ← peek with
+  | .num n =>
+    advance
+    return n
+  | _ => unexpected "a phase number"
 
 end
 
@@ -460,15 +536,28 @@ def forallVars : P (Array (String × Bool)) := do
   else
     return #[]
 
+/-- The `let x = M in` bindings before a rule or an equation (manual §3.1.1, §4.2.2),
+applied to the equality by substitution, the later bindings first since each may use the
+earlier ones. -/
+partial def letBindings (acc : Array (String × Term)) : P (Array (String × Term)) := do
+  if ← optKeyword "let" then
+    let x ← ident
+    sym "="
+    let m ← term
+    keyword "in"
+    letBindings (acc.push (x, m))
+  else return acc
+
 /-- A rewrite rule, with the name of the destructor it is for. -/
 def rule : P (String × Rule) := do
   let i ← index
   let vars ← forallVars
+  let binds ← letBindings #[]
   let l ← atom
   sym "="
   let r ← term
   let .app g lhs := l | errorAt i "the left-hand side of a rewrite rule applies the destructor"
-  return (g, { vars, lhs, rhs := r })
+  return (g, { vars, lhs := lhs.map (Term.withBindings binds), rhs := r.withBindings binds })
 
 /-- The rules after `otherwise`. -/
 partial def otherwise (acc : Array (String × Rule)) : P (Array (String × Rule)) := do
@@ -479,19 +568,26 @@ def equation : P Equation := do
   let vars ← forallVars
   if let some (x, _) := vars.find? (·.2) then
     errorAt i s!"may-fail variable `{x}` in an equation"
+  let binds ← letBindings #[]
   let l ← atom
   sym "="
-  return { vars := vars.map (·.1), lhs := l, rhs := ← term }
+  let r ← term
+  return { vars := vars.map (·.1), lhs := l.withBindings binds, rhs := r.withBindings binds }
 
 /-- The rules of one destructor, declared at the token `i`: all for the same symbol, all of
-its arity. -/
-def dtor (i : Nat) (pub : Bool) (rules : Array (String × Rule)) : P Dtor := do
+its arity; `plain` when they are separated by `;`. -/
+def dtor (i : Nat) (pub plain : Bool) (rules : Array (String × Rule)) : P Dtor := do
   let (name, first) := rules[0]!
   let arity := first.lhs.size
   for (g, r) in rules do
     unless g == name do errorAt i s!"a rule for `{g}` among the rules of `{name}`"
     unless r.lhs.size == arity do errorAt i s!"the rules of `{name}` differ in arity"
-  return { name, arity, pub, rules := rules.map (·.2) }
+  return { name, arity, pub, rules := rules.map (·.2), plain }
+
+/-- A data constructor, a type converter among them, may not be private (manual §4.1.2). -/
+def checkDataPublic (i : Nat) (name : String) (opts : Array String) : P Unit := do
+  if opts.contains "private" && (opts.contains "data" || opts.contains "typeConverter") then
+    errorAt i s!"the data constructor `{name}` is declared private, which the manual forbids (§4.1.2)"
 
 /-- `(x : t, …)`, the parameters of a macro, which may not fail; or nothing. -/
 def params (what : String) : P (Array String) := do
@@ -505,53 +601,130 @@ def params (what : String) : P (Array String) := do
     errorAt i s!"may-fail parameter `{x}` of {what}"
   return ps.map (·.1)
 
+/-- `phase n`, or nothing. -/
+def phaseOpt : P (Option Nat) := do
+  if ← optKeyword "phase" then some <$> phaseNumber else return none
+
 mutual
 
-/-- `attacker(M)` or an event, possibly in parentheses. -/
-partial def fact : P Fact := do
+/-- A fact (Figure A.5), with whether it is injective: `attacker(M)`, `mess(N, M)` or
+`table(d(M₁, …))`, each with `phase n` or not; `event(e(M₁, …))` or `inj-event(e(M₁, …))`,
+which the lexer reads as `inj`, `-`, `event`; or a fact in parentheses. -/
+partial def fact : P (Bool × Fact) := do
+  let i ← index
   match ← peek with
   | .ident "attacker" =>
     advance
     sym "("
     let m ← term
     sym ")"
-    return .attacker m
-  | .ident "event" =>
+    return (false, .attacker m (← phaseOpt))
+  | .ident "mess" =>
     advance
     sym "("
-    let e ← ident
+    let c ← term
+    sym ","
+    let m ← term
+    sym ")"
+    return (false, .mess c m (← phaseOpt))
+  | .ident "table" =>
+    advance
+    sym "("
+    let d ← ident
     let args ← optArgs
     sym ")"
-    return .event e args
+    return (false, .table d args (← phaseOpt))
+  | .ident "event" =>
+    advance
+    return (false, ← eventFact)
+  | .ident "inj" =>
+    advance
+    sym "-"
+    keyword "event"
+    return (true, ← eventFact)
   | .sym "(" =>
     advance
     let f ← fact
     sym ")"
     return f
   | .ident "false" => fail "`false` is not a fact"
+  | .ident "is_nat" => errorAt i "natural numbers are not implemented yet"
+  | .ident "let" => errorAt i "`let` in a query is not implemented yet"
   | _ => unexpected "a fact"
 
-/-- The conclusion of a correspondence: a fact, or `false`, which makes the query ask that
-its premise never holds. -/
-partial def conclusion : P (Option Fact) := do
+/-- `(e(M₁, …, Mₙ))` after `event` or `inj-event`. -/
+partial def eventFact : P Fact := do
+  sym "("
+  let e ← ident
+  let args ← optArgs
+  sym ")"
+  return .event e args none
+
+/-- A hypothesis: a disjunction, or a nested correspondence when `==>` follows, whose
+left-hand side must then be a single fact; `&&` binds tighter than `||`, and `==>` looser
+than both (manual, Appendix A). -/
+partial def hyp : P Hyp := do
+  let i ← index
+  let h ← disj
+  if ← optSym "==>" then
+    match h with
+    | .fact inj f => return .corr inj f (← hyp)
+    | _ => errorAt i "only a fact may be before the arrow of a nested correspondence"
+  else return h
+
+partial def disj : P Hyp := do
+  let a ← conj
+  if ← optSym "||" then return .or a (← disj) else return a
+
+partial def conj : P Hyp := do
+  let a ← hypAtom
+  if ← optSym "&&" then return .and a (← conj) else return a
+
+/-- `false`, a hypothesis in parentheses, or a fact. -/
+partial def hypAtom : P Hyp := do
   match ← peek with
   | .ident "false" =>
     advance
-    return none
+    return .false
   | .sym "(" =>
     advance
-    let c ← conclusion
+    let h ← hyp
     sym ")"
-    return c
-  | _ => some <$> fact
+    return h
+  | _ =>
+    let (inj, f) ← fact
+    return .fact inj f
 
 end
 
-/-- `F`, or `F ==> H`. -/
+/-- `F₁ && … && Fₙ`, or `F₁ && … && Fₙ ==> H`.  An event before the arrow is injective
+when a fact after it is (manual §4.3.1); an injective correspondence with a fact before the
+arrow that is not an event is not implemented. -/
 def query (vars : Array String) : P Query := do
-  let premise ← fact
-  let concl ← if ← optSym "==>" then conclusion else pure none
-  return { vars, premise, conclusion := concl }
+  let i ← index
+  let fs ← sepBy1 fact "&&"
+  let concl ← if ← optSym "==>" then hyp else pure .false
+  let injConcl := concl.hasInj
+  let premise ← fs.mapM fun (inj, f) => do
+    match f with
+    | .event .. => pure (inj || injConcl, f)
+    | _ =>
+      if injConcl then
+        errorAt i "an injective correspondence with a fact before the arrow that is not an event is not implemented yet"
+      pure (false, f)
+  return { vars, premise, concl, source := Query.print vars fs concl }
+
+/-- A query, or `secret x`, the bound name whose secrecy is asked. -/
+def queryItem (vars : Array String) : P (Query ⊕ String) := do
+  let i ← index
+  if ← optKeyword "secret" then
+    let x ← ident
+    if (← peek) == .ident "public_vars" then
+      errorAt i "`query secret` with `public_vars` is not implemented yet"
+    if (← peek) == .sym "[" then
+      errorAt i "the options of `query secret`, as `[real_or_random]`, are not implemented yet: only the reachability secrecy of a bound name is"
+    return .inr x
+  else return .inl (← query vars)
 
 /-- `x : t, y : u;`, the variables of a query. -/
 def qvars : P (Array String) := do
@@ -571,12 +744,17 @@ def decl (m : Model) : P Model := do
     return m
   | .ident "set" =>
     advance
-    discard ident
+    let name ← ident
     sym "="
-    match ← peek with
-    | .ident _ | .num _ => advance
-    | _ => unexpected "a value"
+    let value ← match ← peek with
+      | .ident v => do advance; pure v
+      | .num n => do advance; pure (toString n)
+      | _ => unexpected "a value"
     sym "."
+    if name == "ignoreTypes" && !["true", "all"].contains value then
+      errorAt i s!"set ignoreTypes = {value}: translating with the types kept is not implemented yet; only the default, set ignoreTypes = true, is"
+    if name == "attacker" && value != "active" then
+      errorAt i s!"set attacker = {value}: the passive attacker is not implemented yet; only the default, set attacker = active, is"
     return m
   | .ident "channel" =>
     advance
@@ -598,6 +776,7 @@ def decl (m : Model) : P Model := do
     typeName
     let opts ← options
     sym "."
+    for x in xs do checkDataPublic i x opts
     let cs := xs.map fun name =>
       { name, arity := 0, pub := !opts.contains "private",
         converter := opts.contains "typeConverter", data := opts.contains "data" : Ctor }
@@ -615,11 +794,12 @@ def decl (m : Model) : P Model := do
     sym "."
     let pub := !opts.contains "private"
     if rules.isEmpty then
+      checkDataPublic i name opts
       let c : Ctor :=
         { name, arity := ts.size, pub, converter := opts.contains "typeConverter",
           data := opts.contains "data" }
       return { m with ctors := m.ctors.push c }
-    let d ← dtor i pub rules
+    let d ← dtor i pub false rules
     unless d.name == name do errorAt i s!"the rules of `{name}` are for `{d.name}`"
     unless d.arity == ts.size do errorAt i s!"the rules of `{name}` do not have its arity"
     return { m with dtors := m.dtors.push d }
@@ -628,7 +808,7 @@ def decl (m : Model) : P Model := do
     let rules ← sepBy1 rule ";"
     let opts ← options
     sym "."
-    return { m with dtors := m.dtors.push (← dtor i (!opts.contains "private") rules) }
+    return { m with dtors := m.dtors.push (← dtor i (!opts.contains "private") true rules) }
   | .ident "equation" =>
     advance
     let es ← sepBy1 equation ";"
@@ -645,6 +825,14 @@ def decl (m : Model) : P Model := do
       else pure 0
     sym "."
     return { m with events := m.events.push (e, n) }
+  | .ident "table" =>
+    advance
+    let d ← ident
+    sym "("
+    let ts ← sepBy typeName "," ")"
+    sym ")"
+    sym "."
+    return { m with tables := m.tables.push (d, ts.size) }
   | .ident "let" =>
     advance
     let name ← ident
@@ -664,10 +852,12 @@ def decl (m : Model) : P Model := do
   | .ident "query" =>
     advance
     let vars ← attempt qvars <|> pure #[]
-    let qs ← sepBy1 (query vars) ";"
+    let items ← sepBy1 (queryItem vars) ";"
     discard options
     sym "."
-    return { m with queries := m.queries ++ qs }
+    let qs := items.filterMap fun | .inl q => some q | .inr _ => none
+    let xs := items.filterMap fun | .inl _ => none | .inr x => some x
+    return { m with queries := m.queries ++ qs, secrets := m.secrets ++ xs }
   | _ => unexpected "a declaration"
 
 /-! ## Models -/

@@ -3,7 +3,7 @@ Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
 import Mathlib.Data.Multiset.Basic
 import ScalingTrust.ProVerif.Specification.Syntax
-import ScalingTrust.ProVerif.TraceSemantics.Security
+import ScalingTrust.ProVerif.TraceSemantics.Query
 
 /-!
 # The operational semantics of ProVerif's calculus
@@ -58,11 +58,14 @@ on process configurations.
   the context (`ArgRuns.lift`, `Runs.argCtx`).
 * **The survey's definitions** 3.1–3.5, to which the manual refers for the adversary and
   the properties of queries, and the write-up's Definitions "Deduction, knowledge",
-  "Satisfaction" and "Correspondences between facts", for single query facts, over the
-  manual's semantics: an adversary may use `new`, `if` and `let` inside its terms, and an
+  "Satisfaction" and "Correspondences", the general queries of `TraceSemantics/Query.lean`
+  with their facts holding at steps of a trace, `Model.SatisfiedAt`, over the manual's
+  semantics: an adversary may use `new`, `if`, `let` and `fail` inside its terms, and an
   attacker fact is satisfied when the attacker knows the term, as the manual reads it
   (§4.3.1): derives it, by the public constructors and destructors, from what was
-  communicated on channels it could derive.
+  communicated on channels it could derive.  Secrecy, `Model.Preserves`, is the attacker never coming to know the
+  term, as ProVerif checks `query attacker(M)`, in place of the survey's output on a public
+  name (Definitions 3.2 and 3.3); its docstring says why.
 -/
 
 namespace ProVerif.Specification
@@ -108,33 +111,19 @@ variable {A : Model F G Ev} {n : ℕ}
 
 /-! ## Destructors -/
 
-/-- The value of a may-fail term under a valuation `θ` of the ordinary variables, into
-messages, and `μ` of the may-fail variables, into may-fail messages: the write-up's `Uθ`. -/
-def MayFail.eval (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) : MayFail (Sig.cons F Ev) → Option A.Msg
-  | .term M => some (M.realize θ)
-  | .mvar u => μ u
-  | .fail => none
-
 theorem MayFail.eval_tt (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
-    MayFail.eval θ μ .tt = some StdOps.tt := by
+    MayFail.eval θ μ (.tt : MayFail (Sig.cons F Ev)) = some StdOps.tt := by
   rw [MayFail.tt, MayFail.eval, Theory.Msg.tt_def, Term.realize_func]
   exact congrArg (fun v : Fin 0 → A.Msg =>
     some (Structure.funMap (L := (Sig.cons F Ev).lang) (Sum.inr Data.tt) v))
     (funext fun i => i.elim0)
 
 theorem MayFail.eval_ff (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg) :
-    MayFail.eval θ μ .ff = some StdOps.ff := by
+    MayFail.eval θ μ (.ff : MayFail (Sig.cons F Ev)) = some StdOps.ff := by
   rw [MayFail.ff, MayFail.eval, Theory.Msg.ff_def, Term.realize_func]
   exact congrArg (fun v : Fin 0 → A.Msg =>
     some (Structure.funMap (L := (Sig.cons F Ev).lang) (Sum.inr Data.ff) v))
     (funext fun i => i.elim0)
-
-/-- `θ, μ` match the arguments `us` against the rule: each argument of the rule has the
-value given.  So a term accepts only a message, `fail` only `fail`, and a may-fail variable
-anything. -/
-def Rule.Matching (r : Rule (Sig.cons F Ev) n) (θ : ℕ → A.Msg) (μ : ℕ → Option A.Msg)
-    (us : Fin n → Option A.Msg) : Prop :=
-  ∀ i, (r.args i).eval θ μ = us i
 
 /-- The rules rewrite the arguments to `v`: the first rule that matches decides, and
 the result is `fail` when none does. -/
@@ -143,6 +132,29 @@ inductive Rewrites :
   | nil (us) : Rewrites [] us none
   | head {r rs us θ μ} : r.Matching θ μ us → Rewrites (r :: rs) us (r.rhs.eval θ μ)
   | tail {r rs us v} : (¬ ∃ θ μ, r.Matching θ μ us) → Rewrites rs us v → Rewrites (r :: rs) us v
+
+/-- For a destructor declared with `;`, any rule that matches decides: by (D), the list
+of its rules rewrites as the set does. -/
+theorem Model.rewrites_of_matching {g : G n} (hg : g ∈ A.plain n) {r : Rule (Sig.cons F Ev) n}
+    (hr : r ∈ A.dtor g) {θ : ℕ → A.Msg} {μ : ℕ → Option A.Msg} {us : Fin n → Option A.Msg}
+    (hm : r.Matching θ μ us) : Rewrites (A.rules (.inl g)) us (r.rhs.eval θ μ) := by
+  show Rewrites (A.dtor g) us _
+  suffices h : ∀ rs : List (Rule (Sig.cons F Ev) n), (∀ r' ∈ rs, r' ∈ A.dtor g) → r ∈ rs →
+      Rewrites rs us (r.rhs.eval θ μ) from h _ (fun _ h => h) hr
+  intro rs
+  induction rs with
+  | nil => exact fun _ h => (List.not_mem_nil h).elim
+  | cons r₀ rs ih =>
+    intro hsub hmem
+    by_cases h₀ : ∃ θ₀ μ₀, r₀.Matching θ₀ μ₀ us
+    · obtain ⟨θ₀, μ₀, hm₀⟩ := h₀
+      have h : r₀.rhs.eval θ₀ μ₀ = r.rhs.eval θ μ :=
+        A.det g hg r₀ (hsub r₀ List.mem_cons_self) r hr θ₀ θ μ₀ μ us hm₀ hm
+      rw [← h]
+      exact .head hm₀
+    · rcases List.mem_cons.1 hmem with rfl | hmem
+      · exact (h₀ ⟨θ, μ, hm⟩).elim
+      · exact .tail h₀ (ih (fun r' h => hsub r' (List.mem_cons_of_mem _ h)) hmem)
 
 variable (A)
 
@@ -1039,9 +1051,6 @@ variable (A)
 
 /-! ## The survey's definitions -/
 
-/-- The public names: the public nullary declared constructors. -/
-def Model.Npub : Set (F 0) := A.pubFun 0
-
 /-- A constructor of the calculus is public: a public declared one, or a data symbol; the
 event symbols are private. -/
 def Model.Public : ∀ {n : ℕ}, Sig.cons F Ev n → Prop
@@ -1093,16 +1102,6 @@ def Config.against (P₀ Q : Process F G Ev 0) : Config F G Ev := ⟨∅, {P₀,
 manual's transition relation having no rule for an offer. -/
 def Model.ManualTrace (c : Config F G Ev) (t : Trace A.Msg) : Prop := Runs A c t ∧ t.Closed
 
-/-- The trace outputs `m` publicly, the survey's Definition 3.2: a communication on a
-public name carries it. -/
-def Model.OutputsPublicly (t : Trace A.Msg) (m : A.Msg) : Prop :=
-  ∃ a ∈ A.Npub, Act.comm (Theory.Msg.app (.inl (.inl a)) ![]) m ∈ t
-
-/-- `P₀` preserves the secrecy of the closed term `M` from `N_pub`, the survey's
-Definition 3.3. -/
-def Model.Preserves (P₀ : Process F G Ev 0) (M : Tm F Ev 0) : Prop :=
-  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ¬ A.OutputsPublicly t (Tm.msg A M)
-
 /-- The attacker derives `m` from the messages `S`: the Dolev–Yao deduction of the write-up's
 Definition "Deduction, knowledge", applying the public constructors and, by the manual's
 rewriting, the public destructors to what it has, as the survey's adversary does (§3.1). -/
@@ -1124,36 +1123,61 @@ def Model.knowledge (t : Trace A.Msg) : Set A.Msg :=
 /-- The attacker knows `m` after the trace `t`: it derives `m` from its knowledge. -/
 def Model.Knows (t : Trace A.Msg) (m : A.Msg) : Prop := A.Derives (A.knowledge t) m
 
-/-- A query fact over the variables `X`: `event(ev(M₁, …, Mₖ))` or `attacker(M)` with the
-`Mᵢ` and `M` terms over constructors, free names and `X`. -/
+/-- `P₀` preserves the secrecy of the closed term `M`: after no trace against an adversary
+does the attacker know `M`.  This is what ProVerif checks for `query attacker(M)`, the
+reachability of the attacker's knowledge of `M`, and a deviation from the survey's
+Definitions 3.2 and 3.3, to which the manual refers, under which the trace must output `M`
+on a public name, a channel in the manual's `N_pub`.  The two agree when the model has a
+public name, on which the attacker can output whatever it knows; but a model may declare
+its public channel as a constant, as Noise Explorer's do with `const pub:channel`, and
+then has no public name, so that the survey's definition makes every term secret in it
+while ProVerif finds the attacks on it.  The write-up's Definition "Satisfaction" records
+the deviation. -/
+def Model.Preserves (P₀ : Process F G Ev 0) (M : Tm F Ev 0) : Prop :=
+  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ¬ A.Knows t (Tm.msg A M)
+
+/-- A query fact over the variables `X`, the write-up's Definition "Queries":
+`event(ev(M₁, …, Mₖ))`, `attacker(M)` or `mess(N, M)` with the `Mᵢ`, `M` and `N` terms over
+constructors, free names and `X`; or `F before ev(M₁, …, Mₖ)`, the fact `F` before the
+first occurrence of the event, which states a fact of a phase once phases are compiled
+out (write-up §3). -/
 inductive QueryFact (F Ev : Sig) (X : Type) : Type
   | event {k : ℕ} (e : Ev k) (args : Fin k → (Sig.cons F Ev).lang.Term X)
   | attacker (M : (Sig.cons F Ev).lang.Term X)
-
-/-- The trace satisfies the instance of the query fact under `σ`, the write-up's
-Definition "Satisfaction": an attacker fact when the attacker knows the term, as the manual
-reads it on either side of a correspondence (§4.3.1), and an event fact when the event is
-executed. -/
-def QueryFact.Satisfied {X : Type} (t : Trace A.Msg) (σ : X → A.Msg) : QueryFact F Ev X → Prop
-  | .event e args =>
-    Act.event (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ) ∈ t
-  | .attacker M => A.Knows t (M.realize σ)
+  | mess (N M : (Sig.cons F Ev).lang.Term X)
+  | before (Fq : QueryFact F Ev X) {k : ℕ} (e : Ev k) (args : Fin k → (Sig.cons F Ev).lang.Term X)
 
 variable {A}
 
 /-- The instance of a query fact under `σ`, as a fact of the trace semantics. -/
-def QueryFact.inst {X : Type} (σ : X → A.Msg) : QueryFact F Ev X → Fact A.Msg
+def QueryFact.inst {X : Type} (σ : X → A.Msg) : QueryFact F Ev X → QFact A.Msg
   | .event e args => .event (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ)
   | .attacker M => .knows (M.realize σ)
+  | .mess N M => .mess (N.realize σ) (M.realize σ)
+  | .before Fq e args =>
+    .before (Fq.inst σ) (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ)
 
 variable (A)
 
-/-- `P₀` satisfies `F ⇝ H` against `N_pub`-adversaries, the write-up's Definition
-"Correspondences between facts" for single facts: in every trace of the manual in which
-`F σ` is satisfied, some `H σ'` with `F σ' = F σ` is. -/
-def Model.Satisfies (P₀ : Process F G Ev 0) {X : Type} (Fq Hq : QueryFact F Ev X) : Prop :=
-  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ∀ σ : X → A.Msg,
-    Fq.Satisfied A t σ → ∃ σ' : X → A.Msg, Fq.inst σ' = Fq.inst σ ∧ Hq.Satisfied A t σ'
+/-- The instance `f` of a query fact holds at step `i` of the trace `t`, the write-up's
+Definition "Satisfaction": an action fact at the step that performs the action, the `i`-th
+action being `t[i-1]`; an attacker fact when the attacker knows the term after the first
+`i` actions, as the manual reads it on either side of a correspondence (§4.3.1); and
+`F before e` when `F` holds at `i` and no action so far is the event. -/
+def Model.SatisfiedAt (t : Trace A.Msg) : QFact A.Msg → ℕ → Prop
+  | .event e, i => 0 < i ∧ t[i - 1]? = some (.event e)
+  | .mess c m, i => 0 < i ∧ t[i - 1]? = some (.comm c m)
+  | .knows m, i => A.Knows (t.take i) m
+  | .before f e, i => Model.SatisfiedAt t f i ∧ Act.event e ∉ t.take i
+
+/-- `P₀` satisfies the query `q` against `N_pub`-adversaries, the write-up's Definition
+"Correspondences": every trace of the manual against an adversary satisfies it,
+`Query.Sat` of the trace semantics with the facts instantiated by the valuations of `X`
+and read at the steps of the trace by `SatisfiedAt`. -/
+def Model.Satisfies (P₀ : Process F G Ev 0) {X : Type} (q : Query (QueryFact F Ev X)) :
+    Prop :=
+  ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t →
+    (q.map fun Fq (σ : X → A.Msg) => Fq.inst σ).Sat (A.SatisfiedAt t) t.length
 
 end
 

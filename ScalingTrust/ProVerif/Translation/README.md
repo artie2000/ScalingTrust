@@ -12,7 +12,7 @@ The translator reads a model with a parser of its own, written with the parser
 combinators of `Std.Internal.Parsec`, and produces source by building Lean syntax
 with quotations and printing it with Lean's pretty printer.
 `Examples/DenningSacco.lean` is the survey's running example translated by the
-program; `ProVerif.TraceSemantics.Examples` imports it and proves its query.
+program; `../TraceSemantics/Examples/DenningSacco.lean` imports it and proves its query.
 
 ## Modules
 
@@ -20,9 +20,10 @@ program; `ProVerif.TraceSemantics.Examples` imports it and proves its query.
 | --- | --- |
 | `ProVerif.Translation.Model` | The abstract model, types erased, and its printing |
 | `ProVerif.Translation.Parser` | The lexer and the parser of the fragment, with `Std.Internal.Parsec`: `Lexer.lex` and `parse` |
+| `ProVerif.Translation.Compile` | The compilations before the translation, in the order run: `query secret x` to a marking event and a reachability query, tables to private channels and `table` facts to the events of insertions, and phases to tagged channels, tokens and a clock, the facts qualified by a phase read before the clock's events |
 | `ProVerif.Translation.Emit` | The recipe: Lean commands for a model, the definitions and the theorems about them, assembled by `emitFile`; `translate` runs the whole translation |
 | `ProVerif.Translation.Main` | The entry point |
-| `Examples/` | `DenningSacco.pv` and `Features.pv`, and their translations, which `ScalingTrust.ProVerif` imports so that the build checks them |
+| `Examples/` | `DenningSacco.pv` and `Features.pv` with their translations, and `NN.lean` and `XX.lean`, the translations of Noise Explorer's `../Reference/NN.noise.active.pv` and `XX.noise.active.pv`; `ScalingTrust.ProVerif` imports the four so that the build checks them, and `../TraceSemantics/Examples/` proves or refutes the queries of `DenningSacco` and `NN` |
 
 ## Running it
 
@@ -32,7 +33,7 @@ lake env lean --run ScalingTrust/ProVerif/Translation/Main.lean Model.pv Model.l
 ```
 
 The output is a module in the namespace named after the output file, importing
-`ScalingTrust.ProVerif.TraceSemantics.Security`. The translator runs under
+`ScalingTrust.ProVerif.TraceSemantics.Query`. The translator runs under
 `lean --run` rather than as a `lake exe`: it imports Mathlib's notations to quote
 and print them, and an executable would need those modules compiled to native
 code. Translation errors carry the line and column of the model.
@@ -43,31 +44,56 @@ The two examples were produced by
 lake env lean --run ScalingTrust/ProVerif/Translation/Main.lean ScalingTrust/ProVerif/Translation/Examples/DenningSacco.pv ScalingTrust/ProVerif/Translation/Examples/DenningSacco.lean
 ```
 
-and likewise for `Features`; run the same after changing the translator.
+and likewise for `Features`, and `NN.lean` by
+
+```sh
+lake env lean --run ScalingTrust/ProVerif/Translation/Main.lean ScalingTrust/ProVerif/Reference/NN.noise.active.pv ScalingTrust/ProVerif/Translation/Examples/NN.lean
+```
+
+and likewise `XX.lean` from `XX.noise.active.pv`. Run the same after changing
+the translator.
 
 ## The fragment
 
 The declarations `type`, `set`, `channel`, `free`, `const`, `fun` with the
-options `private`, `data` and `typeConverter`, `reduc` and `fun … reduc …
-otherwise …` with may-fail variables and the constant `fail`, `equation`,
-`event`, `let` process macros, `letfun` function macros and `query`; the
+options `private`, `data` and `typeConverter`, a data constructor or a type
+converter not being private as the manual requires (§4.1.2), `reduc` and `fun …
+reduc … otherwise …` with may-fail variables and the constant `fail`, `equation`,
+`event`, `table`, `let` process macros, `letfun` function macros and `query`; the
 processes `0`, `P | Q`, `!P`, `new`, `in` and `out`, `event`, macro calls,
-`let pat = D in P else Q` and `if D then P else Q`; and the queries `F`,
-`F ==> false` and `F ==> H` for single facts `F` and `H`, `attacker(M)` or an
-event, possibly in parentheses, with variables declared before them. Terms are
-identifiers, applications, tuples `(M₁, …, Mₙ)` with `(M)` being `M`, the
-booleans `true` and `false`, the comparisons `M = N` and `M <> N` and the
-connectives `M && N`, `M || N` and `not(M)`, which bind as in the manual, and in
-a process position also the enriched terms of the manual's §4.1.4: `new a; M`,
-`event e(M…); M`, `if D then M' else M''` and `let pat = M in M' else M''`, an
-absent `else` being `fail`. A pattern is a variable, an equality test `=M`, a
-tuple of patterns or a `[data]` constructor applied to patterns.
+`let pat = D in P else Q`, `if D then P else Q`, `insert` and `get` without
+`else`, `phase t; P`, and the manual's sugar `yield`, `foreach i <= N do P`,
+`! i <= N P`, `x <-R t; P` and `x <- D; P` (§6.8), read as what it
+abbreviates; the queries of the manual's §4.3.1, `F₁ && … && Fₙ` and `F₁ && …
+&& Fₙ ==> H` with variables declared before them, the facts `attacker(M)`,
+`mess(N, M)` and `table(d(M…))`, each with an optional `phase n`, `event(e(M…))`
+and `inj-event(e(M…))`, possibly in parentheses, and `H` built from facts with
+`&&`, `||`, `false` and nested correspondences `(F ==> H)`, `&&` binding
+tighter than `||`; and `secret x` as an item of a `query` declaration. Terms
+are identifiers, applications, tuples `(M₁, …, Mₙ)` with `(M)`
+being `M`, the booleans `true` and `false`, the comparisons `M = N` and
+`M <> N` and the connectives `M && N`, `M || N` and `not(M)`, which bind as in
+the manual, and in a process position also the enriched terms of the manual's
+§4.1.4: `new a; M`, `event e(M…); M`, `if D then M' else M''` and `let pat = M
+in M' else M''`, an absent `else` being `fail`. A pattern is a variable or the
+wildcard `_`, an equality test `=M`, a tuple of patterns or a `[data]`
+constructor applied to patterns. A rule or an equation may begin with `let x =
+M in` bindings, which are substituted. The options after an input or a `get`,
+such as `[precise]`, are read and dropped.
 
 Not translated: numerals, tuples and booleans in equations, tuple patterns in
-rewrite rules, `=D` patterns with a destructor in `D`, may-fail parameters of
-macros, `let` in equations and rules, tables, predicates, phases, and queries
-other than the three above, so none with `&&`, `||`, `inj-event`, nested
-correspondences or `secret`.
+rewrite rules, may-fail parameters of macros, `get` with an `else` branch,
+`insert` and `get` inside terms, predicates, `sync`, a process macro called
+in two phases, and in queries the equalities and inequalities between terms,
+`is_nat`, time variables `F@t`, `let`, the options of `secret x` and
+`public_vars`, and a fact other than an event before `==>` when `H` has an
+`inj-event`. An equation with a variable as a side and a rule mentioning a symbol
+at the root of an equation are rejected too, the write-up's restrictions (R1)
+and (R2) on the models translated, which the manual's semantics does not
+impose. A `set` declaration is read and dropped, except that `set ignoreTypes`
+with a value other than `true` and `set attacker = passive` are refused, with
+an error saying that the typed semantics and the passive attacker are not
+implemented.
 
 The lexer reads identifiers, numerals and symbols, the longest symbol first, and
 skips comments, which may nest. ProVerif's reserved words are not identifiers,
@@ -78,13 +104,52 @@ and nothing else is reserved. The precedences of processes are the manual's
 
 ## The recipe
 
-A model is translated piece by piece, types erased as in the manual's semantics
-(Appendix B).
+Three features are first compiled away on the model, by `Compile.lean`, in this
+order and as the write-up's §3 describes:
+
+* `query secret x` (`Model.withoutSecrets`): an event `xₛ(x)` marks each
+  binding of `x` by `new`, by an input or by a `let`, in the process and its
+  macros, and the query becomes `event(xₛ(x)) && attacker(x)`, the
+  reachability query the manual says it is (§4.3.1).
+* Tables, to private channels, the manual's encoding (§6.7.3)
+  (`Model.withoutTables`): a table `d` becomes a private free name, `insert
+  d(M₁, …, Mₙ); P` becomes `let rec₀ = (M₁, …, Mₙ) in ((!out(d, rec₀)) | P)`,
+  so that a record that fails blocks and the effects of the `Mᵢ` run once, and
+  `get d(T₁, …, Tₙ) suchthat M in P` becomes `in(d, (T₁, …, Tₙ)); if M then P`,
+  which blocks when no record matches, as a `get` without `else` does. A `get`
+  with an `else` branch is refused: an input cannot tell that no record
+  matches. When a query has a `table(d(…))` fact, an event `dᵢ(rec₀)` records
+  each insertion and the fact becomes `event(dᵢ((M₁, …, Mₙ)))`.
+* Phases, exactly, to channels tagged by the phase, tokens and a clock
+  (`Model.withoutPhases`): with `n` the greatest phase, the model gains the
+  public constants `ph₀ … phₙ`, the public free names `clock₁ … clockₙ`, the
+  private free names `go₁ … goₙ` and `tok₀ … tokₙ`, the events `tick₁ … tickₙ`
+  and, beside its process, the clock `out(tok₀, ph₀) | in(clock₁, _);
+  in(tok₀, _); event tick₁; ((!out(go₁, ph₁)) | out(tok₁, ph₁) | in(clock₂,
+  _); …)`, which the attacker advances. Under phase `t`, `out(N, M)` is
+  `out((N, phₜ), M)`, `in(N, T); P` is `in((N, phₜ), T); in(tokₜ, tokᵥ);
+  out(tokₜ, tokᵥ); P`, `phase s; P` is `in(go_s, _); P` with `P` under phase
+  `s`, or `0` when `s ≤ t`, and a table's supply is repeated for every phase
+  from `t` to `n`; the main process is under phase `0` and a macro under the
+  phase of its calls, which must agree. A fact `attacker(M) phase s` or
+  `table(…) phase s` with `s < n` becomes the fact `before tick_{s+1}`, `mess(N,
+  M) phase s` becomes `mess((N, ph_s), M)`, and an unqualified `mess` is of
+  the last phase. The write-up's §3 argues that the encoding is exact: a
+  process left behind by a transition can receive once but never acts on it,
+  and its other actions could have run before the transition.
+
+A model is then translated piece by piece, types erased as in the manual's
+semantics (Appendix B).
 An identifier of the model that is a name the translation uses unqualified,
 listed in `Emit.reserved`, such as `T` or `pure`, or that `aesop` reads as a
 phase or a builder in a rule list, such as `forward`, is first renamed by
 appending primes until it is free, `T'`, and the definition of a renamed symbol
-says so in its docstring.
+says so in its docstring. An identifier that is a Lean keyword, such as `show`,
+is printed escaped, `«show»`, by Lean's pretty printer, which decides by the
+token table of the translator's environment; the translator imports the module
+a translation imports, so that the table is the translation's. A variable
+named like a declared symbol, which ProVerif allows and whose binder would
+shadow the symbol's definition, is renamed with primes, `initiator'`.
 
 1. **Free names** (`free a`, `channel a`) become the constructors of an inductive
    type `Free`, and the nullary constructor `Fun.const : Free → Fun 0`; a free
@@ -126,7 +191,13 @@ says so in its docstring.
    rules, each becomes a term of type `Option (Option T.Msg)`, `none` when its
    patterns do not match and `some r` when they do, and the destructor is the
    rules in order chained with `<|>` and flattened by `Option.join`, so that the
-   first rule that matches decides, even when its result is `fail`. A pattern
+   first rule that matches decides, even when its result is `fail`. The rules
+   of a destructor declared with `;` are a set, which the manual requires to be
+   deterministic (§3.1.1), the write-up's (D), and the translation checks it:
+   two rules whose patterns unify, a may-fail variable with anything and an
+   ordinary variable with anything but `fail`, must give the same result under
+   the unifier, compared syntactically, so a pair that agrees only modulo the
+   equations is rejected and is to be ordered with `otherwise` instead. A pattern
    mentions no symbol at the root of an equation, the write-up's (R2), and no
    free name, which ProVerif forbids in a rule (Appendix A); `true` and `false`
    are constant patterns, tested by equality, and a tuple pattern in a rule is
@@ -170,7 +241,11 @@ says so in its docstring.
    components, a `[data]` constructor through its projections, one `match`
    each, and `=M` is an `if` on the equality; `P` runs where every test passes
    and `Q`, or `Proc.stop` after an `in`, where one fails, `Q` bound first as a
-   block `q₀` since the pattern can fail at several points. The pattern is not
+   block `q₀` since the pattern can fail at several points. A test `=D` whose
+   `D` has effects or may fail is evaluated first, after the term matched and
+   before the match, every such test of the pattern in order, as the manual's
+   Appendix B has it, and matched, its failure failing the match, before the
+   pattern is read with the value in its place. The pattern is not
    matched in an `Option` `do` block, which `aesop` cannot normalise. Variables
    keep their names, prefixed with `_` when nothing uses them. The process never
    uses `Theory.Msg.name`.
@@ -200,14 +275,22 @@ says so in its docstring.
    `T.Msg` or `Option T.Msg`, when its body has no effects, and to a block in
    `Cont (Proc T.Msg)` otherwise, so that a call with effects is bound by `←`.
 8. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
-   with `attacker(M)` as `Fact.knows M` and `event(e(M))` as `Fact.event (e M)`.
-   `query F` and `query F ==> false` both ask that `F` never holds: for
-   `attacker(M)` this is `system.Secret M`, and for an event it is
-   written out, `∀ t₀ ∈ system.Attacks, ¬ F.Holds t₀`;
-   `query F ==> H` is `system.Corr F H`, the survey's Def. 3.5. The
-   facts are functions of a valuation `σ : Varsᵢ → T.Msg` of the query's
-   variables, the inductive type `Varsᵢ`, and a never-holds query with variables
-   is quantified over `σ`.
+   each with its source text as docstring. The facts are functions of a
+   valuation `σ : Varsᵢ → T.Msg` of the query's variables, the inductive type
+   `Varsᵢ`. The basic shapes are stated with the `Fact` of `Security.lean`:
+   `query attacker(M)` and `query attacker(M) ==> false` are `system.Secret M`,
+   `query event(…)` is written out, `∀ t₀ ∈ system.Attacks, ¬ F.Holds t₀`, both
+   quantified over `σ` when the query has variables, and `query F ==> H` with
+   one fact on each side, neither injective, is `system.Corr F H`, the
+   survey's Def. 3.5. Every other query is `system.Satisfies (X := Varsᵢ)
+   ⟨[(inj₁, F₁), …], H⟩` over the facts of `TraceSemantics/Query.lean`, the
+   write-up's Definition "Translation of queries": `attacker(M)` is `QFact.knows
+   M`, `event(e(M))` and `inj-event(e(M))` are `QFact.event (e M)`, `mess(N,
+   M)` is `QFact.mess N M` and the compiled `F before e` is `QFact.before F e`;
+   the list holds the facts before `==>` with their injectivity, and `H` is
+   the hypothesis as a `Hyp`, `.fact inj F`, `.and`, `.or`, `.false` and
+   `.corr inj F H`. An event before `==>` is injective when `H` has an
+   `inj-event`, as the manual says (§4.3.1).
 9. **Theorems**, with generated proofs:
    * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
      instantiating `T₀.withData_satisfies` at the raw equation and evaluating
@@ -228,12 +311,20 @@ says so in its docstring.
      `Theory.Msg.eq_app_of_view'`, and refutes each earlier rule by computing;
      backwards it substitutes and computes, with a lemma per earlier rule that
      it matches only as its disjunct says;
-   * `p_mem_tree : Proc.run (p x …) ∈ Descriptive.tree (Act T.Msg)` for each
-     process macro `p`, by `aesop` unfolding the function macros and `p` and
-     using the lemmas of the macros declared before it, and then
-     `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)` the same way from
-     `system` and the macros' lemmas: a macro call ends a block, so a macro
-     always runs with the final continuation, as `Proc.run` does.
+   * `p_tree : Cont.Tree (p x …)` for each function macro with effects and
+     each process macro `p`, by `aesop` after unfolding `p`, with the rules of
+     the primitives, `Cont.Tree.bind` and the others of `Process.lean`, and
+     the lemmas of the macros declared before it; its `simp` normalisation is
+     off, since on a large block it exceeds its step limit, and `dsimp only`
+     in its place reduces the `have` of a `let` in the block, which `aesop`
+     neither indexes nor splits through, and its limits on the depth and the
+     number of rule applications are off, since the search follows the block
+     one safe rule per element and a block of Noise Explorer's `XX` model is
+     deeper than the default limit; and then
+     `system_mem_tree : system ∈ Descriptive.tree (Act T.Msg)` from
+     `Cont.Tree.run` the same way: a macro call ends a block, so a macro
+     always runs with the final continuation, as `Proc.run` does. A parameter
+     of a macro that its body does not mention is prefixed with `_`.
 
 Every binder the translation introduces carries a subscript, `x₀`, `a₀`, `t₀`,
 `u₀`, `σ`, and in proofs `h₀`, `hv₀`, `e₀`, `f₀`, `i₀`, `n₀`, which no ProVerif

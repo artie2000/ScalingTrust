@@ -320,11 +320,9 @@ def Proc.Corr (P : Proc M) {X : Type} (F H : (X → M) → Fact M) : Prop :=
   ∀ (σ : X → M), ∀ t ∈ P.Attacks, (F σ).Holds t → ∃ σ', F σ' = F σ ∧ (H σ').Holds t
 
 /-- Secrecy of `s`, the property that `query attacker(s)` checks: in no attack does the
-attacker come to know `s`.
-
-The survey's secrecy (Defs. 3.2, 3.3) counts the outputs on a public free name.
-Whatever the attacker knows it can relay on one, so `Secret` agrees with it when the
-model has a public free name; without one, the survey's counts nothing.
+attacker come to know `s`, the reachability of the fact as ProVerif decides it, which the
+specification's `Model.Preserves` states for the calculus; the survey's secrecy by an
+output on a public free name (Defs. 3.2, 3.3) is not followed, for the reason given there.
 
 `s` should contain no nonce: a nonce is identified by its index, which does not say
 which `new` created it. -/

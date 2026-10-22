@@ -4,19 +4,21 @@ Copyright (c) 2026. Released under the Apache 2.0 license.
 import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
 
 /-!
-# Examples
+# The Denning–Sacco model
 
-Security proofs of translated models.  `DenningSacco`, in `../Translation/Examples/`,
-is the translation of the survey's running example (§2.2), the simplified
-Denning-Sacco protocol, whose one query is `attacker(s)`; `system_secret` proves it by
-the closed-set method, `Proc.secret_of_closed`.  `leak_attack` exhibits an attack, on
-the one-action process `out(c, s)` over the same algebra, and `swap` is a process written
-by hand over it, with tuples and a boolean.
+`DenningSacco`, in `../../Translation/Examples/`, is the translation of the survey's
+running example (§2.2), the simplified Denning-Sacco protocol, whose one query is
+`attacker(s)`; `system_secret` proves it by the closed-set method,
+`Proc.secret_of_closed`.  `leak_attack` exhibits an attack, on the one-action process
+`out(c, s)` over the same algebra, and `swap` is a process written by hand over it, with
+tuples and a boolean.
 -/
 
-namespace ProVerif.TraceSemantics.Examples
+open DenningSacco
 
-open FirstOrder.Language DenningSacco
+namespace ProVerif.TraceSemantics.Examples.DenningSacco
+
+open FirstOrder.Language
 open Attacker (derive)
 
 /-! ## An attack -/
@@ -249,4 +251,4 @@ def swap : Proc T.Msg :=
 theorem swap_mem_tree : swap ∈ Descriptive.tree (Act T.Msg) := by
   aesop (add norm simp [swap])
 
-end ProVerif.TraceSemantics.Examples
+end ProVerif.TraceSemantics.Examples.DenningSacco

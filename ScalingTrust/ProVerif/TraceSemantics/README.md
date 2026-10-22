@@ -21,6 +21,7 @@ the rest of the folder.
 | `ProVerif.TraceSemantics.Term` | Messages from ProVerif declarations: terms, the equations, `Theory.Msg`, views, destructors |
 | `ProVerif.TraceSemantics.Data` | The data symbols, tuples and booleans: added to a signature by `Sig.withData` and to a theory by `Theory.withData`, the standard operations `StdOps` they give the messages, ProVerif's boolean operations on messages, and products and `Bool` as messages for protocols written by hand |
 | `ProVerif.TraceSemantics.Security` | The attacker's operations `Attacker` as a class on a message type; bounded traces and processes; the attacker as a process, attacks and what the attacker learns from them, the facts of queries, `Proc.Secret` and `Proc.Corr`, the closed-set method; the attacker of a model from its public declarations, `Attacker.ofDecls` |
+| `ProVerif.TraceSemantics.Query` | ProVerif's correspondence queries in general: hypotheses `Hyp` with `&&`, `||`, `false`, nested correspondences and injective facts, queries with several facts before the arrow, witnesses `Wit` and satisfaction `Query.Sat` by steps of a trace, generic in the facts; the facts `QFact` of the trace semantics, `event`, `knows`, `mess` and `before`, holding at a step, and `Proc.Satisfies`; the basic shapes as `Proc.Corr` and `Proc.Secret`; and `Hyp.Refuted` and `Proc.not_satisfies_single` for refuting a query on an attack |
 | `ProVerif.TraceSemantics.Attack` | Lemmas for exhibiting an attack: a trace of a translated body built one action at a time and through a parallel composition, the empty trace of an idle body (`Cont.Nil`), the attacker's share of an attack (`Trace.dual`, `Proc.mem_attacks`), and what the attacker knows after one and derives with the public destructors |
 | `ProVerif.TraceSemantics.Examples.DenningSacco` | The proof of the secrecy query of `DenningSacco`, the translated model in `../Translation/Examples/`; an attack on `out(c, s)`; a process written by hand with tuples and a boolean |
 | `ProVerif.TraceSemantics.Examples.NoiseNN` | Every query of `NN`, the translation in `../Translation/Examples/` of Noise Explorer's model of the `NN` handshake, refuted by two attacks |
@@ -131,6 +132,16 @@ every point of every attack. The facts of a query, `Fact`, are events and
 `P.Secret s` says that in no attack does the attacker come to know `s`.
 `P.Corr F H` says that in every attack in which an instance `F σ` holds,
 `H σ'` holds for some `σ'` with `F σ' = F σ`, so by the time `F σ` does.
+`P.Satisfies q` (`Query.lean`) states a general query, with several facts
+before the arrow, nested correspondences and injective facts, as ProVerif reads
+them (manual §4.3.1): the facts `QFact` hold at steps of a trace, an action at
+its step, the attacker's knowledge once acquired and `F before e` while the
+event `e` has not occurred; the hypothesis is witnessed by the last step at
+which the facts before the arrow hold, a nested `F ==> H` by the step of `F`,
+and an injective fact at distinct steps for distinct tuples of steps of the
+injective facts before the arrow. `Proc.not_satisfies_single` refutes a query
+on an attack: the facts before the arrow hold and `Hyp.Refuted` says that no
+witness exists.
 `Examples.DenningSacco.leak_attack` exhibits an attack, and `Examples.NoiseNN` two
 that refute every query of the `NN` model, with the lemmas of `Attack`: a trace of a translated
 body is built one action at a time, with `Proc.mem_par_seq` where one component
@@ -187,7 +198,8 @@ defined so that it respects the equation.
   "all declare a constant"), and only the names `new` creates are names. So
   the `Attacker` instance alone says what is public, and the attacker starts from `∅`, the public
   free names being derivable from nothing. The survey's Def. 3.2, whose public
-  channel must be a name, is the one definition this changes; see `Secret`.
+  channel must be a name, is not used: secrecy is the attacker's knowledge,
+  as `Secret` and the specification's `Preserves` define it.
 * **Freshness by index.** Rather than "the new name occurs nowhere", the
   indices of all the `new`s in a trace are distinct: `Proc.new` refuses to
   create a name the rest of the process creates again, `Proc.merge` refuses
@@ -209,13 +221,16 @@ defined so that it respects the equation.
 ## Not modelled
 
 Tables, which the translator compiles to private channels as the ProVerif
-manual's §6.7.3 does, except a `get` with an `else` branch; phases; queries
-with more than one fact before `==>`, nested and injective correspondences;
-and the secrecy of bound names (`query secret x`). A disjunction of
-conjunctions of facts after `==>` is written out in terms of `Attacks` and
-`Fact.Holds`. Of the two Noise Explorer models in `../Reference/`, `NN` is
-translated and its queries refuted in `Examples/`; `XX`
-compromises its static keys in a `phase 1`, so it marks what remains.
+manual's §6.7.3 does, except a `get` with an `else` branch; phases, which it
+compiles to channels tagged by the phase, tokens and a clock, the write-up's
+§3; and the secrecy of a bound name or variable (`query secret x`), which it
+compiles to a reachability query. Not modelled at all: synchronisation
+(`sync`), the passive attacker, predicates, natural numbers, in queries the
+equalities and inequalities between terms, time variables `F@t` and `let`, and
+observational equivalence. Both Noise Explorer models in `../Reference/` are
+translated in `../Translation/Examples/`, `XX` through the phase compilation;
+the queries of `NN` are refuted in `Examples/`, and nothing is proved about
+`XX` yet.
 
 ## References
 

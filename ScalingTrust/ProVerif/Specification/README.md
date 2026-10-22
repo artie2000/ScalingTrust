@@ -23,13 +23,14 @@ docstrings; the ones that shape the design are listed below.
 
 | Module | Contents |
 | --- | --- |
-| `ProVerif.Specification.Syntax` | Terms, expressions and processes of the write-up's Definition "Source syntax"; rewrite rules of destructors; a `Model`, the write-up's Definition "Model" with the conditions (R1) and (R2), and the theory of the trace semantics it instantiates; substitution for the bound variables |
-| `ProVerif.Specification.Semantics` | Matching and rewriting by rules; the labelled step relations on term configurations (Figure B.1) and on configurations (Figure B.2), weak traces; steps and runs of processes beside others, of expressions in contexts and of the arguments of a `k`-ary context; the survey's Definitions 3.1–3.5 and the write-up's "Deduction, knowledge", "Satisfaction" and "Correspondences between facts" |
+| `ProVerif.Specification.Syntax` | Terms, expressions and processes of the write-up's Definition "Source syntax"; rewrite rules of destructors and the matching of their arguments; a `Model`, the write-up's Definition "Model" with the conditions (D), (R1) and (R2), and the theory of the trace semantics it instantiates; substitution for the bound variables |
+| `ProVerif.Specification.Patterns` | Patterns as abbreviations, the write-up's Definition "Patterns": `Pat`, its variables, tests and leaves, and `Process.letPat`, `Process.inpPat` and `Expr.letPat`, the processes and expressions of the fragment that `let pat = D in P else Q`, `in(N, pat); P` and `let pat = D in D₁ else D₂` abbreviate, for any `Target` with `let`, `if` and substitution; the rule `dataRule` of a data constructor's projections and `Model.IsData` |
+| `ProVerif.Specification.Semantics` | Rewriting by rules, any matching rule deciding under (D); the labelled step relations on term configurations (Figure B.1) and on configurations (Figure B.2), weak traces; steps and runs of processes beside others, of expressions in contexts and of the arguments of a `k`-ary context; the survey's Definitions 3.1–3.5 and the write-up's "Deduction, knowledge", "Satisfaction", the facts of queries holding at steps of a trace, and "Correspondences", `Model.Satisfies`, the general queries of `TraceSemantics/Query.lean` read on the traces of the manual |
 | `ProVerif.Specification.Invariance` | Equality modulo `E` of terms, expressions and processes, and the invariance of runs under it: a step on a term `M' =_E M` counts as a step on `M` |
 | `ProVerif.Specification.Denotation` | Destructors as functions, the projections denoting the standard operations and the boolean destructors yielding a boolean or an argument, and the model's `Attacker` instance; the computation of an expression and the denotation of a process in `TraceSemantics`; substitution commutes with denotation |
 | `ProVerif.Specification.Adequacy` | The write-up's Lemma "Expressions" and Theorem "Adequacy": the traces of the computation of an expression with a continuation are its runs followed by traces of the continuation; a closed process denotes its weak traces; the Lemma "Evaluation" for effect-free expressions |
-| `ProVerif.Specification.Attacks` | Runs of `N_pub`-adversaries are attacker traces; attacker traces are replayed by adversary processes; an adversary intercepting the protocol's communications |
-| `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences"; the attackers of the calculus and of the trace semantics know the same messages after a trace |
+| `ProVerif.Specification.Attacks` | Runs of `N_pub`-adversaries are attacker traces; attacker traces are replayed by adversary processes |
+| `ProVerif.Specification.Correspondence` | The write-up's Theorems "Attacks", "Secrecy" and "Correspondences", the last for `F ⇝ H` and for `F ⇝ false`; the attackers of the calculus and of the trace semantics know the same messages after a trace |
 
 Everything is proved; nothing is admitted.
 
@@ -40,8 +41,8 @@ Everything is proved; nothing is admitted.
   `let` bind the last variable, and an environment extends with `Fin.snoc`.
   The manual's names are atoms; here `new` binds a variable, which the step
   replaces by the created name `ν_k`, a variable `.var (.inl k)` of the term.
-  Free names are nullary constructors, as in the trace semantics, and `N_pub`
-  is the set of public ones.
+  Free names are nullary constructors, as in the trace semantics, so an
+  adversary's names being in `N_pub` is its symbols being public.
 * **Event symbols are private constructors of the messages.** The manual
   declares event symbols `ev` apart from the constructors, so that
   `ev(M₁, …, Mₙ)` is not a term. A `Model` takes them as a signature `Ev` of
@@ -57,8 +58,11 @@ Everything is proved; nothing is admitted.
   `N_pub`-adversaries for its own calculus. Here an adversary is any process of
   the fragment whose names and symbols are public and that has no event, inside
   its terms too (`Model.Adversary`, `Model.PubExpr`), so it may use `new`, `if`
-  and `let` in a term: the natural extension. The private names, which the
-  survey's Definition 3.3 chooses with the model, are the declared `N_priv`.
+  and `let` in a term: the natural extension. It may also write `fail`, which
+  the input language lacks but which `if false then true` with its `else`
+  omitted evaluates to (manual §4.1.4), as the survey's clause (Rfail) gives the
+  adversary `fail` outright (§3.2.2). The private names, which the survey's
+  Definition 3.3 chooses with the model, are the declared `N_priv`.
 * **Terms have two spellings.** An expression is a term, a constructor or
   destructor applied to expressions, `fail`, or one of the manual's enriched
   forms. The write-up's grammar derives `f(M₁, …, Mₙ)` both as a term and as
@@ -73,7 +77,11 @@ Everything is proved; nothing is admitted.
   "Model" without the process, which the theorems take separately: the
   equations, the rules of each declared destructor, and the public
   constructors and destructors, with the conditions (R1) and (R2) of the
-  write-up's §3 as fields. The theory of the trace semantics is derived from
+  write-up's §3 as fields, and (D) of its §2: the destructors declared with
+  `;` are marked, `Model.plain`, and the manual's requirement that their
+  rules be deterministic (§3.1.1) is the field `Model.det`, under which any
+  rule that matches decides (`Model.rewrites_of_matching`), so that the list
+  of rules rewrites as the set does. The theory of the trace semantics is derived from
   it (`Model.theory`): its free symbols are the declared constructors at the
   root of no equation and the event symbols, and (R1) gives the condition (H).
   (R2) is what makes the matching of a rule unique (`Rule.Matching.eval_eq`).
@@ -143,24 +151,52 @@ Everything is proved; nothing is admitted.
   model, yield the same right-hand side, so the function of the write-up's
   Definition "Destructors from rewrite rules" that a destructor denotes is
   well defined.
-* **Queries with single facts.** `Model.Satisfies` is the write-up's
-  Definition "Correspondences between facts" for one fact on each side, which
-  is what `Proc.Corr` of the trace semantics checks.
+* **Patterns are abbreviations.** The manual's patterns in `in` and `let`, a
+  variable, `_`, `=D`, a tuple or a data constructor applied to patterns, are
+  not syntax here: `Process.letPat` and the others of `Patterns.lean` are the
+  processes and expressions of the fragment they abbreviate, the write-up's
+  Definition "Patterns", binding the term matched, evaluating every test into
+  a tuple, binding each leaf to the projections reading it and comparing the
+  test leaves, with every failure taking the `else` branch; the manual's
+  `matches` is defined exactly when none fails. Binders being indices, the
+  abbreviation renames the variables of the body to those of their leaves.
+  The translator compiles patterns the same way, with `Tuple.ofMsg` for the
+  projections of a tuple.
+* **Queries.** `Model.Satisfies` is the write-up's Definition
+  "Correspondences": a query of `TraceSemantics/Query.lean`, several facts
+  before `==>` and a hypothesis with `&&`, `||`, `false`, nested
+  correspondences and injective facts, read on the manual's traces with the
+  facts holding at steps, `Model.SatisfiedAt`: an event or a message at the
+  step of the action, an attacker fact once the attacker knows the term, and
+  `F before e` while the event has not occurred, the fact that the phase
+  compilation produces. `corr_iff` relates it to the property the translation
+  of a query states, `Proc.Satisfies` of the denotation, through
+  `satisfiedAt_iff`: the facts hold at the same steps in the two semantics.
 * **Attacker facts are knowledge.** The survey defines correspondences for
-  event facts only (Definition 3.5) and uses public output only for secrecy
-  (Definitions 3.2 and 3.3). An attacker fact in a query is read as the manual
-  reads it (§4.3.1), "the attacker knows `M`": `Model.Derives` is the
+  event facts only (Definition 3.5). An attacker fact in a query is read as the
+  manual reads it (§4.3.1), "the attacker knows `M`": `Model.Derives` is the
   Dolev–Yao deduction with the public constructors and destructors,
   `Model.knowledge` what the attacker has intercepted along a trace, every
   message communicated on a channel it could derive, and `Model.Knows` their
   composition. `Model.knows_iff` proves it the knowledge of the trace
   semantics, which is defined on its own.
+* **Secrecy is reachability.** `Model.Preserves` says that after no trace
+  against an adversary does the attacker know `M`: the reachability of
+  `attacker(M)`, which is what ProVerif decides for `query attacker(M)`. This
+  is a deliberate deviation from the survey's Definitions 3.2 and 3.3, to which
+  the manual refers, where secrecy is the absence of an output of `M` on a
+  name in `N_pub`. The two agree when `N_pub` is nonempty, since the attacker
+  can output what it knows on a public name; but `N_pub` holds the names
+  declared `free` or `channel` and not the public constants, which Appendix B
+  files among the constructors, and a model may declare its public channel as
+  a constant, as the Noise Explorer models do with `const pub:channel`. Such
+  a model has an empty `N_pub`, so the survey's definition makes every term
+  secret in it while ProVerif finds the attacks on it: the strict reading is
+  inconsistent with the tool, and the definition follows the tool. The
+  write-up's Definition "Satisfaction, secrecy" and its remark record this.
 * **The Attacks theorem.** The write-up states it as the Lean proves it: in
   `attacks_sound` and `attacks_complete` the trace of the manual against an
-  adversary is the attack itself, and conversely; `Model.knows_iff` says that
-  the two attackers know the same messages after a trace; and `attacks_known`
-  finds, for a message known after an attack, a trace against some adversary
-  with the same created names and events that outputs it publicly at its last
-  step, when `N_pub` is nonempty. Correspondences follows from the first two
-  and Secrecy from the first and the last. The write-up's hypothesis that `P₀`
+  adversary is the attack itself, and conversely, and `Model.knows_iff` says
+  that the two attackers know the same messages after a trace. Secrecy and
+  Correspondences follow from the three. The write-up's hypothesis that `P₀`
   and the secret mention no created name is not needed.
