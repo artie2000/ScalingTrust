@@ -1,0 +1,84 @@
+/*
+  The rest of the fragment, on a signed Diffie-Hellman exchange: the builtins
+  signing, symmetric-encryption, diffie-hellman and hashing; declared functions,
+  one private, with an equation that defines a destructor and one of the theory;
+  a let block; public constants and exponentiation; pairs as patterns and as
+  messages, and their projections; several In and Fr premises in one rule; a
+  destructor in an action and a conclusion; a rule with nothing but an action
+  fact of arity zero; a public variable chosen by a conclusion; restrictions with
+  an equality of terms and of timepoints, one written as an axiom; and lemmas
+  with attributes, with explicit all-traces, with the constants T and F, with
+  the connectives, with variables of every sort, and one marked sources, which
+  mentions KU and is not translated.  /* Comments nest. */
+*/
+
+theory Fragment
+begin
+
+builtins: signing, symmetric-encryption, diffie-hellman, hashing
+
+functions: wrap/2, unwrap/2, kdf/2, tag/1 [private]
+
+equations: unwrap(wrap(m, k), k) = m, kdf(x, y) = kdf(y, x)
+
+rule Setup:
+  [ Fr(~ltk) ] --[ Register($A) ]-> [ !Ltk($A, ~ltk), !Pk($A, pk(~ltk)), Out(pk(~ltk)) ]
+
+rule Reveal:
+  [ !Ltk(A, ltk) ] --[ Reveal(A) ]-> [ Out(ltk) ]
+
+rule Init:
+  let gx = 'g'^~x
+  in
+  [ Fr(~x), Fr(~id), !Ltk($A, ltk) ]
+  --[ Start($A, ~id) ]->
+  [ St_1($A, ~id, ~x), Out(<gx, sign(gx, ltk)>), Out(tag(~id)) ]
+
+rule Resp:
+  [ Fr(~y), In(<gx, sig>), !Pk($A, pkA) ]
+  --[ Eq(verify(sig, gx, pkA), true), Accept($A, gx^~y) ]->
+  [ Out('g'^~y), !Key($A, kdf(gx^~y, 'salt')) ]
+
+rule Fin:
+  [ St_1(A, id, x), In(gy) ]
+  --[ Finish(A, id, gy^x), Unique(id) ]->
+  [ Secret(id, wrap(x, gy^x)), Out(wrap(h(id), gy^x)) ]
+
+rule Unwrap:
+  [ Secret(id, w), In(k) ] --[ Unwrapped(id, unwrap(w, k)) ]-> [ Out(unwrap(w, k)) ]
+
+rule Proj:
+  [ In(p) ] --[ Projected(fst(p), snd(p)) ]-> []
+
+rule Tick:
+  [] --[ Tick() ]-> []
+
+rule Both:
+  [ In(a), In(b), Fr(~n), Fr(~m) ] --[ Both(a, b, ~n) ]-> [ Out(<a, b, ~n, ~m>) ]
+
+rule Announce:
+  [] --[ Announced($B, 'c') ]-> [ Out(<$B, 'c'>) ]
+
+restriction Equality:
+  "All x y #i. Eq(x, y) @ i ==> x = y"
+
+axiom Once:
+  "All id #i #j. Unique(id) @ i & Unique(id) @ j ==> #i = #j"
+
+lemma secrecy [reuse]:
+  all-traces
+  "All A id k #i.
+    Finish(A, id, k) @ i & not (Ex #r. Reveal(A) @ r & r < i)
+      ==> not (Ex #j. K(k) @ j)"
+
+lemma executable:
+  exists-trace
+  "Ex A id k #i #j. Start(A, id) @ i & Finish(A, id, k) @ j & i < j"
+
+lemma typing [sources]:
+  "All x #i. Unwrapped(x, x) @ i ==> (Ex #j. KU(x) @ j & j < i)"
+
+lemma mixed:
+  "All $B ~id #i. Announced($B, 'c') @ i ==> T | (F <=> Ex #j. Tick() @ j)"
+
+end
