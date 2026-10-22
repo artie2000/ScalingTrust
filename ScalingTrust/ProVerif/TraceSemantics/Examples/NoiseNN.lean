@@ -1,7 +1,8 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
-import ScalingTrust.ProVerif.TraceSemantics.Attack
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Attack
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Query
 import ScalingTrust.ProVerif.Translation.Examples.NN
 
 /-!
@@ -11,7 +12,7 @@ import ScalingTrust.ProVerif.Translation.Examples.NN
 the Noise handshake pattern `NN` (`-> e`, `<- e, ee`, `->`, `<-`) against an active
 attacker, `../../Reference/NN.noise.active.pv`.  The pattern has no static keys, so
 against an active attacker none of its properties hold, as Noise Explorer reports: each
-of the model's 37 queries is refuted here by an attack, with the lemmas of `Attack.lean`.
+of the model's 37 queries is refuted here by an attack, with the lemmas of `Proofs/`.
 
 Two attacks suffice.  In `attackA` the attacker plays the initiator towards `bob`: it
 sends a message a with an ephemeral key of its own, the public constant `empty`, so it

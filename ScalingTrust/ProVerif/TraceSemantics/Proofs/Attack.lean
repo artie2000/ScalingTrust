@@ -7,8 +7,7 @@ import ScalingTrust.ProVerif.TraceSemantics.Security
 # Exhibiting attacks
 
 Lemmas for showing that an explicit trace is an attack on a process and what the
-attacker knows after it, so that a query can be refuted by exhibiting a trace.  Nothing
-here changes the semantics, which `Process.lean` and `Security.lean` define.
+attacker knows after it, so that a query can be refuted by exhibiting a trace.
 
 * A trace of a translated body is built one action at a time with `Proc.mem_act`,
   `Proc.mem_inp` and `Proc.mem_new`, and through a parallel composition with
@@ -21,9 +20,9 @@ here changes the semantics, which `Process.lean` and `Security.lean` define.
   `u.dual` is the attacker's trace and `u.complete` the attack (`Proc.mem_attacks`).
 * After an attack the attacker knows everything derivable from the messages
   communicated on channels it knows from the start
-  (`Fact.holds_knows_of_derive`), and it derives by the public constructors
-  (`Attacker.app_mem_derive`, in `Security.lean`) and destructors
-  (`Attacker.dtor_mem_derive`).
+  (`Fact.holds_knows_of_derive`), and it derives by the public constructors and
+  destructors (`Attacker.app_mem_derive` and `Attacker.dtor_mem_derive`, in
+  `Security.lean`).
 -/
 
 namespace ProVerif.TraceSemantics
@@ -345,24 +344,6 @@ variable [Attacker M]
 
 open Attacker (derive)
 
-theorem Trace.subset_attackerKnowledge (K : Set M) :
-    ∀ t : Trace M, K ⊆ t.attackerKnowledge K
-  | [] => le_rfl
-  | _ :: t =>
-    (Set.subset_union_left.trans (derive.le_closure _)).trans (subset_attackerKnowledge _ t)
-
-theorem Trace.attackerKnowledge_mono {K K' : Set M} (h : K ⊆ K') :
-    ∀ t : Trace M, t.attackerKnowledge K ⊆ t.attackerKnowledge K'
-  | [] => h
-  | _ :: t =>
-    attackerKnowledge_mono
-      (derive.monotone (Set.union_subset_union h (by rintro m ⟨c, ha, hc⟩; exact ⟨c, ha, h hc⟩))) t
-
-theorem Trace.isClosed_attackerKnowledge {K : Set M} (hK : derive.IsClosed K) :
-    ∀ t : Trace M, derive.IsClosed (t.attackerKnowledge K)
-  | [] => hK
-  | _ :: t => isClosed_attackerKnowledge (derive.isClosed_closure _) t
-
 /-- After `t` the attacker knows everything derivable from the messages communicated on
 channels it knows from the start. -/
 theorem Trace.derive_comms_subset_attackerKnowledge (t : Trace M) :
@@ -382,23 +363,6 @@ theorem Fact.holds_knows_of_derive {t : Trace M} {m : M}
     (h : m ∈ derive {m | ∃ c, Act.comm c m ∈ t ∧ c ∈ derive ∅}) : (Fact.knows m).Holds t :=
   t.derive_comms_subset_attackerKnowledge h
 
-/-- A destructor among the attacker's operations, applied to derivable messages on which
-it succeeds, yields a derivable message. -/
-theorem Attacker.dtor_mem_derive {n : ℕ} {f : (Fin n → M) → Option M}
-    (hf : (⟨n, liftFail f⟩ : Σ n, (Fin n → Option M) → Option M) ∈ Attacker.ops)
-    {S : Set M} {ms : Fin n → M} (hms : ∀ i, ms i ∈ derive S) {r : M} (h : f ms = some r) :
-    r ∈ derive S := by
-  have hS : ClosedUnder Attacker.ops (derive S) := derive.isClosed_closure S
-  exact hS _ hf (fun i => some (ms i)) (fun i m h => Option.some_injective _ h ▸ hms i) _
-    (liftFail_eq_some.2 ⟨ms, fun _ => rfl, h⟩)
-
 end knowledge
-
-/-- A public destructor is among the operations of `Attacker.ofDecls`. -/
-theorem Attacker.ofDecls_mem_dtor {F : Sig} {T : Theory F} {pubFun : ∀ n, Set (F n)}
-    {pubDtors : Set (Σ n, (Fin n → Option T.withData.Msg) → Option T.withData.Msg)}
-    {o : Σ n, (Fin n → Option T.withData.Msg) → Option T.withData.Msg} (h : o ∈ pubDtors) :
-    o ∈ (Attacker.ofDecls pubFun pubDtors).ops :=
-  Or.inl (Or.inr h)
 
 end ProVerif.TraceSemantics

@@ -1,6 +1,7 @@
 /-
 Copyright (c) 2026. Released under the Apache 2.0 license.
 -/
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Secrecy
 import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
 
 /-!
