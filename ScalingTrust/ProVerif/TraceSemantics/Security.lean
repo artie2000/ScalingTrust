@@ -55,7 +55,9 @@ the knowledge closure. -/
 
 /-- `S` is closed under each operation in `ops`, an operation of some arity on
 may-fail arguments, `none` being `fail`.  An argument is either in `S` or `none`: the
-attacker can always pass `fail`, which is an expression of the calculus. -/
+attacker can always produce `fail`, which the survey's clause (Rfail) gives it outright
+(§3.2.2) and which `if false then true` with its `else` omitted evaluates to in the input
+language (manual §4.1.4). -/
 def ClosedUnder (ops : Set (Σ n, (Fin n → Option M) → Option M)) (S : Set M) : Prop :=
   ∀ o ∈ ops, ∀ args : Fin o.1 → Option M, (∀ i m, args i = some m → m ∈ S) →
     ∀ r, o.2 args = some r → r ∈ S

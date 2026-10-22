@@ -459,4 +459,78 @@ abbrev run (b : Cont (Proc M) Unit) : Proc M := b.run fun _ => nil
 
 end Proc
 
+/-! ### Prefix-closure of a body
+
+A body is proved prefix-closed one element at a time: `Cont.Tree b` says that `b` yields a
+prefix-closed process for every prefix-closed continuation, every primitive does, and a
+bind does when its parts do.  The rules are `aesop` rules, and a `match` or an `if` in a
+body is split by `aesop` itself, so the proof of a translated body is `aesop` with the
+rules of the macros it calls. -/
+
+/-- `b` yields a prefix-closed process whenever its continuation does. -/
+def Cont.Tree {α : Type} (b : Cont (Proc M) α) : Prop :=
+  ∀ κ : α → Proc M, (∀ a, κ a ∈ tree (Act M)) → b.run κ ∈ tree (Act M)
+
+namespace Cont.Tree
+
+variable {α β : Type}
+
+/-- The process of a prefix-closed body is prefix-closed. -/
+theorem run {b : Cont (Proc M) Unit} (h : Tree b) : Proc.run b ∈ tree (Act M) :=
+  h _ fun _ => Proc.nil_mem_tree
+
+@[aesop safe apply] theorem pure (a : α) : Tree (Pure.pure a : Cont (Proc M) α) :=
+  fun _ hκ => hκ a
+
+@[aesop safe apply] theorem bind {x : Cont (Proc M) α} {f : α → Cont (Proc M) β}
+    (hx : Tree x) (hf : ∀ a, Tree (f a)) : Tree (x >>= f) :=
+  fun κ hκ => hx _ fun a => hf a κ hκ
+
+@[aesop safe apply] theorem map {x : Cont (Proc M) α} {f : α → β} (hx : Tree x) :
+    Tree (f <$> x) :=
+  fun _ hκ => hx _ fun a => hκ (f a)
+
+/-- A `let` or a join point of `do`-notation. -/
+@[aesop safe apply] theorem letFun {v : β} {f : β → Cont (Proc M) α} (h : Tree (f v)) :
+    Tree (letFun v f) :=
+  h
+
+@[aesop safe apply] theorem ite {c : Prop} [Decidable c] {x y : Cont (Proc M) α} (hx : Tree x)
+    (hy : Tree y) : Tree (if c then x else y) := by
+  split
+  · exact hx
+  · exact hy
+
+@[aesop safe apply] theorem send (c m : M) : Tree (Proc.send c m) :=
+  fun _ hκ => Proc.act_mem_tree _ (hκ ())
+
+@[aesop safe apply] theorem recv (c : M) : Tree (Proc.recv c) :=
+  fun _ hκ => Proc.inp_mem_tree c hκ
+
+@[aesop safe apply] theorem fresh [Names M] : Tree (Proc.fresh : Cont (Proc M) M) :=
+  fun _ hκ => Proc.new_mem_tree fun _ => hκ _
+
+@[aesop safe apply] theorem emit (e : M) : Tree (Proc.emit e) :=
+  fun _ hκ => Proc.act_mem_tree _ (hκ ())
+
+@[aesop safe apply] theorem fork : Tree (Proc.fork : Cont (Proc M) Bool) :=
+  fun _ hκ => Proc.par_mem_tree (hκ true) (hκ false)
+
+@[aesop safe apply] theorem repl : Tree (Proc.repl : Cont (Proc M) Unit) :=
+  fun _ hκ => Proc.merge_mem_tree fun _ => hκ ()
+
+@[aesop safe apply] theorem stop : Tree (Proc.stop : Cont (Proc M) α) :=
+  fun _ _ => Proc.nil_mem_tree
+
+@[aesop safe apply] theorem ofOption (o : Option α) : Tree (Proc.ofOption o : Cont (Proc M) α) := by
+  intro κ hκ
+  cases o with
+  | none => exact Proc.nil_mem_tree
+  | some a => exact hκ a
+
+@[aesop safe apply] theorem lift (o : Option α) : Tree (monadLift o : Cont (Proc M) α) :=
+  ofOption o
+
+end Cont.Tree
+
 end ProVerif.TraceSemantics
