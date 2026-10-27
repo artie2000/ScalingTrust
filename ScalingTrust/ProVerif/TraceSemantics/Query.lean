@@ -13,7 +13,10 @@ correspondences `F ==> H`; an event fact may be injective.  Its facts hold at *s
 trace: an action fact at the step that performs the action, a knowledge fact at every step
 after which the attacker knows the message, an equality or a disequality of messages at
 every step when it holds, and `F before e` at the steps where `F` holds and the event `e`
-has not yet occurred, which states a fact of a phase once phases are compiled out.  The query holds of a trace when, for every substitution and every choice of
+has not yet occurred, which states a fact of a phase once phases are compiled out.  An
+injective `attacker(M)` before the arrow is the acquisition `learns`, which holds at the
+one step at which the attacker comes to know the message, so that its executions are
+counted as those of an event are.  The query holds of a trace when, for every substitution and every choice of
 steps at which the facts before the arrow hold, some instance of the hypothesis is
 witnessed by steps no later than the last of them: a fact at such a step, and a nested
 correspondence by a step of its own fact, before which its hypothesis is witnessed in
@@ -175,11 +178,14 @@ end sat
 /-! ## The facts of the trace semantics -/
 
 /-- A fact of a query: an event executed, a message known to the attacker, a message
-communicated on a channel, an equality or a disequality of messages, or a fact before the
-first occurrence of an event. -/
+acquired by the attacker, which is `knows` at the first step at which it holds and
+stands for an injective `attacker(M)` before the arrow, a message communicated on a
+channel, an equality or a disequality of messages, or a fact before the first occurrence
+of an event. -/
 inductive QFact (M : Type) where
   | event (e : M)
   | knows (m : M)
+  | learns (m : M)
   | mess (c m : M)
   | eq (m n : M)
   | ne (m n : M)
@@ -194,12 +200,15 @@ variable [Attacker M]
 
 /-- The fact holds at step `i` of `t`, the `i`-th action being `t[i-1]`: an action fact when
 that action is the action, a knowledge fact when the attacker knows the message after the
-first `i` actions, an equality or a disequality at every step when it holds of the
-messages, and `F before e` when `F` holds and no action so far is the event `e`. -/
+first `i` actions, an acquisition when it knows the message after `i` actions and not
+after `i - 1`, an equality or a disequality at every step when it holds of the messages,
+and `F before e` when `F` holds and no action so far is the event `e`. -/
 def QFact.HoldsAt (t : Trace M) : QFact M → ℕ → Prop
   | .event e, i => 0 < i ∧ t[i - 1]? = some (.event e)
   | .mess c m, i => 0 < i ∧ t[i - 1]? = some (.comm c m)
   | .knows m, i => m ∈ Trace.attackerKnowledge (derive ∅) (t.take i)
+  | .learns m, i => m ∈ Trace.attackerKnowledge (derive ∅) (t.take i) ∧
+      (i = 0 ∨ m ∉ Trace.attackerKnowledge (derive ∅) (t.take (i - 1)))
   | .eq m n, _ => m = n
   | .ne m n, _ => m ≠ n
   | .before F e, i => F.HoldsAt t i ∧ Act.event e ∉ t.take i

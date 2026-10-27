@@ -1,0 +1,19 @@
+(* Synchronisation (manual §4.1.7), which cannot be combined with phases and so
+   is not in Features.pv: two processes meet at level 1, and at level 2 a
+   tagged synchronisation in one of them meets an untagged one in a third
+   process; the levels are compiled to a coordinator. *)
+
+free c : channel.
+free s : bitstring [private].
+
+event Met.
+event Done.
+
+query attacker(s).
+query event(Done) ==> event(Met).
+
+let left = out(c, s); sync 1; event Met; sync 2 [two]; event Done.
+let right = in(c, x : bitstring); sync 1; out(c, x).
+
+process
+  left | right | (sync 2; out(c, s))

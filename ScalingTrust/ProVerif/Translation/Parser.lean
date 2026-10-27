@@ -267,9 +267,12 @@ partial def atom : P Term := do
   | .ident "new" =>
     advance
     let x ← ident
-    skipType
-    sym ";"
-    return .new x (← term)
+    if (← peek) == .sym ":" || (← peek) == .sym ";" then
+      skipType
+      sym ";"
+      return .new x (← term)
+    -- `new n` in a query: a reference to the names created at that restriction (§6.4).
+    return .app "new" #[.ident x]
   | .ident "if" =>
     advance
     let c ← term
@@ -464,7 +467,15 @@ partial def simple : P Proc := do
     advance
     let n ← phaseNumber
     return .phase n (← continuation)
-  | .ident "sync" => fail "synchronisation is not implemented yet"
+  | .ident "sync" =>
+    advance
+    let n ← phaseNumber
+    let tag ← if ← optSym "[" then do
+        let t ← ident
+        sym "]"
+        pure (some t)
+      else pure none
+    return .sync n tag (← continuation)
   | .ident s =>
     if keywords.contains s then unexpected "a process"
     else
@@ -589,21 +600,74 @@ def checkDataPublic (i : Nat) (name : String) (opts : Array String) : P Unit := 
   if opts.contains "private" && (opts.contains "data" || opts.contains "typeConverter") then
     errorAt i s!"the data constructor `{name}` is declared private, which the manual forbids (§4.1.2)"
 
-/-- `(x : t, …)`, the parameters of a macro, which may not fail; or nothing. -/
-def params (what : String) : P (Array String) := do
+/-- `(x : t [or fail], …)`, the parameters of a macro, each marked if it may fail (manual
+§4.2.3, §4.2.4); or nothing. -/
+def params : P (Array (String × Bool)) := do
   if (← peek) != .sym "(" then return #[]
-  let i ← index
   advance
   let bs ← sepBy binders "," ")"
   sym ")"
-  let ps := bs.flatten
-  if let some (x, _) := ps.find? (·.2) then
-    errorAt i s!"may-fail parameter `{x}` of {what}"
-  return ps.map (·.1)
+  return bs.flatten
 
 /-- `phase n`, or nothing. -/
 def phaseOpt : P (Option Nat) := do
   if ← optKeyword "phase" then some <$> phaseNumber else return none
+
+/-- The `let x = M in` bindings of a query (manual §6.4), `M` a term without destructors,
+applied by substitution; `let x = new n in` makes every occurrence of `x` one reference to
+the names created at `new n`, keyed by the binding's position. -/
+partial def queryBindings (acc : Array (String × Term)) : P (Array (String × Term)) := do
+  if ← optKeyword "let" then
+    let i ← index
+    let x ← ident
+    sym "="
+    let m ← term
+    keyword "in"
+    let m := match m with
+      | .app "new" #[n] => .app "new" #[n, .ident s!"{x}@{i}"]
+      | m => m
+    queryBindings (acc.push (x, m))
+  else return acc
+
+/-- The references `new n` of a query as variables of the query: each occurrence a fresh
+variable `nₖ`, the occurrences sharing a key one variable.  The state is the variables
+with their restrictions, the variable of each key, and the next index. -/
+structure BoundSt where
+  vars : Array (String × String) := #[]
+  keys : Array (String × String) := #[]
+  next : Nat := 0
+
+partial def boundTerm : Term → StateM BoundSt Term
+  | .app "new" #[.ident n] => do
+    let st ← get
+    let v := n ++ subscript st.next
+    set { st with vars := st.vars.push (v, n), next := st.next + 1 }
+    return .ident v
+  | .app "new" #[.ident n, .ident key] => do
+    let st ← get
+    if let some (_, v) := st.keys.find? (·.1 == key) then return .ident v
+    let v := n ++ subscript st.next
+    set { st with vars := st.vars.push (v, n), keys := st.keys.push (key, v), next := st.next + 1 }
+    return .ident v
+  | .app f args => return .app f (← args.mapM boundTerm)
+  | .tuple args => return .tuple (← args.mapM boundTerm)
+  | t => return t
+
+partial def boundFact : Fact → StateM BoundSt Fact
+  | .attacker m ph => return .attacker (← boundTerm m) ph
+  | .event e args ph => return .event e (← args.mapM boundTerm) ph
+  | .mess c m ph => return .mess (← boundTerm c) (← boundTerm m) ph
+  | .table d args ph => return .table d (← args.mapM boundTerm) ph
+  | .eq l r => return .eq (← boundTerm l) (← boundTerm r)
+  | .ne l r => return .ne (← boundTerm l) (← boundTerm r)
+  | .before f e args => return .before (← boundFact f) e (← args.mapM boundTerm)
+
+partial def boundHyp : Hyp → StateM BoundSt Hyp
+  | .fact inj f => return .fact inj (← boundFact f)
+  | .and h₁ h₂ => return .and (← boundHyp h₁) (← boundHyp h₂)
+  | .or h₁ h₂ => return .or (← boundHyp h₁) (← boundHyp h₂)
+  | .false => return .false
+  | .corr inj f h => return .corr inj (← boundFact f) (← boundHyp h)
 
 mutual
 
@@ -649,7 +713,10 @@ partial def fact : P (Bool × Fact) := do
     return f
   | .ident "false" => fail "`false` is not a fact"
   | .ident "is_nat" => errorAt i "natural numbers are not implemented yet"
-  | .ident "let" => errorAt i "`let` in a query is not implemented yet"
+  | .ident "let" =>
+    let binds ← queryBindings #[]
+    let (inj, f) ← fact
+    return (inj, binds.foldr (fun (x, m) f => Fact.substVar x m f) f)
   | _ => unexpected "a fact"
 
 /-- `(e(M₁, …, Mₙ))` after `event` or `inj-event`. -/
@@ -680,39 +747,57 @@ partial def conj : P Hyp := do
   let a ← hypAtom
   if ← optSym "&&" then return .and a (← conj) else return a
 
-/-- `false`, a hypothesis in parentheses, or a fact. -/
+/-- `false`, a hypothesis in parentheses, a hypothesis under `let` bindings, a fact, or an
+equality `M = N` or disequality `M <> N`, which are facts after the arrow only (manual
+§4.3.1); a parenthesis that does not open a hypothesis opens a tuple of the latter. -/
 partial def hypAtom : P Hyp := do
   match ← peek with
   | .ident "false" =>
     advance
     return .false
-  | .sym "(" =>
-    advance
+  | .ident "let" =>
+    let binds ← queryBindings #[]
     let h ← hyp
-    sym ")"
-    return h
-  | _ =>
+    return binds.foldr (fun (x, m) h => Hyp.substVar x m h) h
+  | .sym "(" =>
+    let parenthesised : P Hyp := do
+      advance
+      let h ← hyp
+      sym ")"
+      return h
+    attempt parenthesised <|> eqFact
+  | .ident "attacker" | .ident "mess" | .ident "table" | .ident "event" | .ident "inj"
+  | .ident "is_nat" =>
     let (inj, f) ← fact
     return .fact inj f
+  | _ => eqFact
+
+/-- `M = N` or `M <> N`. -/
+partial def eqFact : P Hyp := do
+  let l ← atom
+  if ← optSym "=" then return .fact false (.eq l (← atom))
+  if ← optSym "<>" then return .fact false (.ne l (← atom))
+  unexpected "a fact"
 
 end
 
-/-- `F₁ && … && Fₙ`, or `F₁ && … && Fₙ ==> H`.  An event before the arrow is injective
-when a fact after it is (manual §4.3.1); an injective correspondence with a fact before the
-arrow that is not an event is not implemented. -/
+/-- `F₁ && … && Fₙ`, or `F₁ && … && Fₙ ==> H`.  A fact before the arrow is injective when
+a fact after it is: the manual says so of an event (§4.3.1), and the translation extends
+it to the other facts, an injective `attacker(M)` being the attacker's acquisition of
+`M`. -/
 def query (vars : Array String) : P Query := do
-  let i ← index
+  let binds ← queryBindings #[]
   let fs ← sepBy1 fact "&&"
   let concl ← if ← optSym "==>" then hyp else pure .false
+  let fs := fs.map fun (inj, f) => (inj, binds.foldr (fun (x, m) f => Fact.substVar x m f) f)
+  let concl := binds.foldr (fun (x, m) h => Hyp.substVar x m h) concl
+  let ((fs, concl), st) := (do
+    let fs ← fs.mapM fun (inj, f) => do return (inj, ← boundFact f)
+    return (fs, ← boundHyp concl) : StateM BoundSt _).run {}
+  let vars := vars ++ st.vars.map (·.1)
   let injConcl := concl.hasInj
-  let premise ← fs.mapM fun (inj, f) => do
-    match f with
-    | .event .. => pure (inj || injConcl, f)
-    | _ =>
-      if injConcl then
-        errorAt i "an injective correspondence with a fact before the arrow that is not an event is not implemented yet"
-      pure (false, f)
-  return { vars, premise, concl, source := Query.print vars fs concl }
+  let premise := fs.map fun (inj, f) => (inj || injConcl, f)
+  return { vars, premise, concl, source := Query.print vars fs concl st.vars, bound := st.vars }
 
 /-- A query, or `secret x`, the bound name whose secrecy is asked. -/
 def queryItem (vars : Array String) : P (Query ⊕ String) := do
@@ -836,7 +921,7 @@ def decl (m : Model) : P Model := do
   | .ident "let" =>
     advance
     let name ← ident
-    let params ← params "a process macro"
+    let params ← params
     sym "="
     let body ← proc
     sym "."
@@ -844,7 +929,7 @@ def decl (m : Model) : P Model := do
   | .ident "letfun" =>
     advance
     let name ← ident
-    let params ← params "a function macro"
+    let params ← params
     sym "="
     let body ← term
     sym "."

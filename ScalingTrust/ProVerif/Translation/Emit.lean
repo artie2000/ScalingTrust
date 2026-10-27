@@ -70,6 +70,8 @@ structure St where
   tests : Array (Lean.Term × Lean.Term) := #[]
   env : Std.HashMap String Lean.Term := {}
   fns : Std.HashMap String (Bool × Bool) := {}
+  /-- The parameters of the macro being emitted that may fail, of type `Option T.Msg`. -/
+  mayVars : Std.HashSet String := {}
   deriving Inhabited
 
 /-- Emission: the context, the state, and `CoreM` for quotations and the pretty printer. -/
@@ -1223,6 +1225,13 @@ def applyVals (f : Ident) (ms : Array Msg) (opt mayArgs : Bool) : EmitM Msg := d
     return if opt then .may e else .pure e
   return .may (← bindMay ms fun as => do if opt then app f as else `(some $(← app f as)))
 
+/-- The arguments `cs` of a macro with the parameters `params`: one for a parameter that
+may fail is passed as the `Option T.Msg` it is, `some` of a message, instead of being
+matched first (manual §4.2.3, §4.2.4). -/
+def passFail (cs : Array Comp) (params : Array (String × Bool)) : EmitM (Array Comp) :=
+  (cs.zip params).mapM fun (c, _, mayFail) =>
+    if mayFail then return { c with value := .pure (← optVal c.value true) } else pure c
+
 /-- The binder for the variable `x`, `_x` when it is not used; the wildcard `_` is `_`, and
 a variable named like a declared symbol, which the translation would otherwise shadow, is
 renamed with primes until it is free. -/
@@ -1239,7 +1248,7 @@ applied to such terms, or a tuple of them.  A comparison or connective is not on
 destructor, an `Option` in Lean. -/
 partial def pureTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Bool
   | .ident x => do
-    if env.contains x then return true
+    if env.contains x then return !(← get).mayVars.contains x
     match ← sym? x with
     | some (.free _) | some (.ctor _) | some (.bool _) => return true
     | _ => return false
@@ -1348,7 +1357,9 @@ mutual
 /-- A term in a process position, its variables read from `env`. -/
 partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
   | .fail => return { value := .may (← `(none)) }
-  | .ident x => return { value := .pure (← emitIdent env x) }
+  | .ident x => do
+    let e ← emitIdent env x
+    return { value := if (← get).mayVars.contains x then .may e else .pure e }
   | .tuple args => do
     let cs ← args.mapM (emitTerm env)
     let ms := cs.map (·.value)
@@ -1379,6 +1390,8 @@ partial def emitTerm (env : Std.HashMap String Lean.Term) : Term → EmitM Comp
       arity fn.params.size
       let some (effects, mayFail) := (← get).fns[f]?
         | throwError "the function macro `{f}` is used before its definition"
+      let cs ← passFail cs fn.params
+      let ms := cs.map (·.value)
       -- The call is the write-up's nested `let`s: when an argument has effects and another
       -- may fail, each argument's effects run and its value is tested before the next.
       if cs.any (!·.elems.isEmpty) && ms.any (· matches .may _) then
@@ -1616,18 +1629,27 @@ partial def matchProj {α : Type} (B : MatchBuilder α) (bind : String → Ident
 
 end
 
+abbrev Binder := TSyntax ``Parser.Term.bracketedBinder
+
+/-- `(x : T.Msg)`, or `(x : Option T.Msg)` for a parameter that may fail. -/
+def paramBinder (x : Ident) (mayFail : Bool) : EmitM Binder :=
+  if mayFail then `(bracketedBinder| ($x:ident : Option T.Msg))
+  else `(bracketedBinder| ($x:ident : T.Msg))
+
 /-- The parameters `params` of a macro as binders, `_x` for one that `used` does not
-mention, and the environment binding them. -/
-def paramBinders (owner : String) (params used : Array String) :
-    EmitM (Array Ident × Std.HashMap String Lean.Term) := do
+mention and of type `Option T.Msg` for one that may fail, which is recorded as such, and
+the environment binding them. -/
+def paramBinders (owner : String) (params : Array (String × Bool)) (used : Array String) :
+    EmitM (Array Binder × Std.HashMap String Lean.Term) := do
   let mut env : Std.HashMap String Lean.Term := {}
-  let mut ps : Array Ident := #[]
-  for x in params do
+  let mut ps : Array Binder := #[]
+  for (x, mayFail) in params do
     if (← read).syms.contains x then
       throwError "the parameter `{x}` of `{owner}` has the name of a declared symbol"
     let b := ident (if used.contains x then x else "_" ++ x)
-    ps := ps.push b
+    ps := ps.push (← paramBinder b mayFail)
     env := env.insert x b
+    if mayFail then modify fun st => { st with mayVars := st.mayVars.insert x }
   return (ps, env)
 
 /-- The `aesop` call of a prefix-closure proof: the rules of the primitives, `Cont.Tree.bind`
@@ -1650,16 +1672,18 @@ def treeProof (f : String) (lemmas : Array String) : EmitM Lean.Term := do
   let seq := mkTacticSeq #[← `(tactic| unfold $(ident f):ident), ← treeSearch lemmas]
   `(by $seq:tacticSeq)
 
-/-- The theorem `f_tree : Cont.Tree (f x …)` for the macro `f` with the parameters `xs`. -/
-def treeTheorem (f : String) (xs : Array Ident) (lemmas : Array String) :
+/-- The theorem `f_tree : Cont.Tree (f x …)` for the macro `f` with the parameters
+`params`. -/
+def treeTheorem (f : String) (params : Array (String × Bool)) (lemmas : Array String) :
     EmitM (String × Command) := do
   let name := f ++ "_tree"
   if (← read).syms.contains name then
     throwError "`{name}` is a name the translation uses; rename it"
-  let call ← app (ident f) (xs.map (·))
+  let call ← app (ident f) (params.map fun (x, _) => ident x)
+  let bs ← params.mapM fun (x, mayFail) => paramBinder (ident x) mayFail
   let proof ← treeProof f lemmas
-  let cmd ← if xs.isEmpty then `(theorem $(ident name):ident : Cont.Tree $call := $proof)
-    else `(theorem $(ident name):ident ($xs* : T.Msg) : Cont.Tree $call := $proof)
+  let cmd ← if bs.isEmpty then `(theorem $(ident name):ident : Cont.Tree $call := $proof)
+    else `(theorem $(ident name):ident $bs* : Cont.Tree $call := $proof)
   return (name, cmd)
 
 /-- A function macro: a function of its parameters to its value when it has no effects,
@@ -1682,9 +1706,9 @@ def emitFn (f : Fn) (lemmas : Array String) : EmitM (Command × Option (String �
   let block := mkDoSeq (← blockOf c mayFail)
   let body ← if effects then `(do $block:doSeq) else pure c.value.term
   let cmd ← if ps.isEmpty then `(def $(ident f.name):ident : $ty := $body)
-    else `(def $(ident f.name):ident ($ps* : T.Msg) : $ty := $body)
+    else `(def $(ident f.name):ident $ps* : $ty := $body)
   if !effects then return (cmd, none)
-  return (cmd, some (← treeTheorem f.name (f.params.map ident) lemmas))
+  return (cmd, some (← treeTheorem f.name f.params lemmas))
 
 /-! ## Processes -/
 
@@ -1703,14 +1727,14 @@ partial def Proc.idents : Proc → Array String
   | .insert _ args P => args.flatMap Term.vars ++ P.idents
   | .get _ ps cond P Q =>
     ps.flatMap (·.tests.flatMap Term.vars) ++ (cond.map Term.vars).getD #[] ++ P.idents ++ Q.idents
-  | .phase _ P => P.idents
+  | .phase _ P | .sync _ _ P => P.idents
 
 /-- A process as the elements of a block: the effects of its terms come first, then a
 term that may fail is matched, the process blocking on `none`. -/
 partial def emitProc (env : Std.HashMap String Lean.Term) : Proc → EmitM (Array DoElem)
   | .nil => return #[← `(doElem| .stop)]
-  | .insert .. | .get .. | .phase .. =>
-    throwError "tables and phases are compiled out before the translation"
+  | .insert .. | .get .. | .phase .. | .sync .. =>
+    throwError "tables, phases and synchronisations are compiled out before the translation"
   | .repl P => return #[← `(doElem| .repl)] ++ (← cont env P)
   | .out c m P => do
     let cc ← emitTerm env c
@@ -1729,7 +1753,7 @@ partial def emitProc (env : Std.HashMap String Lean.Term) : Proc → EmitM (Arra
     let some (.proc m) ← sym? p | throwError "unknown process macro `{p}`"
     unless m.params.size == args.size do
       throwError "`{p}` takes {m.params.size} arguments, not {args.size}"
-    let cs ← args.mapM (emitTerm env)
+    let cs ← passFail (← args.mapM (emitTerm env)) m.params
     hoistComps (← stopBlock) cs.toList #[] fun as =>
       return #[← `(doElem| $(← app (ident p) as):term)]
   | .par P Q => do
@@ -1795,7 +1819,7 @@ def emitMacro (m : Macro) : EmitM Command := do
   let (ps, env) ← paramBinders m.name m.params m.body.idents
   let body := mkDoSeq (← emitProc env m.body)
   if ps.isEmpty then `(def $(ident m.name):ident : Cont (Proc T.Msg) Unit := do $body:doSeq)
-  else `(def $(ident m.name):ident ($ps* : T.Msg) : Cont (Proc T.Msg) Unit := do $body:doSeq)
+  else `(def $(ident m.name):ident $ps* : Cont (Proc T.Msg) Unit := do $body:doSeq)
 
 def emitMain : EmitM Command := do
   resetSt
@@ -1839,7 +1863,7 @@ macros with effects and the process macros declared before it, which it may call
 call ends a block, so a macro always runs with the final continuation, as `Proc.run`
 does. -/
 def emitMacroTheorem (p : Macro) (lemmas : Array String) : EmitM (String × Command) :=
-  treeTheorem p.name (p.params.map ident) lemmas
+  treeTheorem p.name p.params lemmas
 
 /-- The main process is prefix-closed, from `Cont.Tree` of its block, by `aesop` with the
 rules of the primitives and the lemmas of the macros. -/
@@ -1859,11 +1883,14 @@ def eventMsg (env : Std.HashMap String Lean.Term) (e : String) (args : Array Ter
   app (ident e) (← args.mapM (emitPure env))
 
 /-- A fact of a query, as `QFact` of the trace semantics. -/
-partial def emitQFact (env : Std.HashMap String Lean.Term) : Fact → EmitM Lean.Term
-  | .attacker m none => do `(QFact.knows $(← emitPure env m))
+partial def emitQFact (env : Std.HashMap String Lean.Term) (inj : Bool) : Fact → EmitM Lean.Term
+  | .attacker m none => do
+    if inj then `(QFact.learns $(← emitPure env m)) else `(QFact.knows $(← emitPure env m))
   | .event e args none => do `(QFact.event $(← eventMsg env e args))
   | .mess c m none => do `(QFact.mess $(← emitPure env c) $(← emitPure env m))
-  | .before f e args => do `(QFact.before $(← emitQFact env f) $(← eventMsg env e args))
+  | .eq l r => do `(QFact.eq $(← emitPure env l) $(← emitPure env r))
+  | .ne l r => do `(QFact.ne $(← emitPure env l) $(← emitPure env r))
+  | .before f e args => do `(QFact.before $(← emitQFact env inj f) $(← eventMsg env e args))
   | .table .. => throwError "tables are compiled out before the translation"
   | _ => throwError "phases are compiled out before the translation"
 
@@ -1877,21 +1904,22 @@ def boolLit : Bool → EmitM Lean.Term
   | true => `(true)
   | false => `(false)
 
-/-- A fact as a function of the valuation `σ` of the query's variables `vars`. -/
-def atomFun (vars : Array String) (σ : Ident) (env : Std.HashMap String Lean.Term) (f : Fact) :
-    EmitM Lean.Term := do
+/-- A fact as a function of the valuation `σ` of the query's variables `vars`, `inj` when
+it is injective, which makes an attacker fact the acquisition. -/
+def atomFun (vars : Array String) (σ : Ident) (env : Std.HashMap String Lean.Term)
+    (inj : Bool) (f : Fact) : EmitM Lean.Term := do
   let σb := if vars.any f.names.contains then σ else ident "_"
-  `(fun $σb:ident => $(← emitQFact env f))
+  `(fun $σb:ident => $(← emitQFact env inj f))
 
 /-- The hypothesis of a query, as `Hyp` of the trace semantics. -/
 partial def emitHyp (vars : Array String) (σ : Ident) (env : Std.HashMap String Lean.Term) :
     Hyp → EmitM Lean.Term
-  | .fact inj f => do `(.fact $(← boolLit inj) $(← atomFun vars σ env f))
+  | .fact inj f => do `(.fact $(← boolLit inj) $(← atomFun vars σ env inj f))
   | .and h₁ h₂ => do `(.and $(← emitHyp vars σ env h₁) $(← emitHyp vars σ env h₂))
   | .or h₁ h₂ => do `(.or $(← emitHyp vars σ env h₁) $(← emitHyp vars σ env h₂))
   | .false => `(.false)
   | .corr inj f h => do
-    `(.corr $(← boolLit inj) $(← atomFun vars σ env f) $(← emitHyp vars σ env h))
+    `(.corr $(← boolLit inj) $(← atomFun vars σ env inj f) $(← emitHyp vars σ env h))
 
 /-- The `i`-th query: its variables as a type, when it has any or the query is not the
 secrecy of a term or the unreachability of an event, and the property it checks:
@@ -1933,7 +1961,7 @@ def emitQuery (i : Nat) (q : Query) : EmitM (Array (String × Command)) := do
     | some p => pure p
     | none =>
       let premise ← q.premise.mapM fun (inj, f) => do
-        `(($(← boolLit inj), $(← atomFun q.vars σ env f)))
+        `(($(← boolLit inj), $(← atomFun q.vars σ env inj f)))
       `(system.Satisfies (X := $vars) ⟨[$premise,*], $(← emitHyp q.vars σ env q.concl)⟩)
   let mut out := #[]
   if !q.vars.isEmpty || basic.isNone || !(q.concl matches .false) then
@@ -2050,7 +2078,8 @@ def translate (env : Environment) (src text ns : String) : IO (Except String Str
   | .error e => return .error s!"{src}:{e}"
   | .ok m =>
     let tables := m.tables.map (·.1)
-    match m.withoutSecrets >>= Model.withoutTables >>= Model.withoutPhases tables with
+    match m.withoutSecrets >>= Model.withoutBoundNames >>= Model.withoutTables
+        >>= Model.withoutSyncs >>= Model.withoutPhases tables with
     | .error e => return .error s!"{src}: {e}"
     | .ok m =>
     let (m, renamed) := m.safe

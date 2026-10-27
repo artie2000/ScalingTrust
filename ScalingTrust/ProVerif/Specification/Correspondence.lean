@@ -117,6 +117,10 @@ theorem Model.satisfiedAt_iff (t : Trace A.Msg) :
   | .event _, _ => Iff.rfl
   | .mess _ _, _ => Iff.rfl
   | .knows m, i => A.knows_iff (t.take i) m
+  | .learns m, i =>
+    Iff.and (A.knows_iff (t.take i) m) (or_congr Iff.rfl (not_congr (A.knows_iff _ m)))
+  | .eq _ _, _ => Iff.rfl
+  | .ne _ _, _ => Iff.rfl
   | .before f _, i => Iff.and (Model.satisfiedAt_iff t f i) Iff.rfl
 
 /-! ## Secrecy and correspondences -/

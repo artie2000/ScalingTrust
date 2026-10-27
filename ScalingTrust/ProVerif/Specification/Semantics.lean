@@ -1137,14 +1137,18 @@ def Model.Preserves (P₀ : Process F G Ev 0) (M : Tm F Ev 0) : Prop :=
   ∀ Q, A.Adversary Q → ∀ t, A.ManualTrace (.against P₀ Q) t → ¬ A.Knows t (Tm.msg A M)
 
 /-- A query fact over the variables `X`, the write-up's Definition "Queries":
-`event(ev(M₁, …, Mₖ))`, `attacker(M)` or `mess(N, M)` with the `Mᵢ`, `M` and `N` terms over
-constructors, free names and `X`; or `F before ev(M₁, …, Mₖ)`, the fact `F` before the
-first occurrence of the event, which states a fact of a phase once phases are compiled
-out (write-up §3). -/
+`event(ev(M₁, …, Mₖ))`, `attacker(M)`, `mess(N, M)`, `M = N` or `M <> N` with the `Mᵢ`,
+`M` and `N` terms over constructors, free names and `X`; or `F before ev(M₁, …, Mₖ)`, the
+fact `F` before the first occurrence of the event, which states a fact of a phase once
+phases are compiled out (write-up §3). -/
 inductive QueryFact (F Ev : Sig) (X : Type) : Type
   | event {k : ℕ} (e : Ev k) (args : Fin k → (Sig.cons F Ev).lang.Term X)
   | attacker (M : (Sig.cons F Ev).lang.Term X)
+  /-- An injective `attacker(M)` before the arrow: the attacker's acquisition of `M`. -/
+  | learns (M : (Sig.cons F Ev).lang.Term X)
   | mess (N M : (Sig.cons F Ev).lang.Term X)
+  | eq (M N : (Sig.cons F Ev).lang.Term X)
+  | ne (M N : (Sig.cons F Ev).lang.Term X)
   | before (Fq : QueryFact F Ev X) {k : ℕ} (e : Ev k) (args : Fin k → (Sig.cons F Ev).lang.Term X)
 
 variable {A}
@@ -1153,7 +1157,10 @@ variable {A}
 def QueryFact.inst {X : Type} (σ : X → A.Msg) : QueryFact F Ev X → QFact A.Msg
   | .event e args => .event (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ)
   | .attacker M => .knows (M.realize σ)
+  | .learns M => .learns (M.realize σ)
   | .mess N M => .mess (N.realize σ) (M.realize σ)
+  | .eq M N => .eq (M.realize σ) (N.realize σ)
+  | .ne M N => .ne (M.realize σ) (N.realize σ)
   | .before Fq e args =>
     .before (Fq.inst σ) (Theory.Msg.app (.inl (.inr e)) fun i => (args i).realize σ)
 
@@ -1162,12 +1169,18 @@ variable (A)
 /-- The instance `f` of a query fact holds at step `i` of the trace `t`, the write-up's
 Definition "Satisfaction": an action fact at the step that performs the action, the `i`-th
 action being `t[i-1]`; an attacker fact when the attacker knows the term after the first
-`i` actions, as the manual reads it on either side of a correspondence (§4.3.1); and
-`F before e` when `F` holds at `i` and no action so far is the event. -/
+`i` actions, as the manual reads it on either side of a correspondence (§4.3.1); an
+acquisition, an injective attacker fact before the arrow, when the attacker knows the term
+after `i` actions and not after `i - 1`; an equality or a disequality at every step when
+it holds of the messages, which is `=_E` of the terms; and `F before e` when `F` holds at
+`i` and no action so far is the event. -/
 def Model.SatisfiedAt (t : Trace A.Msg) : QFact A.Msg → ℕ → Prop
   | .event e, i => 0 < i ∧ t[i - 1]? = some (.event e)
   | .mess c m, i => 0 < i ∧ t[i - 1]? = some (.comm c m)
   | .knows m, i => A.Knows (t.take i) m
+  | .learns m, i => A.Knows (t.take i) m ∧ (i = 0 ∨ ¬ A.Knows (t.take (i - 1)) m)
+  | .eq m n, _ => m = n
+  | .ne m n, _ => m ≠ n
   | .before f e, i => Model.SatisfiedAt t f i ∧ Act.event e ∉ t.take i
 
 /-- `P₀` satisfies the query `q` against `N_pub`-adversaries, the write-up's Definition

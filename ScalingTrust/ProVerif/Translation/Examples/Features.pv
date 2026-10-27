@@ -6,8 +6,10 @@
    variables, queries that a fact never holds, a query whose conclusion is a
    disjunction of conjunctions, a conjunction before the arrow, an injective
    correspondence, a nested one, `mess` and `table` facts, facts qualified by a
-   phase, the secrecy of a bound name, a phase in which the key is leaked, a
-   table, compiled to a private channel, the
+   phase, an equality and a disequality after the arrow, a `let` binding in a
+   query and a reference `new n` to a bound name, the secrecy of a bound name,
+   a phase in which the key is leaked, a table, compiled to a private channel,
+   macros with a parameter that may fail (§4.2.3, §4.2.4), the
    sugar `x <- D;`, the wildcard `_`, an equality test with a destructor in an
    input's pattern, and terms with effects (§4.1.4):
    function macros that create a name and emit an event, a conditional term whose
@@ -73,15 +75,23 @@ query n : nonce; mess(d, tag(n)).
 query n : nonce; mess(c, tag(n)) phase 1.
 query n : nonce; table(seen(n)) ==> event(Sent(n)).
 query n : nonce; inj-event(Received(n)) ==> inj-event(Sent(n)).
+query n : nonce; attacker(tag(n)) ==> inj-event(Sent(n)).
 query n : nonce; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n)))).
 query n : nonce; event(Received(n)) && event(Sent(n)) ==> attacker(tag(n)) phase 0 || event(Stamped(n2b(n))).
+query x : bitstring; event(Stamped(x)) ==> x <> empty.
+query x : bitstring, n : nonce; event(Stamped(x)) ==> (x = n2b(n) && event(Sent(n))) || attacker(x).
+query n : nonce; let m = n2b(n) in event(Stamped(m)) ==> event(Sent(n)).
+query attacker(tag(new n)).
+query let x = new n in event(Sent(x)) ==> attacker(n2b(x)) || attacker(tag(x)).
 query secret k.
 
 letfun stamp(x : bitstring) = event Stamped(x); x.
 letfun wrap(x : bitstring, k : key) = new r : nonce; senc(pair(x, n2b(r)), k).
 letfun both(x : bitstring, y : bitstring) = pair(x, y).
+letfun recover(x : bitstring or fail) = let y = x in y else empty.
 
 let forward(x : bitstring, y : bitstring) = out(c, pair(x, y)).
+let guard(x : bitstring or fail, k : key) = let y = x in out(c, senc(y, k)) else out(c, empty).
 
 let sender(k : key) =
   new n : nonce;
@@ -135,4 +145,5 @@ process
   | (in(c, z : bitstring); out(c, sdec(z, k)); reader(k))
   | (in(c, w : bitstring); out(c, both(sdec(w, k), stamp(w))); forward(sdec(w, k), stamp(w)))
   | (out(c, new s : nonce; let v = wrap(n2b(s), k) in pair(v, stamp(v))))
+  | (in(c, u : bitstring); out(c, recover(sdec(u, k))); guard(sdec(u, k), k))
   | (phase 1; out(c, k)) )

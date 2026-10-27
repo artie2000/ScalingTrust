@@ -189,7 +189,7 @@ instance : Attacker T.Msg :=
 
 /-! ## The process -/
 
-def initiator (sskA pkB : T.Msg) : Cont (Proc T.Msg) Unit := do
+def initiator (sskA : T.Msg) (pkB : T.Msg) : Cont (Proc T.Msg) Unit := do
   .repl
   let k ← .fresh
   .send c (aenc (sign k sskA) pkB)
@@ -201,13 +201,13 @@ def initiator (sskA pkB : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `initiator` is prefix-closed. -/
-theorem initiator_tree (sskA pkB : T.Msg) : Cont.Tree (initiator sskA pkB) :=
+theorem initiator_tree (sskA : T.Msg) (pkB : T.Msg) : Cont.Tree (initiator sskA pkB) :=
   by
   unfold initiator
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only))
 
-def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
+def responder (skB : T.Msg) (spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
   .repl
   let y ← .recv c
   match adec y skB with
@@ -221,7 +221,7 @@ def responder (skB spkA : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `responder` is prefix-closed. -/
-theorem responder_tree (skB spkA : T.Msg) : Cont.Tree (responder skB spkA) :=
+theorem responder_tree (skB : T.Msg) (spkA : T.Msg) : Cont.Tree (responder skB spkA) :=
   by
   unfold responder
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })

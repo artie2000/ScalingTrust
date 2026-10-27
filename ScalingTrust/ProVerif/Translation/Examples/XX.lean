@@ -1876,7 +1876,7 @@ instance : Attacker T.Msg :=
 /-! ## Function macros -/
 
 /-- `dh(my_keypair, pubkey) = let (my_public_key, my_private_key) = keypairunpack(my_keypair) in dhexp(my_private_key, pubkey)` -/
-def dh (my_keypair pubkey : T.Msg) : Option T.Msg :=
+def dh (my_keypair : T.Msg) (pubkey : T.Msg) : Option T.Msg :=
   match keypairunpack my_keypair with
   | some t₀ =>
     match Tuple.ofMsg (T.Msg × T.Msg) t₀ with
@@ -1891,7 +1891,7 @@ def generate_keypair (basis : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `hkdf(chaining_key, input_key_material) = let output1 = hmac_hash1(chaining_key, input_key_material) in let output2 = hmac_hash2(chaining_key, input_key_material) in let output3 = hmac_hash3(chaining_key, input_key_material) in (output1, output2, output3)` -/
-def hkdf (chaining_key input_key_material : T.Msg) : T.Msg :=
+def hkdf (chaining_key : T.Msg) (input_key_material : T.Msg) : T.Msg :=
   let output1 := hmac_hash1 chaining_key input_key_material;
   let output2 := hmac_hash2 chaining_key input_key_material;
   let output3 := hmac_hash3 chaining_key input_key_material;
@@ -1911,7 +1911,7 @@ def hasKey (cs : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `setNonce(cs, n) = let (k, o) = cipherstateunpack(cs) in cipherstatepack(k, n)` -/
-def setNonce (cs n : T.Msg) : Option T.Msg :=
+def setNonce (cs : T.Msg) (n : T.Msg) : Option T.Msg :=
   match cipherstateunpack cs with
   | some t₀ =>
     match Tuple.ofMsg (T.Msg × T.Msg) t₀ with
@@ -1920,7 +1920,7 @@ def setNonce (cs n : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `encryptWithAd(cs, ad, plaintext) = let (k, n) = cipherstateunpack(cs) in let e = encrypt(k, n, ad, plaintext) in let csi = setNonce(cs, increment_nonce(n)) in (csi, e)` -/
-def encryptWithAd (cs ad plaintext : T.Msg) : Option T.Msg :=
+def encryptWithAd (cs : T.Msg) (ad : T.Msg) (plaintext : T.Msg) : Option T.Msg :=
   match cipherstateunpack cs with
   | some t₀ =>
     match Tuple.ofMsg (T.Msg × T.Msg) t₀ with
@@ -1933,7 +1933,7 @@ def encryptWithAd (cs ad plaintext : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `decryptWithAd(cs, ad, ciphertext) = let (k, n) = cipherstateunpack(cs) in let d = decrypt(k, n, ad, ciphertext) in let (valid, adi, plaintext) = aeadunpack(d) in let csi = setNonce(cs, increment_nonce(n)) in (csi, plaintext, valid)` -/
-def decryptWithAd (cs ad ciphertext : T.Msg) : Option T.Msg :=
+def decryptWithAd (cs : T.Msg) (ad : T.Msg) (ciphertext : T.Msg) : Option T.Msg :=
   match cipherstateunpack cs with
   | some t₁ =>
     match Tuple.ofMsg (T.Msg × T.Msg) t₁ with
@@ -1973,7 +1973,7 @@ def initializeSymmetric (protocol_name : T.Msg) : T.Msg :=
   symmetricstatepack cs ck h
 
 /-- `mixKey(ss, input_key_material) = let (cs, ck, h) = symmetricstateunpack(ss) in let (ck, temp_k, output_3) = hkdf(ck, input_key_material) in symmetricstatepack(initializeKey(temp_k), ck, h)` -/
-def mixKey (ss input_key_material : T.Msg) : Option T.Msg :=
+def mixKey (ss : T.Msg) (input_key_material : T.Msg) : Option T.Msg :=
   match symmetricstateunpack ss with
   | some t₁ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₁ with
@@ -1986,7 +1986,7 @@ def mixKey (ss input_key_material : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `mixHash(ss, data) = let (cs, ck, h) = symmetricstateunpack(ss) in symmetricstatepack(cs, ck, hash(h, data))` -/
-def mixHash (ss data : T.Msg) : Option T.Msg :=
+def mixHash (ss : T.Msg) (data : T.Msg) : Option T.Msg :=
   match symmetricstateunpack ss with
   | some t₀ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₀ with
@@ -1995,7 +1995,7 @@ def mixHash (ss data : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `mixKeyAndHash(ss, input_key_material) = let (cs, ck, h) = symmetricstateunpack(ss) in let (ck, temp_h, temp_k) = hkdf(ck, input_key_material) in let (cs, temp_ck, h) = symmetricstateunpack(mixHash(symmetricstatepack(cs, ck, h), key2bit(temp_h))) in symmetricstatepack(initializeKey(temp_k), ck, h)` -/
-def mixKeyAndHash (ss input_key_material : T.Msg) : Option T.Msg :=
+def mixKeyAndHash (ss : T.Msg) (input_key_material : T.Msg) : Option T.Msg :=
   match symmetricstateunpack ss with
   | some t₃ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₃ with
@@ -2023,7 +2023,7 @@ def getHandshakeHash (ss : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `encryptAndHash(ss, plaintext) = let (cs, ck, h) = symmetricstateunpack(ss) in let (csi, ciphertext) = encryptWithAd(cs, h, plaintext) in let ssi = mixHash(symmetricstatepack(csi, ck, h), ciphertext) in (ssi, ciphertext)` -/
-def encryptAndHash (ss plaintext : T.Msg) : Option T.Msg :=
+def encryptAndHash (ss : T.Msg) (plaintext : T.Msg) : Option T.Msg :=
   match symmetricstateunpack ss with
   | some t₁ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₁ with
@@ -2041,7 +2041,7 @@ def encryptAndHash (ss plaintext : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `decryptAndHash(ss, ciphertext) = let (cs, ck, h) = symmetricstateunpack(ss) in let (csi, plaintext, valid) = decryptWithAd(cs, h, ciphertext) in let ssi = mixHash(symmetricstatepack(csi, ck, h), ciphertext) in (ssi, plaintext, valid)` -/
-def decryptAndHash (ss ciphertext : T.Msg) : Option T.Msg :=
+def decryptAndHash (ss : T.Msg) (ciphertext : T.Msg) : Option T.Msg :=
   match symmetricstateunpack ss with
   | some t₁ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg) t₁ with
@@ -2076,19 +2076,22 @@ def split (ss : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `initialize_initiator(prologue, s, e, rs, re, psk) = let ss = mixHash(initializeSymmetric(somename), prologue) in handshakestatepack(ss, s, e, rs, re, psk, true)` -/
-def initialize_initiator (prologue s e rs re psk : T.Msg) : Option T.Msg :=
+def initialize_initiator (prologue : T.Msg) (s : T.Msg) (e : T.Msg) (rs : T.Msg) (re : T.Msg)
+    (psk : T.Msg) : Option T.Msg :=
   match mixHash (initializeSymmetric somename) prologue with
   | some ss => some (handshakestatepack ss s e rs re psk (true : T.Msg))
   | none => none
 
 /-- `initialize_responder(prologue, s, e, rs, re, psk) = let ss = mixHash(initializeSymmetric(somename), prologue) in handshakestatepack(ss, s, e, rs, re, psk, false)` -/
-def initialize_responder (prologue s e rs re psk : T.Msg) : Option T.Msg :=
+def initialize_responder (prologue : T.Msg) (s : T.Msg) (e : T.Msg) (rs : T.Msg) (re : T.Msg)
+    (psk : T.Msg) : Option T.Msg :=
   match mixHash (initializeSymmetric somename) prologue with
   | some ss => some (handshakestatepack ss s e rs re psk (false : T.Msg))
   | none => none
 
 /-- `writeMessage_a(me, them, hs, payload, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = (empty, empty, empty) in let e = generate_keypair(key_e(me, them, sid)) in let ne = key2bit(getpublickey(e)) in let ss = mixHash(ss, ne) in let (ss, ciphertext) = encryptAndHash(ss, payload) in let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let message_buffer = concat3(ne, ns, ciphertext) in (hs, message_buffer)` -/
-def writeMessage_a (me them hs payload sid : T.Msg) : Option T.Msg :=
+def writeMessage_a (me : T.Msg) (them : T.Msg) (hs : T.Msg) (payload : T.Msg) (sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2120,7 +2123,8 @@ def writeMessage_a (me them hs payload sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `writeMessage_b(me, them, hs, payload, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = (empty, empty, empty) in let e = generate_keypair(key_e(me, them, sid)) in let ne = key2bit(getpublickey(e)) in let ss = mixHash(ss, ne) in let ss = mixKey(ss, dh(e, re)) in let s = generate_keypair(key_s(me)) in let (ss, ns) = encryptAndHash(ss, key2bit(getpublickey(s))) in let ss = mixKey(ss, dh(s, re)) in let (ss, ciphertext) = encryptAndHash(ss, payload) in let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let message_buffer = concat3(ne, ns, ciphertext) in (hs, message_buffer)` -/
-def writeMessage_b (me them hs payload sid : T.Msg) : Option T.Msg :=
+def writeMessage_b (me : T.Msg) (them : T.Msg) (hs : T.Msg) (payload : T.Msg) (sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₆ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₆ with
@@ -2167,7 +2171,8 @@ def writeMessage_b (me them hs payload sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `writeMessage_c(me, them, hs, payload, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = (empty, empty, empty) in let s = generate_keypair(key_s(me)) in let (ss, ns) = encryptAndHash(ss, key2bit(getpublickey(s))) in let ss = mixKey(ss, dh(s, re)) in let (ss, ciphertext) = encryptAndHash(ss, payload) in let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let message_buffer = concat3(ne, ns, ciphertext) in let (ssi, cs1, cs2) = split(ss) in (hs, message_buffer, cs1, cs2)` -/
-def writeMessage_c (me _them hs payload _sid : T.Msg) : Option T.Msg :=
+def writeMessage_c (me : T.Msg) (_them : T.Msg) (hs : T.Msg) (payload : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₆ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₆ with
@@ -2206,7 +2211,8 @@ def writeMessage_c (me _them hs payload _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `writeMessage_d(me, them, hs, payload, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = (empty, empty, empty) in let (ss, ciphertext) = encryptAndHash(ss, payload) in let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let message_buffer = concat3(ne, ns, ciphertext) in (hs, message_buffer)` -/
-def writeMessage_d (_me _them hs payload _sid : T.Msg) : Option T.Msg :=
+def writeMessage_d (_me : T.Msg) (_them : T.Msg) (hs : T.Msg) (payload : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2229,7 +2235,8 @@ def writeMessage_d (_me _them hs payload _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `writeMessage_e(me, them, hs, payload, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = (empty, empty, empty) in let (ss, ciphertext) = encryptAndHash(ss, payload) in let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let message_buffer = concat3(ne, ns, ciphertext) in (hs, message_buffer)` -/
-def writeMessage_e (_me _them hs payload _sid : T.Msg) : Option T.Msg :=
+def writeMessage_e (_me : T.Msg) (_them : T.Msg) (hs : T.Msg) (payload : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2252,7 +2259,8 @@ def writeMessage_e (_me _them hs payload _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `readMessage_a(me, them, hs, message, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = deconcat3(message) in let valid1 = true in let re = bit2key(ne) in let ss = mixHash(ss, key2bit(re)) in let (ss, plaintext, valid2) = decryptAndHash(ss, ciphertext) in if valid1 && valid2 then let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in (hs, plaintext, true)` -/
-def readMessage_a (_me _them hs message _sid : T.Msg) : Option T.Msg :=
+def readMessage_a (_me : T.Msg) (_them : T.Msg) (hs : T.Msg) (message : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2283,7 +2291,8 @@ def readMessage_a (_me _them hs message _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `readMessage_b(me, them, hs, message, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = deconcat3(message) in let valid1 = true in let re = bit2key(ne) in let ss = mixHash(ss, key2bit(re)) in let ss = mixKey(ss, dh(e, re)) in let (ss, ne, valid1) = decryptAndHash(ss, ns) in let rs = bit2key(ne) in let ss = mixKey(ss, dh(e, rs)) in let (ss, plaintext, valid2) = decryptAndHash(ss, ciphertext) in if (valid1 && valid2) && (rs = getpublickey(generate_keypair(key_s(them)))) then let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in (hs, plaintext, true)` -/
-def readMessage_b (_me them hs message _sid : T.Msg) : Option T.Msg :=
+def readMessage_b (_me : T.Msg) (them : T.Msg) (hs : T.Msg) (message : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₈ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₈ with
@@ -2331,7 +2340,8 @@ def readMessage_b (_me them hs message _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `readMessage_c(me, them, hs, message, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = deconcat3(message) in let valid1 = true in let (ss, ne, valid1) = decryptAndHash(ss, ns) in let rs = bit2key(ne) in let ss = mixKey(ss, dh(e, rs)) in let (ss, plaintext, valid2) = decryptAndHash(ss, ciphertext) in if (valid1 && valid2) && (rs = getpublickey(generate_keypair(key_s(them)))) then let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in let (ssi, cs1, cs2) = split(ss) in (hs, plaintext, true, cs1, cs2)` -/
-def readMessage_c (_me them hs message _sid : T.Msg) : Option T.Msg :=
+def readMessage_c (_me : T.Msg) (them : T.Msg) (hs : T.Msg) (message : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₈ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₈ with
@@ -2377,7 +2387,8 @@ def readMessage_c (_me them hs message _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `readMessage_d(me, them, hs, message, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = deconcat3(message) in let valid1 = true in let (ss, plaintext, valid2) = decryptAndHash(ss, ciphertext) in if valid1 && valid2 then let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in (hs, plaintext, true)` -/
-def readMessage_d (_me _them hs message _sid : T.Msg) : Option T.Msg :=
+def readMessage_d (_me : T.Msg) (_them : T.Msg) (hs : T.Msg) (message : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2404,7 +2415,8 @@ def readMessage_d (_me _them hs message _sid : T.Msg) : Option T.Msg :=
   | none => none
 
 /-- `readMessage_e(me, them, hs, message, sid) = let (ss, s, e, rs, re, psk, initiator) = handshakestateunpack(hs) in let (ne, ns, ciphertext) = deconcat3(message) in let valid1 = true in let (ss, plaintext, valid2) = decryptAndHash(ss, ciphertext) in if valid1 && valid2 then let hs = handshakestatepack(ss, s, e, rs, re, psk, initiator) in (hs, plaintext, true)` -/
-def readMessage_e (_me _them hs message _sid : T.Msg) : Option T.Msg :=
+def readMessage_e (_me : T.Msg) (_them : T.Msg) (hs : T.Msg) (message : T.Msg) (_sid : T.Msg) :
+    Option T.Msg :=
   match handshakestateunpack hs with
   | some t₂ =>
     match Tuple.ofMsg (T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg × T.Msg) t₂ with
@@ -2432,7 +2444,7 @@ def readMessage_e (_me _them hs message _sid : T.Msg) : Option T.Msg :=
 
 /-! ## The process -/
 
-def initiator (me them sid : T.Msg) : Cont (Proc T.Msg) Unit := do
+def initiator (me : T.Msg) (them : T.Msg) (sid : T.Msg) : Cont (Proc T.Msg) Unit := do
   let s := keypairpack empty empty
   match getpublickey s with
   | some t₀ =>
@@ -2700,13 +2712,13 @@ def initiator (me them sid : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `initiator` is prefix-closed. -/
-theorem initiator_tree (me them sid : T.Msg) : Cont.Tree (initiator me them sid) :=
-  by
+theorem initiator_tree (me : T.Msg) (them : T.Msg) (sid : T.Msg) :
+    Cont.Tree (initiator me them sid) := by
   unfold initiator
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only))
 
-def responder (me them sid : T.Msg) : Cont (Proc T.Msg) Unit := do
+def responder (me : T.Msg) (them : T.Msg) (sid : T.Msg) : Cont (Proc T.Msg) Unit := do
   let s := keypairpack empty empty
   match getpublickey s with
   | some t₀ =>
@@ -2977,8 +2989,8 @@ def responder (me them sid : T.Msg) : Cont (Proc T.Msg) Unit := do
     .stop
 
 /-- `responder` is prefix-closed. -/
-theorem responder_tree (me them sid : T.Msg) : Cont.Tree (responder me them sid) :=
-  by
+theorem responder_tree (me : T.Msg) (them : T.Msg) (sid : T.Msg) :
+    Cont.Tree (responder me them sid) := by
   unfold responder
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only), safe [initiator_tree])

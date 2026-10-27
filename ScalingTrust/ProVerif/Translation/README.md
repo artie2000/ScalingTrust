@@ -23,7 +23,7 @@ program; `../TraceSemantics/Examples/DenningSacco.lean` imports it and proves it
 | `ProVerif.Translation.Compile` | The compilations before the translation, in the order run: `query secret x` to a marking event and a reachability query, tables to private channels and `table` facts to the events of insertions, and phases to tagged channels, tokens and a clock, the facts qualified by a phase read before the clock's events |
 | `ProVerif.Translation.Emit` | The recipe: Lean commands for a model, the definitions and the theorems about them, assembled by `emitFile`; `translate` runs the whole translation |
 | `ProVerif.Translation.Main` | The entry point |
-| `Examples/` | `DenningSacco.pv` and `Features.pv` with their translations, and `NN.lean` and `XX.lean`, the translations of Noise Explorer's `../Reference/NN.noise.active.pv` and `XX.noise.active.pv`; `ScalingTrust.ProVerif` imports the four so that the build checks them, and `../TraceSemantics/Examples/` proves or refutes the queries of `DenningSacco` and `NN` |
+| `Examples/` | `DenningSacco.pv`, `Features.pv` and `Sync.pv` with their translations, and `NN.lean` and `XX.lean`, the translations of Noise Explorer's `../Reference/NN.noise.active.pv` and `XX.noise.active.pv`; `ScalingTrust.ProVerif` imports the five so that the build checks them, and `../TraceSemantics/Examples/` proves or refutes the queries of `DenningSacco` and `NN` |
 
 ## Running it
 
@@ -44,7 +44,7 @@ The two examples were produced by
 lake env lean --run ScalingTrust/ProVerif/Translation/Main.lean ScalingTrust/ProVerif/Translation/Examples/DenningSacco.pv ScalingTrust/ProVerif/Translation/Examples/DenningSacco.lean
 ```
 
-and likewise for `Features`, and `NN.lean` by
+and likewise for `Features` and `Sync`, and `NN.lean` by
 
 ```sh
 lake env lean --run ScalingTrust/ProVerif/Translation/Main.lean ScalingTrust/ProVerif/Reference/NN.noise.active.pv ScalingTrust/ProVerif/Translation/Examples/NN.lean
@@ -62,14 +62,17 @@ reduc … otherwise …` with may-fail variables and the constant `fail`, `equat
 `event`, `table`, `let` process macros, `letfun` function macros and `query`; the
 processes `0`, `P | Q`, `!P`, `new`, `in` and `out`, `event`, macro calls,
 `let pat = D in P else Q`, `if D then P else Q`, `insert` and `get` without
-`else`, `phase t; P`, and the manual's sugar `yield`, `foreach i <= N do P`,
-`! i <= N P`, `x <-R t; P` and `x <- D; P` (§6.8), read as what it
-abbreviates; the queries of the manual's §4.3.1, `F₁ && … && Fₙ` and `F₁ && …
-&& Fₙ ==> H` with variables declared before them, the facts `attacker(M)`,
-`mess(N, M)` and `table(d(M…))`, each with an optional `phase n`, `event(e(M…))`
-and `inj-event(e(M…))`, possibly in parentheses, and `H` built from facts with
-`&&`, `||`, `false` and nested correspondences `(F ==> H)`, `&&` binding
-tighter than `||`; and `secret x` as an item of a `query` declaration. Terms
+`else`, `phase t; P`, `sync t [tag]; P`, and the manual's sugar `yield`,
+`foreach i <= N do P`, `! i <= N P`, `x <-R t; P` and `x <- D; P` (§6.8), read
+as what it abbreviates; a parameter of a macro declared `or fail`; the queries
+of the manual's §4.3.1, `F₁ && … && Fₙ` and `F₁ && … && Fₙ ==> H` with variables
+declared before them, the facts `attacker(M)`, `mess(N, M)` and `table(d(M…))`,
+each with an optional `phase n`, `event(e(M…))` and `inj-event(e(M…))`,
+possibly in parentheses, and `H` built from facts, equalities `M = N` and
+disequalities `M <> N` with `&&`, `||`, `false` and nested correspondences `(F
+==> H)`, `&&` binding tighter than `||`; `let x = M in` bindings before a
+query, a hypothesis or a fact and references `new n` to bound names in query
+terms (§6.4); and `secret x` as an item of a `query` declaration. Terms
 are identifiers, applications, tuples `(M₁, …, Mₙ)` with `(M)`
 being `M`, the booleans `true` and `false`, the comparisons `M = N` and
 `M <> N` and the connectives `M && N`, `M || N` and `not(M)`, which bind as in
@@ -82,12 +85,11 @@ M in` bindings, which are substituted. The options after an input or a `get`,
 such as `[precise]`, are read and dropped.
 
 Not translated: numerals, tuples and booleans in equations, tuple patterns in
-rewrite rules, may-fail parameters of macros, `get` with an `else` branch,
-`insert` and `get` inside terms, predicates, `sync`, a process macro called
-in two phases, and in queries the equalities and inequalities between terms,
-`is_nat`, time variables `F@t`, `let`, the options of `secret x` and
-`public_vars`, and a fact other than an event before `==>` when `H` has an
-`inj-event`. An equation with a variable as a side and a rule mentioning a symbol
+rewrite rules, `get` with an `else` branch, `insert` and `get` inside terms,
+predicates, `sync` under a replication or together with phases, and in queries
+the inequalities between naturals, `is_nat`, time variables `F@t`, the options
+of `secret x` and `public_vars`, and a reference `new n` in the fact before
+the arrow of a nested correspondence. An equation with a variable as a side and a rule mentioning a symbol
 at the root of an equation are rejected too, the write-up's restrictions (R1)
 and (R2) on the models translated, which the manual's semantics does not
 impose. A `set` declaration is read and dropped, except that `set ignoreTypes`
@@ -104,13 +106,19 @@ and nothing else is reserved. The precedences of processes are the manual's
 
 ## The recipe
 
-Three features are first compiled away on the model, by `Compile.lean`, in this
+Five features are first compiled away on the model, by `Compile.lean`, in this
 order and as the write-up's §3 describes:
 
 * `query secret x` (`Model.withoutSecrets`): an event `xₛ(x)` marks each
   binding of `x` by `new`, by an input or by a `let`, in the process and its
   macros, and the query becomes `event(xₛ(x)) && attacker(x)`, the
   reachability query the manual says it is (§4.3.1).
+* References `new n` to bound names in queries (`Model.withoutBoundNames`),
+  which the parser has made variables of the query, one per occurrence and one
+  per `let x = new n in` binding: an event `nᵣ(n)` marks each `new n`, and the
+  variable `v` carries the fact `event(nᵣ(v))`, before the arrow when `v` occurs
+  there and beside each fact after the arrow that mentions it otherwise, so
+  that `v` is any name created at that restriction (§6.4).
 * Tables, to private channels, the manual's encoding (§6.7.3)
   (`Model.withoutTables`): a table `d` becomes a private free name, `insert
   d(M₁, …, Mₙ); P` becomes `let rec₀ = (M₁, …, Mₙ) in ((!out(d, rec₀)) | P)`,
@@ -120,6 +128,15 @@ order and as the write-up's §3 describes:
   with an `else` branch is refused: an input cannot tell that no record
   matches. When a query has a `table(d(…))` fact, an event `dᵢ(rec₀)` records
   each insertion and the fact becomes `event(dᵢ((M₁, …, Mₙ)))`.
+* Synchronisation (`Model.withoutSyncs`), to a coordinator: `sync t [tag]; P`
+  becomes `out(barrierₜ, barrierₜ); in(resumeₜ, _); P` on private free names,
+  and the coordinator, beside the process, takes one report per tag of level
+  `t`, an untagged `sync` counting as a tag of its own and macro calls
+  expanded, releases as many processes on `resumeₜ` and goes on to the next
+  level, so that the levels run in increasing order and a level completes only
+  when every one of its tags is reached (§4.1.7). A `sync` under a replication
+  and a model with both synchronisations and phases are refused, as the
+  manual forbids them.
 * Phases, exactly, to channels tagged by the phase, tokens and a clock
   (`Model.withoutPhases`): with `n` the greatest phase, the model gains the
   public constants `ph₀ … phₙ`, the public free names `clock₁ … clockₙ`, the
@@ -131,7 +148,8 @@ order and as the write-up's §3 describes:
   out(tokₜ, tokᵥ); P`, `phase s; P` is `in(go_s, _); P` with `P` under phase
   `s`, or `0` when `s ≤ t`, and a table's supply is repeated for every phase
   from `t` to `n`; the main process is under phase `0` and a macro under the
-  phase of its calls, which must agree. A fact `attacker(M) phase s` or
+  phase of its calls, with a copy `pₜ` for each phase `t` when the calls
+  disagree. A fact `attacker(M) phase s` or
   `table(…) phase s` with `s < n` becomes the fact `before tick_{s+1}`, `mess(N,
   M) phase s` becomes `mess((N, ph_s), M)`, and an unqualified `mess` is of
   the last phase. The write-up's §3 argues that the encoding is exact: a
@@ -274,10 +292,18 @@ shadow the symbol's definition, is renamed with primes, `initiator'`.
    (`letfun`) becomes a function of its parameters: to its value, of type
    `T.Msg` or `Option T.Msg`, when its body has no effects, and to a block in
    `Cont (Proc T.Msg)` otherwise, so that a call with effects is bound by `←`.
+   A parameter declared `or fail`, of a function or a process macro, has the
+   type `Option T.Msg`: a call passes the argument's value as it is, `some` of
+   a message or the `Option` of a term that may fail, instead of matching it
+   first, and inside the body the parameter is a term that may fail, as a
+   destructor application is, so `let y = x in P else Q` matches it (manual
+   §4.2.3, §4.2.4). This is the write-up's abbreviation of such a call, the
+   `else` branch of the parameter's `let` running the rest with `fail` for it.
 8. **Queries** become the properties they check, `query₁`, `query₂`, … in order,
    each with its source text as docstring. The facts are functions of a
    valuation `σ : Varsᵢ → T.Msg` of the query's variables, the inductive type
-   `Varsᵢ`. The basic shapes are stated with the `Fact` of `Security.lean`:
+   `Varsᵢ`, the variables standing for bound names, `n₀`, `n₁`, …, among
+   them. The basic shapes are stated with the `Fact` of `Security.lean`:
    `query attacker(M)` and `query attacker(M) ==> false` are `system.Secret M`,
    `query event(…)` is written out, `∀ t₀ ∈ system.Attacks, ¬ F.Holds t₀`, both
    quantified over `σ` when the query has variables, and `query F ==> H` with
@@ -286,11 +312,16 @@ shadow the symbol's definition, is renamed with primes, `initiator'`.
    ⟨[(inj₁, F₁), …], H⟩` over the facts of `TraceSemantics/Query.lean`, the
    write-up's Definition "Translation of queries": `attacker(M)` is `QFact.knows
    M`, `event(e(M))` and `inj-event(e(M))` are `QFact.event (e M)`, `mess(N,
-   M)` is `QFact.mess N M` and the compiled `F before e` is `QFact.before F e`;
+   M)` is `QFact.mess N M`, `M = N` and `M <> N` are `QFact.eq M N` and
+   `QFact.ne M N`, and the compiled `F before e` is `QFact.before F e`;
    the list holds the facts before `==>` with their injectivity, and `H` is
    the hypothesis as a `Hyp`, `.fact inj F`, `.and`, `.or`, `.false` and
-   `.corr inj F H`. An event before `==>` is injective when `H` has an
-   `inj-event`, as the manual says (§4.3.1).
+   `.corr inj F H`. A fact before `==>` is injective when `H` has an
+   `inj-event`: the manual says so of an event (§4.3.1), and the translation
+   extends it to the other facts, an injective `attacker(M)` becoming the
+   acquisition `QFact.learns M`, which holds at the one step at which the
+   attacker comes to know `M`, so that its executions are counted as those of
+   an event are; the write-up's Definition "Queries" records the extension.
 9. **Theorems**, with generated proofs:
    * each equation on messages, `equationᵢ (x y : T.Msg) : l = r`, by
      instantiating `T₀.withData_satisfies` at the raw equation and evaluating

@@ -6,7 +6,9 @@ import ScalingTrust.ProVerif.TraceSemantics.Term
 import ScalingTrust.ProVerif.TraceSemantics.Data
 import ScalingTrust.ProVerif.TraceSemantics.Security
 import ScalingTrust.ProVerif.TraceSemantics.Query
-import ScalingTrust.ProVerif.TraceSemantics.Attack
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Attack
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Secrecy
+import ScalingTrust.ProVerif.TraceSemantics.Proofs.Query
 import ScalingTrust.ProVerif.TraceSemantics.Examples.DenningSacco
 import ScalingTrust.ProVerif.TraceSemantics.Examples.NoiseNN
 import ScalingTrust.ProVerif.Translation.Model
@@ -18,6 +20,7 @@ import ScalingTrust.ProVerif.Translation.Examples.DenningSacco
 import ScalingTrust.ProVerif.Translation.Examples.Features
 import ScalingTrust.ProVerif.Translation.Examples.NN
 import ScalingTrust.ProVerif.Translation.Examples.XX
+import ScalingTrust.ProVerif.Translation.Examples.Sync
 import ScalingTrust.ProVerif.TamarinTranslation.Rewriting
 import ScalingTrust.ProVerif.TamarinTranslation.Model
 import ScalingTrust.ProVerif.TamarinTranslation.Parser

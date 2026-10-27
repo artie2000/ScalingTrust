@@ -44,6 +44,7 @@ inductive Fun : ℕ → Type
   | Received : Fun 1
   | Stamped : Fun 1
   | kₛ : Fun 1
+  | nᵣ : Fun 1
   | seenᵢ : Fun 1
   | tick₁ : Fun 0
 
@@ -132,6 +133,9 @@ def Stamped (x₀ : T.Msg) : T.Msg :=
 
 def kₛ (x₀ : T.Msg) : T.Msg :=
   .app (.inl .kₛ) ![x₀]
+
+def nᵣ (x₀ : T.Msg) : T.Msg :=
+  .app (.inl .nᵣ) ![x₀]
 
 def seenᵢ (x₀ : T.Msg) : T.Msg :=
   .app (.inl .seenᵢ) ![x₀]
@@ -685,6 +689,7 @@ def pub : ∀ n, Fun n → Prop
   | _, .Received => False
   | _, .Stamped => False
   | _, .kₛ => False
+  | _, .nᵣ => False
   | _, .seenᵢ => False
   | _, .tick₁ => False
   | _, _ => True
@@ -712,36 +717,57 @@ theorem stamp_tree (x : T.Msg) : Cont.Tree (stamp x) :=
      (add norm (by dsimp only))
 
 /-- `wrap(x, k) = new r; senc(pair(x, n2b(r)), k)` -/
-def wrap (x k : T.Msg) : Cont (Proc T.Msg) T.Msg := do
+def wrap (x : T.Msg) (k : T.Msg) : Cont (Proc T.Msg) T.Msg := do
   let r ← .fresh
   pure (senc (pair x r) k)
 
 /-- `wrap` is prefix-closed. -/
-theorem wrap_tree (x k : T.Msg) : Cont.Tree (wrap x k) :=
+theorem wrap_tree (x : T.Msg) (k : T.Msg) : Cont.Tree (wrap x k) :=
   by
   unfold wrap
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only), safe [stamp_tree])
 
 /-- `both(x, y) = pair(x, y)` -/
-def both (x y : T.Msg) : T.Msg :=
+def both (x : T.Msg) (y : T.Msg) : T.Msg :=
   pair x y
+
+/-- `recover(x or fail) = let y = x in y else empty` -/
+def recover (x : Option T.Msg) : T.Msg :=
+  match x with
+  | some y => y
+  | none => empty
 
 /-! ## The process -/
 
 /-- The model's `forward`, renamed since the translation uses that name. -/
-def forward' (x y : T.Msg) : Cont (Proc T.Msg) Unit := do
+def forward' (x : T.Msg) (y : T.Msg) : Cont (Proc T.Msg) Unit := do
   .send ((c, ph₀) : T.Msg) (pair x y)
 
 /-- `forward'` is prefix-closed. -/
-theorem forward'_tree (x y : T.Msg) : Cont.Tree (forward' x y) :=
+theorem forward'_tree (x : T.Msg) (y : T.Msg) : Cont.Tree (forward' x y) :=
   by
   unfold forward'
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only), safe [stamp_tree, wrap_tree])
 
+def guard (x : Option T.Msg) (k : T.Msg) : Cont (Proc T.Msg) Unit := do
+  match x with
+  | some y =>
+    .send ((c, ph₀) : T.Msg) (senc y k)
+  | none =>
+    .send ((c, ph₀) : T.Msg) empty
+
+/-- `guard` is prefix-closed. -/
+theorem guard_tree (x : Option T.Msg) (k : T.Msg) : Cont.Tree (guard x k) :=
+  by
+  unfold guard
+  aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
+     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree])
+
 def sender (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let n ← .fresh
+  .emit (nᵣ n)
   .emit (Sent n)
   let rec₀ := n
   .emit (seenᵢ rec₀)
@@ -762,7 +788,7 @@ theorem sender_tree (k : T.Msg) : Cont.Tree (sender k) :=
   by
   unfold sender
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
-     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree])
+     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree, guard_tree])
 
 def receiver (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let x ← .recv ((c, ph₀) : T.Msg)
@@ -779,7 +805,8 @@ theorem receiver_tree (k : T.Msg) : Cont.Tree (receiver k) :=
   by
   unfold receiver
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
-     (add norm (by dsimp only), safe [stamp_tree, wrap_tree, forward'_tree, sender_tree])
+     (add norm (by dsimp only),
+      safe [stamp_tree, wrap_tree, forward'_tree, guard_tree, sender_tree])
 
 def relay (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let y ← .recv ((c, ph₀) : T.Msg)
@@ -813,7 +840,7 @@ theorem relay_tree (k : T.Msg) : Cont.Tree (relay k) :=
   unfold relay
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only),
-      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree])
+      safe [stamp_tree, wrap_tree, forward'_tree, guard_tree, sender_tree, receiver_tree])
 
 def reader (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let x ← .recv ((seen, ph₀) : T.Msg)
@@ -843,7 +870,8 @@ theorem reader_tree (k : T.Msg) : Cont.Tree (reader k) :=
   unfold reader
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only),
-      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree])
+      safe [stamp_tree, wrap_tree, forward'_tree, guard_tree, sender_tree, receiver_tree,
+        relay_tree])
 
 def tupler (k : T.Msg) : Cont (Proc T.Msg) Unit := do
   let t₀ ← .recv ((c, ph₀) : T.Msg)
@@ -901,8 +929,8 @@ theorem tupler_tree (k : T.Msg) : Cont.Tree (tupler k) :=
   unfold tupler
   aesop  (config := { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
      (add norm (by dsimp only),
-      safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree,
-        reader_tree])
+      safe [stamp_tree, wrap_tree, forward'_tree, guard_tree, sender_tree, receiver_tree,
+        relay_tree, reader_tree])
 
 /-- The main process. -/
 def system : Proc T.Msg :=
@@ -919,67 +947,74 @@ def system : Proc T.Msg :=
                   if ← .fork then
                     if ← .fork then
                       if ← .fork then
-                        .repl
-                        sender k
+                        if ← .fork then
+                          .repl
+                          sender k
+                        else
+                          .repl
+                          receiver k
                       else
                         .repl
-                        receiver k
+                        relay k
                     else
                       .repl
-                      relay k
+                      tupler k
                   else
-                    .repl
-                    tupler k
+                    let y ← .recv ((d, ph₀) : T.Msg)
+                    let tokᵥ ← .recv tok₀
+                    .send tok₀ tokᵥ
+                    match catchfail (test (eq y empty) (some y) (some empty)) with
+                    | some t₀ =>
+                      if t₀ ≠ empty then
+                        .send ((c, ph₀) : T.Msg) y
+                      else
+                        .stop
+                    | none =>
+                      .stop
                 else
-                  let y ← .recv ((d, ph₀) : T.Msg)
+                  let z ← .recv ((c, ph₀) : T.Msg)
                   let tokᵥ ← .recv tok₀
                   .send tok₀ tokᵥ
-                  match catchfail (test (eq y empty) (some y) (some empty)) with
-                  | some t₀ =>
-                    if t₀ ≠ empty then
-                      .send ((c, ph₀) : T.Msg) y
-                    else
-                      .stop
+                  match sdec z k with
+                  | some t₁ =>
+                    .send ((c, ph₀) : T.Msg) t₁
+                    reader k
                   | none =>
                     .stop
               else
-                let z ← .recv ((c, ph₀) : T.Msg)
+                let w ← .recv ((c, ph₀) : T.Msg)
                 let tokᵥ ← .recv tok₀
                 .send tok₀ tokᵥ
-                match sdec z k with
-                | some t₁ =>
-                  .send ((c, ph₀) : T.Msg) t₁
-                  reader k
+                let t₃ ←
+                  match sdec w k with
+                  | some t₄ =>
+                    let t₂ ← stamp w
+                    pure (some (both t₄ t₂))
+                  | none =>
+                    pure none
+                match t₃ with
+                | some t₅ =>
+                  .send ((c, ph₀) : T.Msg) t₅
+                  match sdec w k with
+                  | some t₇ =>
+                    let t₆ ← stamp w
+                    forward' t₇ t₆
+                  | none =>
+                    .stop
                 | none =>
                   .stop
             else
-              let w ← .recv ((c, ph₀) : T.Msg)
-              let tokᵥ ← .recv tok₀
-              .send tok₀ tokᵥ
-              let t₃ ←
-                match sdec w k with
-                | some t₄ =>
-                  let t₂ ← stamp w
-                  pure (some (both t₄ t₂))
-                | none =>
-                  pure none
-              match t₃ with
-              | some t₅ =>
-                .send ((c, ph₀) : T.Msg) t₅
-                match sdec w k with
-                | some t₇ =>
-                  let t₆ ← stamp w
-                  forward' t₇ t₆
-                | none =>
-                  .stop
-              | none =>
-                .stop
+              let s ← .fresh
+              let t₈ ← wrap s k
+              let v := t₈
+              let t₉ ← stamp v
+              .send ((c, ph₀) : T.Msg) (pair v t₉)
           else
-            let s ← .fresh
-            let t₈ ← wrap s k
-            let v := t₈
-            let t₉ ← stamp v
-            .send ((c, ph₀) : T.Msg) (pair v t₉)
+            let u ← .recv ((c, ph₀) : T.Msg)
+            let tokᵥ ← .recv tok₀
+            .send tok₀ tokᵥ
+            .send ((c, ph₀) : T.Msg) (recover (sdec u k))
+            guard (sdec u k) k
         else
           let _tokᵥ ← .recv go₁
           .send ((c, ph₁) : T.Msg) k
@@ -1010,8 +1045,8 @@ theorem system_mem_tree : system ∈ Descriptive.tree (Act T.Msg) :=
            (config :=
             { enableSimp := false, maxRuleApplicationDepth := 0, maxRuleApplications := 0 })
            (add norm (by dsimp only),
-            safe [stamp_tree, wrap_tree, forward'_tree, sender_tree, receiver_tree, relay_tree,
-              reader_tree, tupler_tree]))
+            safe [stamp_tree, wrap_tree, forward'_tree, guard_tree, sender_tree, receiver_tree,
+              relay_tree, reader_tree, tupler_tree]))
 
 /-! ## Queries -/
 
@@ -1122,35 +1157,97 @@ def query₁₃ : Prop :=
     ⟨[(true, fun σ => QFact.event (Received (σ .n)))],
       .fact true fun σ => QFact.event (Sent (σ .n))⟩
 
-/-- The variables of `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))`. -/
+/-- The variables of `query n; attacker(tag(n)) ==> inj-event(Sent(n))`. -/
 inductive Vars₁₄
   | n
 
-/-- `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))` -/
+/-- `query n; attacker(tag(n)) ==> inj-event(Sent(n))` -/
 def query₁₄ : Prop :=
   system.Satisfies (X := Vars₁₄)
+    ⟨[(true, fun σ => QFact.learns (tag (σ .n)))], .fact true fun σ => QFact.event (Sent (σ .n))⟩
+
+/-- The variables of `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))`. -/
+inductive Vars₁₅
+  | n
+
+/-- `query n; event(Received(n)) ==> (event(Sent(n)) ==> event(Stamped(n2b(n))))` -/
+def query₁₅ : Prop :=
+  system.Satisfies (X := Vars₁₅)
     ⟨[(false, fun σ => QFact.event (Received (σ .n)))],
       .corr false (fun σ => QFact.event (Sent (σ .n)))
         (.fact false fun σ => QFact.event (Stamped (σ .n)))⟩
 
 /-- The variables of `query n; event(Received(n)) && event(Sent(n)) ==> attacker(tag(n)) phase 0 || event(Stamped(n2b(n)))`. -/
-inductive Vars₁₅
+inductive Vars₁₆
   | n
 
 /-- `query n; event(Received(n)) && event(Sent(n)) ==> attacker(tag(n)) phase 0 || event(Stamped(n2b(n)))` -/
-def query₁₅ : Prop :=
-  system.Satisfies (X := Vars₁₅)
+def query₁₆ : Prop :=
+  system.Satisfies (X := Vars₁₆)
     ⟨[(false, fun σ => QFact.event (Received (σ .n))), (false, fun σ => QFact.event (Sent (σ .n)))],
       .or (.fact false fun σ => QFact.before (QFact.knows (tag (σ .n))) tick₁)
         (.fact false fun σ => QFact.event (Stamped (σ .n)))⟩
 
+/-- The variables of `query x; event(Stamped(x)) ==> x <> empty`. -/
+inductive Vars₁₇
+  | x
+
+/-- `query x; event(Stamped(x)) ==> x <> empty` -/
+def query₁₇ : Prop :=
+  system.Satisfies (X := Vars₁₇)
+    ⟨[(false, fun σ => QFact.event (Stamped (σ .x)))], .fact false fun σ => QFact.ne (σ .x) empty⟩
+
+/-- The variables of `query x, n; event(Stamped(x)) ==> (x = n2b(n) && event(Sent(n))) || attacker(x)`. -/
+inductive Vars₁₈
+  | x
+  | n
+
+/-- `query x, n; event(Stamped(x)) ==> (x = n2b(n) && event(Sent(n))) || attacker(x)` -/
+def query₁₈ : Prop :=
+  system.Satisfies (X := Vars₁₈)
+    ⟨[(false, fun σ => QFact.event (Stamped (σ .x)))],
+      .or
+        (.and (.fact false fun σ => QFact.eq (σ .x) (σ .n))
+          (.fact false fun σ => QFact.event (Sent (σ .n))))
+        (.fact false fun σ => QFact.knows (σ .x))⟩
+
+/-- The variables of `query n; event(Stamped(n2b(n))) ==> event(Sent(n))`. -/
+inductive Vars₁₉
+  | n
+
+/-- `query n; event(Stamped(n2b(n))) ==> event(Sent(n))` -/
+def query₁₉ : Prop :=
+  system.Corr (fun σ : Vars₁₉ → T.Msg => Fact.event (Stamped (σ .n))) fun σ =>
+    Fact.event (Sent (σ .n))
+
+/-- The variables of `query attacker(tag(new n))`. -/
+inductive Vars₂₀
+  | n₀
+
+/-- `query attacker(tag(new n))` -/
+def query₂₀ : Prop :=
+  system.Satisfies (X := Vars₂₀)
+    ⟨[(false, fun σ => QFact.knows (tag (σ .n₀))), (false, fun σ => QFact.event (nᵣ (σ .n₀)))],
+      .false⟩
+
+/-- The variables of `query event(Sent(new n)) ==> attacker(n2b(new n)) || attacker(tag(new n))`. -/
+inductive Vars₂₁
+  | n₀
+
+/-- `query event(Sent(new n)) ==> attacker(n2b(new n)) || attacker(tag(new n))` -/
+def query₂₁ : Prop :=
+  system.Satisfies (X := Vars₂₁)
+    ⟨[(false, fun σ => QFact.event (Sent (σ .n₀))), (false, fun σ => QFact.event (nᵣ (σ .n₀)))],
+      .or (.fact false fun σ => QFact.knows (σ .n₀))
+        (.fact false fun σ => QFact.knows (tag (σ .n₀)))⟩
+
 /-- The variables of `query secret k`. -/
-inductive Vars₁₆
+inductive Vars₂₂
   | k
 
 /-- `query secret k` -/
-def query₁₆ : Prop :=
-  system.Satisfies (X := Vars₁₆)
+def query₂₂ : Prop :=
+  system.Satisfies (X := Vars₂₂)
     ⟨[(false, fun σ => QFact.event (kₛ (σ .k))), (false, fun σ => QFact.knows (σ .k))], .false⟩
 
 end Features
